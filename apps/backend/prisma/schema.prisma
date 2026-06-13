@@ -1,0 +1,461 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================
+// ENUMS
+// =============================================
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PlanningStatus {
+  DRAFT
+  SUBMITTED
+  REVISION
+  REJECTED
+  APPROVED
+}
+
+enum MasaPelaksanaan {
+  SINGLE_YEAR
+  MULTI_YEAR
+}
+
+enum Kewenangan {
+  PUSAT
+  DAERAH
+}
+
+enum StatusDokumen {
+  TIDAK_PERLU
+  BELUM_ADA
+  SUDAH_ADA
+}
+
+enum AllokasiStatus {
+  RENCANA
+  REALISASI
+}
+
+// =============================================
+// MASTER: Auth & User
+// =============================================
+
+model Role {
+  id          String  @id @default(cuid())
+  code        String  @unique @db.VarChar(50)
+  name        String  @db.VarChar(100)
+  description String?
+
+  users User[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model User {
+  id           String  @id @default(cuid())
+  email        String? @db.VarChar(200)
+  username     String  @unique @db.VarChar(50)
+  passwordHash String  @db.VarChar(255)
+  name         String  @db.VarChar(150)
+  nip          String? @db.VarChar(30)
+  phone        String? @db.VarChar(20)
+
+  roleId String?
+  role   Role?   @relation(fields: [roleId], references: [id])
+
+  status      UserStatus @default(ACTIVE)
+  lastLoginAt DateTime?
+  deletedAt   DateTime?
+
+  balaiId Int?
+  balai   Balai? @relation(fields: [balaiId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plannings         Planning[]
+  reviewedPlannings PlanningReview[]
+
+  @@map("users")
+}
+
+// =============================================
+// MASTER: Wilayah & Organisasi
+// =============================================
+
+model Balai {
+  id        Int     @id
+  name      String  @db.VarChar(150)
+  shortName String? @db.VarChar(100)
+  code      String? @unique @db.VarChar(10)
+
+  latitude  Float?
+  longitude Float?
+
+  provinceId String? @db.VarChar(10)
+  cityId     String? @db.VarChar(10)
+
+  users     User[]
+  plannings Planning[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("balai")
+}
+
+model Periode {
+  id        Int     @id @default(autoincrement())
+  startYear Int     @db.SmallInt
+  endYear   Int     @db.SmallInt
+  label     String  @db.VarChar(20)
+  isActive  Boolean @default(false)
+
+  plannings Planning[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("periodes")
+}
+
+// =============================================
+// MASTER: Nomenklatur (Program > Kegiatan > KRO > RO)
+// =============================================
+
+model Program {
+  id   String @id @db.VarChar(10)
+  name String @db.VarChar(255)
+  code String @db.VarChar(10)
+
+  kegiatan Kegiatan[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("programs")
+}
+
+model Kegiatan {
+  id        String  @id @db.VarChar(10)
+  programId String  @db.VarChar(10)
+  program   Program @relation(fields: [programId], references: [id])
+  name      String  @db.VarChar(255)
+  code      String  @db.VarChar(10)
+
+  kroList KRO[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("kegiatan")
+}
+
+model KRO {
+  id         String   @id @db.VarChar(10)
+  kegiatanId String   @db.VarChar(10)
+  kegiatan   Kegiatan @relation(fields: [kegiatanId], references: [id])
+  name       String   @db.VarChar(255)
+  code       String   @db.VarChar(10)
+
+  roList RO[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("kro")
+}
+
+model RO {
+  id    String @id @db.VarChar(10)
+  kroId String @db.VarChar(10)
+  kro   KRO    @relation(fields: [kroId], references: [id])
+  name  String @db.VarChar(255)
+  code  String @db.VarChar(10)
+
+  indikatorRO IndikatorRO[]
+  alokasi     Alokasi[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("ro")
+}
+
+model IndikatorRO {
+  id     String @id @default(cuid())
+  roId   String @db.VarChar(10)
+  ro     RO     @relation(fields: [roId], references: [id])
+  nama   String @db.VarChar(255)
+  satuan String @db.VarChar(50)
+
+  @@map("indikator_ro")
+}
+
+// =============================================
+// MASTER: Major Project
+// =============================================
+
+model MajorProject {
+  id   String @id @default(cuid())
+  name String @db.Text
+
+  planningMajorProjects PlanningMajorProject[]
+
+  @@map("major_projects")
+}
+
+// =============================================
+// MASTER: Tindak Lanjut
+// =============================================
+
+model TindakLanjut {
+  id   String @id @default(cuid())
+  name String @db.Text
+
+  planningTindakLanjut PlanningTindakLanjut[]
+
+  @@map("tindak_lanjut")
+}
+
+// =============================================
+// MASTER: Wilayah Sungai
+// =============================================
+
+model WilayahSungai {
+  id   String @id @default(cuid())
+  name String @db.VarChar(255)
+
+  plannings Planning[]
+
+  @@map("wilayah_sungai")
+}
+
+// =============================================
+// PLANNING UTAMA
+// =============================================
+
+model Planning {
+  id String @id @default(cuid())
+
+  balaiId Int
+  balai   Balai @relation(fields: [balaiId], references: [id])
+
+  periodeId Int
+  periode   Periode @relation(fields: [periodeId], references: [id])
+
+  projectName     String          @db.Text
+  masaPelaksanaan MasaPelaksanaan
+  kewenangan      Kewenangan      @default(PUSAT)
+
+  provinceId String? @db.VarChar(10)
+  cityId     String? @db.VarChar(10)
+  latitude   Float?
+  longitude  Float?
+
+  wilayahSungaiId  String?
+  wilayahSungai    WilayahSungai? @relation(fields: [wilayahSungaiId], references: [id])
+  kebutuhanTanah   Boolean        @default(false)
+  sesuaiRTRW       String?        @db.VarChar(50)
+  nomorPerdaRTRW   String?        @db.VarChar(100)
+  sesuaiPolaSDA    String?        @db.VarChar(50)
+  nomorKepmenPUPR  String?        @db.VarChar(100)
+  sesuaiMasterplan String?        @db.VarChar(255)
+
+  status  PlanningStatus @default(DRAFT)
+  catatan String?        @db.Text
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  kriteriaDokumen KriteriaDokumen[]
+  majorProjects   PlanningMajorProject[]
+  tindakLanjut    PlanningTindakLanjut[]
+  alokasi         Alokasi[]
+  prioritas       Prioritas[]
+  reviews         PlanningReview[]
+
+  @@index([balaiId])
+  @@index([status])
+  @@index([createdById])
+  @@index([periodeId])
+  @@map("plannings")
+}
+
+// =============================================
+// KRITERIA DOKUMEN
+// =============================================
+
+model KriteriaDokumen {
+  id         String   @id @default(cuid())
+  planningId String
+  planning   Planning @relation(fields: [planningId], references: [id], onDelete: Cascade)
+
+  jenis  String        @db.VarChar(100)
+  status StatusDokumen @default(TIDAK_PERLU)
+  tahun  Int?          @db.SmallInt
+
+  @@unique([planningId, jenis])
+  @@map("kriteria_dokumen")
+}
+
+// =============================================
+// MANY-TO-MANY
+// =============================================
+
+model PlanningMajorProject {
+  id             String       @id @default(cuid())
+  planningId     String
+  planning       Planning     @relation(fields: [planningId], references: [id], onDelete: Cascade)
+  majorProjectId String
+  majorProject   MajorProject @relation(fields: [majorProjectId], references: [id])
+  detail         String?      @db.VarChar(255)
+
+  @@unique([planningId, majorProjectId])
+  @@map("planning_major_projects")
+}
+
+model PlanningTindakLanjut {
+  id             String       @id @default(cuid())
+  planningId     String
+  planning       Planning     @relation(fields: [planningId], references: [id], onDelete: Cascade)
+  tindakLanjutId String
+  tindakLanjut   TindakLanjut @relation(fields: [tindakLanjutId], references: [id])
+
+  @@unique([planningId, tindakLanjutId])
+  @@map("planning_tindak_lanjut")
+}
+
+// =============================================
+// ALOKASI
+// =============================================
+
+model Alokasi {
+  id         String   @id @default(cuid())
+  planningId String
+  planning   Planning @relation(fields: [planningId], references: [id], onDelete: Cascade)
+
+  roId String @db.VarChar(10)
+  ro   RO     @relation(fields: [roId], references: [id])
+
+  tahun  Int            @db.SmallInt
+  status AllokasiStatus
+
+  rm   Decimal @default(0) @db.Decimal(16, 0)
+  rmp  Decimal @default(0) @db.Decimal(16, 0)
+  pln  Decimal @default(0) @db.Decimal(16, 0)
+  sbsn Decimal @default(0) @db.Decimal(16, 0)
+  kpbu Decimal @default(0) @db.Decimal(16, 0)
+  total Decimal @default(0) @db.Decimal(16, 0)
+
+  outputTarget  Decimal? @db.Decimal(10, 4)
+  outputUnit    String?  @db.VarChar(50)
+  outcomeTarget Decimal? @db.Decimal(10, 4)
+  outcomeUnit   String?  @db.VarChar(50)
+
+  catatan String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lokasi         LokasiAlokasi[]
+  historiAlokasi HistoriAlokasi[]
+
+  @@unique([planningId, roId, tahun, status])
+  @@index([tahun])
+  @@map("alokasi")
+}
+
+model LokasiAlokasi {
+  id        String  @id @default(cuid())
+  alokasiId String
+  alokasi   Alokasi @relation(fields: [alokasiId], references: [id], onDelete: Cascade)
+
+  name       String  @db.VarChar(255)
+  provinceId String? @db.VarChar(10)
+  cityId     String? @db.VarChar(10)
+  latitude   Float?
+  longitude  Float?
+
+  createdAt DateTime @default(now())
+
+  @@map("lokasi_alokasi")
+}
+
+model HistoriAlokasi {
+  id        String  @id @default(cuid())
+  alokasiId String
+  alokasi   Alokasi @relation(fields: [alokasiId], references: [id], onDelete: Cascade)
+
+  rm            Decimal  @db.Decimal(16, 0)
+  rmp           Decimal  @db.Decimal(16, 0)
+  pln           Decimal  @db.Decimal(16, 0)
+  sbsn          Decimal  @db.Decimal(16, 0)
+  kpbu          Decimal  @db.Decimal(16, 0)
+  total         Decimal  @db.Decimal(16, 0)
+  outputTarget  Decimal? @db.Decimal(10, 4)
+  outcomeTarget Decimal? @db.Decimal(10, 4)
+  catatan       String?  @db.Text
+
+  changedAt DateTime @default(now())
+  changedBy String   @db.VarChar(150)
+
+  @@map("histori_alokasi")
+}
+
+// =============================================
+// PRIORITAS
+// =============================================
+
+model Prioritas {
+  id         String   @id @default(cuid())
+  planningId String
+  planning   Planning @relation(fields: [planningId], references: [id], onDelete: Cascade)
+
+  tahun                Int     @db.SmallInt
+  proyekPrioritas      Boolean @default(false)
+  proyekRPIW           Boolean @default(false)
+  kegiatanBaru         Boolean @default(false)
+  kegiatanWajib        Boolean @default(false)
+  proyekKonregFKS      Boolean @default(false)
+  proyekMusrengbangnas Boolean @default(false)
+
+  @@unique([planningId, tahun])
+  @@map("prioritas")
+}
+
+// =============================================
+// REVIEW / WORKFLOW
+// =============================================
+
+model PlanningReview {
+  id         String   @id @default(cuid())
+  planningId String
+  planning   Planning @relation(fields: [planningId], references: [id], onDelete: Cascade)
+
+  reviewerId String
+  reviewer   User   @relation(fields: [reviewerId], references: [id])
+
+  action  String  @db.VarChar(20)
+  catatan String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@map("planning_reviews")
+}

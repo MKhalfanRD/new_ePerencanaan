@@ -26,7 +26,7 @@ export default function DashboardLayout({
       <main className="ml-16 lg:ml-60 min-h-screen">
         <div className="p-6">{children}</div>
       </main>
-      <Toaster richColors position="top-right" />
+      <Toaster richColors position="bottom-right" duration={2000} />
     </div>
   );
 }

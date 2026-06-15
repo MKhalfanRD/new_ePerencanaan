@@ -40,12 +40,34 @@ import { Planning, PaginatedResponse } from "@/types";
 import { PlanningFormDialog } from "@/components/planning/planning-form-dialog";
 import { PlanningDetailDialog } from "@/components/planning/planning-detail-dialog";
 
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
 const statusConfig = {
-  DRAFT: { label: "Draft", variant: "secondary" as const },
-  SUBMITTED: { label: "Diajukan", variant: "default" as const },
-  REVISION: { label: "Revisi", variant: "secondary" as const },
-  REJECTED: { label: "Ditolak", variant: "destructive" as const },
-  APPROVED: { label: "Disetujui", variant: "default" as const },
+  DRAFT: {
+    label: "Draft",
+    className: "bg-slate-100 text-slate-600 border border-slate-200",
+  },
+  SUBMITTED: {
+    label: "Menunggu Review",
+    className: "bg-blue-100 text-blue-700 border border-blue-200",
+  },
+  REVISION: {
+    label: "Perlu Revisi",
+    className: "bg-amber-100 text-amber-700 border border-amber-200",
+  },
+  REJECTED: {
+    label: "Ditolak",
+    className: "bg-red-100 text-red-700 border border-red-200",
+  },
+  APPROVED: {
+    label: "Disetujui",
+    className: "bg-green-100 text-green-700 border border-green-200",
+  },
 };
 
 const formatRupiah = (val: string | number) =>
@@ -237,12 +259,11 @@ export default function PlanningsPage() {
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <Badge
-                            variant={cfg.variant}
-                            className="text-xs shrink-0"
+                          <span
+                            className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${cfg.className}`}
                           >
-                            {cfg.label}
-                          </Badge>
+                            {cfg.icon} {cfg.label}
+                          </span>
                           <span className="text-xs text-muted-foreground">
                             {p.balai.shortName} · {p.periode.label}
                           </span>
@@ -271,37 +292,67 @@ export default function PlanningsPage() {
                       </div>
 
                       {/* Actions */}
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => setDetailData(p)}
-                        >
-                          <Eye size={15} />
-                        </Button>
-                        {canSubmit(p) && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                            onClick={() => handleSubmit(p.id)}
-                          >
-                            <Send size={15} />
-                          </Button>
-                        )}
-                        {canDelete(p) && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => setDeleteId(p.id)}
-                          >
-                            <Trash2 size={15} />
-                          </Button>
-                        )}
-                      </div>
+                      <TooltipProvider delayDuration={300}>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => setDetailData(p)}
+                              >
+                                <Eye size={15} />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Lihat Detail</TooltipContent>
+                          </Tooltip>
+
+                          {canSubmit(p) && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                  onClick={() => handleSubmit(p.id)}
+                                >
+                                  <Send size={15} />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                Ajukan ke Verifikator
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+
+                          {canDelete(p) && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => setDeleteId(p.id)}
+                                >
+                                  <Trash2 size={15} />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Hapus Planning</TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
+                      </TooltipProvider>
                     </div>
+                    {p.status === "DRAFT" && user?.role === "SATKER" && (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5">
+                        <Send size={12} className="shrink-0" />
+                        <span>
+                          Planning ini belum diajukan. Klik tombol{" "}
+                          <strong>ajukan</strong> untuk mengirim ke verifikator.
+                        </span>
+                      </div>
+                    )}
                   </div>
                 );
               })}

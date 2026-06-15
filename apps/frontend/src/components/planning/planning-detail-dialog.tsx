@@ -34,11 +34,26 @@ import { useAuthStore } from "@/store/auth";
 import { Planning } from "@/types";
 
 const statusConfig = {
-  DRAFT: { label: "Draft", variant: "secondary" as const },
-  SUBMITTED: { label: "Diajukan", variant: "default" as const },
-  REVISION: { label: "Revisi", variant: "secondary" as const },
-  REJECTED: { label: "Ditolak", variant: "destructive" as const },
-  APPROVED: { label: "Disetujui", variant: "default" as const },
+  DRAFT: {
+    label: "Draft",
+    className: "bg-slate-100 text-slate-600 border border-slate-200",
+  },
+  SUBMITTED: {
+    label: "Menunggu Review",
+    className: "bg-blue-100 text-blue-700 border border-blue-200",
+  },
+  REVISION: {
+    label: "Perlu Revisi",
+    className: "bg-amber-100 text-amber-700 border border-amber-200",
+  },
+  REJECTED: {
+    label: "Ditolak",
+    className: "bg-red-100 text-red-700 border border-red-200",
+  },
+  APPROVED: {
+    label: "Disetujui",
+    className: "bg-green-100 text-green-700 border border-green-200",
+  },
 };
 
 const dokumenStatusLabel = {
@@ -139,7 +154,11 @@ export function PlanningDetailDialog({
                 {planning.projectName}
               </DialogTitle>
               <div className="flex items-center gap-2 mt-2">
-                <Badge variant={cfg.variant}>{cfg.label}</Badge>
+                <span
+                  className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${cfg.className}`}
+                >
+                  {cfg.icon} {cfg.label}
+                </span>
                 <span className="text-xs text-muted-foreground">
                   {planning.balai.shortName} · {planning.periode.label}
                 </span>

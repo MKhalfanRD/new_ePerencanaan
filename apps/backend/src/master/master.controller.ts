@@ -63,4 +63,8 @@ export class MasterController {
   getWilayahSungai() {
     return this.masterService.getWilayahSungai();
   }
+
+  @ApiOperation({ summary: 'Daftar semua role' })
+@Get('roles')
+getRoles() { return this.masterService.getRoles(); }
 }

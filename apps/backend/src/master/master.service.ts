@@ -52,4 +52,8 @@ export class MasterService {
   getWilayahSungai() {
     return this.prisma.wilayahSungai.findMany({ orderBy: { name: 'asc' } });
   }
+
+  getRoles() {
+  return this.prisma.role.findMany({ orderBy: { name: 'asc' } });
+}
 }

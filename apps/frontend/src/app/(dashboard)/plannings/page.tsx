@@ -47,6 +47,21 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+import { FileSpreadsheet, FileDown } from "lucide-react";
+import {
+  exportPlanningsToExcel,
+  exportPlanningsToPDF,
+} from "@/lib/export-utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+import { Upload } from "lucide-react";
+import { ImportExcelDialog } from "@/components/import/import-excel-dialog";
+
 const statusConfig = {
   DRAFT: {
     label: "Draft",
@@ -92,6 +107,8 @@ export default function PlanningsPage() {
   const [detailData, setDetailData] = useState<Planning | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [showImport, setShowImport] = useState(false);
 
   const fetchPlannings = async () => {
     setLoading(true);
@@ -174,17 +191,51 @@ export default function PlanningsPage() {
             {total} planning ditemukan
           </p>
         </div>
-        {(user?.role === "SATKER" || user?.role === "ADMINISTRATOR") && (
-          <Button
-            onClick={() => {
-              setEditData(null);
-              setShowForm(true);
-            }}
-          >
-            <Plus size={16} className="mr-2" />
-            Buat Planning
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <FileDown size={16} className="mr-2" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() =>
+                  exportPlanningsToExcel(plannings, "daftar-planning")
+                }
+              >
+                <FileSpreadsheet size={14} className="mr-2" /> Export ke Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() =>
+                  exportPlanningsToPDF(plannings, "daftar-planning")
+                }
+              >
+                <FileDown size={14} className="mr-2" /> Export ke PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {(user?.role === "SATKER" || user?.role === "ADMINISTRATOR") && (
+            <Button variant="outline" onClick={() => setShowImport(true)}>
+              <Upload size={16} className="mr-2" />
+              Import Excel
+            </Button>
+          )}
+
+          {(user?.role === "SATKER" || user?.role === "ADMINISTRATOR") && (
+            <Button
+              onClick={() => {
+                setEditData(null);
+                setShowForm(true);
+              }}
+            >
+              <Plus size={16} className="mr-2" />
+              Buat Planning
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filter */}
@@ -433,6 +484,14 @@ export default function PlanningsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <ImportExcelDialog
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onSuccess={() => {
+          setShowImport(false);
+          fetchPlannings();
+        }}
+      />
     </div>
   );
 }

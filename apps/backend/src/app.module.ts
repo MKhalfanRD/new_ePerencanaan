@@ -11,6 +11,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { PlanningsModule } from './plannings/plannings.module';
 import { MasterModule } from './master/master.module';
 import { AlokasiModule } from './alokasi/alokasi.module';
+import { ImportModule } from './import/import.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { AlokasiModule } from './alokasi/alokasi.module';
     PlanningsModule,
     MasterModule,
     AlokasiModule,
+    ImportModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -8,11 +8,16 @@ import {
   XCircle,
   RotateCcw,
   Loader2,
+  MapPin,
+  Calendar,
+  Building2,
+  FileText,
+  ChevronRight,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -33,33 +38,50 @@ import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
 import { Planning } from "@/types";
 
+import { FileSpreadsheet, FileDown } from "lucide-react";
+import {
+  exportPlanningDetailToExcel,
+  exportPlanningDetailToPDF,
+} from "@/lib/export-utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
 const statusConfig = {
   DRAFT: {
     label: "Draft",
     className: "bg-slate-100 text-slate-600 border border-slate-200",
+    icon: "📝",
   },
   SUBMITTED: {
     label: "Menunggu Review",
     className: "bg-blue-100 text-blue-700 border border-blue-200",
+    icon: "⏳",
   },
   REVISION: {
     label: "Perlu Revisi",
     className: "bg-amber-100 text-amber-700 border border-amber-200",
+    icon: "🔄",
   },
   REJECTED: {
     label: "Ditolak",
     className: "bg-red-100 text-red-700 border border-red-200",
+    icon: "❌",
   },
   APPROVED: {
     label: "Disetujui",
     className: "bg-green-100 text-green-700 border border-green-200",
+    icon: "✅",
   },
 };
 
-const dokumenStatusLabel = {
-  TIDAK_PERLU: "Tidak Perlu",
-  BELUM_ADA: "Belum Ada",
-  SUDAH_ADA: "Sudah Ada",
+const dokumenStatusConfig = {
+  TIDAK_PERLU: { label: "Tidak Perlu", className: "text-slate-500" },
+  BELUM_ADA: { label: "Belum Ada", className: "text-red-600 font-medium" },
+  SUDAH_ADA: { label: "Sudah Ada", className: "text-green-600 font-medium" },
 };
 
 const formatRupiah = (val: string | number) =>
@@ -68,6 +90,40 @@ const formatRupiah = (val: string | number) =>
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(Number(val));
+
+function InfoRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex items-start gap-2 py-1.5">
+      <span className="text-xs text-muted-foreground w-36 shrink-0 mt-0.5">
+        {label}
+      </span>
+      <span className="text-xs font-medium flex-1">{value || "—"}</span>
+    </div>
+  );
+}
+
+function Section({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon?: any;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        {Icon && <Icon size={14} className="text-muted-foreground" />}
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          {title}
+        </p>
+        <div className="flex-1 h-px bg-border" />
+      </div>
+      {children}
+    </div>
+  );
+}
 
 interface Props {
   open: boolean;
@@ -133,6 +189,8 @@ export function PlanningDetailDialog({
     }
   };
 
+  const cfg = statusConfig[planning.status];
+
   // Group alokasi by tahun
   const alokasiByTahun = planning.alokasi.reduce<
     Record<number, typeof planning.alokasi>
@@ -142,155 +200,254 @@ export function PlanningDetailDialog({
     return acc;
   }, {});
 
-  const cfg = statusConfig[planning.status];
+  const totalRencana = planning.alokasi
+    .filter((a) => a.status === "RENCANA")
+    .reduce((s, a) => s + Number(a.total), 0);
+
+  const totalRealisasi = planning.alokasi
+    .filter((a) => a.status === "REALISASI")
+    .reduce((s, a) => s + Number(a.total), 0);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <DialogTitle className="text-base leading-snug pr-4">
-                {planning.projectName}
-              </DialogTitle>
-              <div className="flex items-center gap-2 mt-2">
-                <span
-                  className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${cfg.className}`}
-                >
-                  {cfg.icon} {cfg.label}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {planning.balai.shortName} · {planning.periode.label}
-                </span>
-              </div>
-            </div>
-            <div className="flex gap-2 shrink-0">
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b shrink-0">
+          {/* Status badge */}
+          <div className="flex items-center justify-between mb-3">
+            <span
+              className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${cfg.className}`}
+            >
+              {cfg.icon} {cfg.label}
+            </span>
+            <div className="flex gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <FileDown size={13} className="mr-1.5" /> Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => exportPlanningDetailToExcel(planning)}
+                  >
+                    <FileSpreadsheet size={14} className="mr-2" /> Export ke
+                    Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => exportPlanningDetailToPDF(planning)}
+                  >
+                    <FileDown size={14} className="mr-2" /> Export ke PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               {canEdit && (
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => onEdit(planning)}
                 >
-                  <Edit size={14} className="mr-1.5" /> Edit
+                  <Edit size={13} className="mr-1.5" /> Edit
                 </Button>
               )}
               {canSubmit && (
                 <Button size="sm" onClick={handleSubmit} disabled={submitting}>
                   {submitting ? (
-                    <Loader2 size={14} className="mr-1.5 animate-spin" />
+                    <Loader2 size={13} className="mr-1.5 animate-spin" />
                   ) : (
-                    <Send size={14} className="mr-1.5" />
+                    <Send size={13} className="mr-1.5" />
                   )}
                   Ajukan
                 </Button>
               )}
             </div>
           </div>
-        </DialogHeader>
 
-        <div className="space-y-5 mt-2">
-          {/* Info utama */}
-          <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-            {[
-              ["Balai", planning.balai.name],
-              ["Periode", planning.periode.label],
-              [
-                "Masa Pelaksanaan",
-                planning.masaPelaksanaan === "SINGLE_YEAR"
-                  ? "Single Year"
-                  : "Multi Year",
-              ],
-              ["Kewenangan", planning.kewenangan],
-              ["Wilayah Sungai", planning.wilayahSungai?.name || "-"],
-              ["Kebutuhan Tanah", planning.kebutuhanTanah ? "Ada" : "Tidak"],
-              ["Sesuai RTRW", planning.sesuaiRTRW || "-"],
-              ["No. Perda RTRW", planning.nomorPerdaRTRW || "-"],
-              ["Sesuai Pola SDA", planning.sesuaiPolaSDA || "-"],
-              ["No. Kepmen PUPR", planning.nomorKepmenPUPR || "-"],
-            ].map(([label, value]) => (
-              <div key={label} className="flex gap-2">
-                <span className="text-muted-foreground w-36 shrink-0">
-                  {label}
-                </span>
-                <span className="font-medium">{value}</span>
-              </div>
-            ))}
+          {/* Nama proyek */}
+          <h2 className="text-base font-semibold leading-snug">
+            {planning.projectName}
+          </h2>
+
+          {/* Meta info */}
+          <div className="flex items-center gap-4 mt-2">
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Building2 size={12} />
+              {planning.balai.name}
+            </span>
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Calendar size={12} />
+              {planning.periode.label}
+            </span>
           </div>
 
-          {/* Catatan verificator */}
-          {planning.catatan && (
-            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
-              <p className="font-medium mb-1">Catatan Verifikator:</p>
-              <p>{planning.catatan}</p>
+          {/* Summary anggaran */}
+          {totalRencana > 0 && (
+            <div className="flex items-center gap-4 mt-3 p-3 rounded-lg bg-muted/40">
+              <div>
+                <p className="text-xs text-muted-foreground">Total Rencana</p>
+                <p className="text-sm font-semibold">
+                  {formatRupiah(totalRencana)}
+                </p>
+              </div>
+              {totalRealisasi > 0 && (
+                <>
+                  <ChevronRight size={14} className="text-muted-foreground" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      Total Realisasi
+                    </p>
+                    <p className="text-sm font-semibold">
+                      {formatRupiah(totalRealisasi)}
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          {/* Banner status khusus */}
+          {planning.status === "REVISION" && planning.catatan && (
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
+              <AlertTriangle
+                size={16}
+                className="text-amber-600 shrink-0 mt-0.5"
+              />
+              <div>
+                <p className="text-xs font-semibold text-amber-800 mb-0.5">
+                  Perlu Revisi
+                </p>
+                <p className="text-xs text-amber-700">{planning.catatan}</p>
+              </div>
             </div>
           )}
 
-          <Separator />
+          {planning.status === "REJECTED" && (
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-red-50 border border-red-200">
+              <XCircle size={16} className="text-red-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-semibold text-red-800 mb-0.5">
+                  Planning Ditolak
+                </p>
+                <p className="text-xs text-red-700">
+                  {planning.catatan || "Tidak ada catatan"}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {planning.status === "APPROVED" && (
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 border border-green-200">
+              <CheckCircle
+                size={16}
+                className="text-green-600 shrink-0 mt-0.5"
+              />
+              <div>
+                <p className="text-xs font-semibold text-green-800">
+                  Planning Disetujui
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Info Proyek */}
+          <Section title="Informasi Proyek" icon={FileText}>
+            <div className="rounded-lg border divide-y divide-border overflow-hidden">
+              <InfoRow
+                label="Masa Pelaksanaan"
+                value={
+                  planning.masaPelaksanaan === "SINGLE_YEAR"
+                    ? "Single Year"
+                    : "Multi Year"
+                }
+              />
+              <InfoRow label="Kewenangan" value={planning.kewenangan} />
+              <InfoRow
+                label="Wilayah Sungai"
+                value={planning.wilayahSungai?.name}
+              />
+              <InfoRow
+                label="Kebutuhan Tanah"
+                value={planning.kebutuhanTanah ? "Ada" : "Tidak Ada"}
+              />
+              <InfoRow label="Sesuai RTRW" value={planning.sesuaiRTRW} />
+              <InfoRow label="No. Perda RTRW" value={planning.nomorPerdaRTRW} />
+              <InfoRow label="Sesuai Pola SDA" value={planning.sesuaiPolaSDA} />
+              <InfoRow
+                label="No. Kepmen PUPR"
+                value={planning.nomorKepmenPUPR}
+              />
+              <InfoRow
+                label="Sesuai Masterplan"
+                value={planning.sesuaiMasterplan}
+              />
+              <InfoRow
+                label="Dibuat oleh"
+                value={`${planning.createdBy.name} (${planning.createdBy.role.name})`}
+              />
+            </div>
+          </Section>
 
           {/* Kriteria Dokumen */}
           {planning.kriteriaDokumen.length > 0 && (
-            <div>
-              <p className="text-sm font-medium mb-2">Kriteria Dokumen</p>
-              <div className="space-y-1.5">
-                {planning.kriteriaDokumen.map((k) => (
-                  <div
-                    key={k.id}
-                    className="flex items-center justify-between text-sm p-2 rounded-lg bg-muted/40"
-                  >
-                    <span className="text-muted-foreground">{k.jenis}</span>
-                    <div className="flex items-center gap-2">
-                      {k.tahun && (
-                        <span className="text-xs text-muted-foreground">
-                          {k.tahun}
+            <Section title="Kriteria Dokumen" icon={FileText}>
+              <div className="rounded-lg border divide-y divide-border overflow-hidden">
+                {planning.kriteriaDokumen.map((k) => {
+                  const dc = dokumenStatusConfig[k.status];
+                  return (
+                    <div
+                      key={k.id}
+                      className="flex items-center justify-between px-3 py-2"
+                    >
+                      <span className="text-xs text-muted-foreground">
+                        {k.jenis}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {k.tahun && (
+                          <span className="text-xs text-muted-foreground">
+                            {k.tahun}
+                          </span>
+                        )}
+                        <span className={`text-xs ${dc.className}`}>
+                          {dc.label}
                         </span>
-                      )}
-                      <Badge
-                        variant={
-                          k.status === "SUDAH_ADA" ? "default" : "secondary"
-                        }
-                        className="text-xs"
-                      >
-                        {dokumenStatusLabel[k.status]}
-                      </Badge>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-            </div>
+            </Section>
           )}
 
-          <Separator />
-
           {/* Alokasi */}
-          <div>
-            <p className="text-sm font-medium mb-3">Alokasi Anggaran</p>
-            {Object.keys(alokasiByTahun).length === 0 ? (
-              <p className="text-xs text-muted-foreground">Belum ada alokasi</p>
-            ) : (
-              <div className="space-y-4">
+          {Object.keys(alokasiByTahun).length > 0 && (
+            <Section title="Alokasi Anggaran" icon={Calendar}>
+              <div className="space-y-3">
                 {Object.entries(alokasiByTahun)
                   .sort(([a], [b]) => Number(a) - Number(b))
                   .map(([tahun, alokasi]) => (
                     <div key={tahun}>
-                      <p className="text-xs font-semibold text-muted-foreground mb-2">
+                      <p className="text-xs font-semibold text-muted-foreground mb-1.5">
                         Tahun {tahun}
                       </p>
                       <div className="rounded-lg border overflow-hidden">
                         <table className="w-full text-xs">
-                          <thead className="bg-muted/50">
-                            <tr>
-                              <th className="text-left p-2 font-medium">
+                          <thead>
+                            <tr className="bg-muted/50 border-b">
+                              <th className="text-left px-3 py-2 font-medium">
                                 Status
                               </th>
-                              <th className="text-left p-2 font-medium">RO</th>
-                              <th className="text-right p-2 font-medium">
+                              <th className="text-left px-3 py-2 font-medium">
+                                Nomenklatur
+                              </th>
+                              <th className="text-right px-3 py-2 font-medium">
                                 Total
                               </th>
-                              <th className="text-right p-2 font-medium">
+                              <th className="text-right px-3 py-2 font-medium">
                                 Output
-                              </th>
-                              <th className="text-right p-2 font-medium">
-                                Outcome
                               </th>
                             </tr>
                           </thead>
@@ -299,39 +456,35 @@ export function PlanningDetailDialog({
                               <tr
                                 key={a.id}
                                 className={
-                                  a.status === "RENCANA" ? "bg-blue-50/50" : ""
+                                  a.status === "RENCANA"
+                                    ? "bg-blue-50/40"
+                                    : "bg-slate-50/40"
                                 }
                               >
-                                <td className="p-2">
-                                  <Badge
-                                    variant={
+                                <td className="px-3 py-2">
+                                  <span
+                                    className={`inline-flex items-center text-xs font-medium px-1.5 py-0.5 rounded-full ${
                                       a.status === "RENCANA"
-                                        ? "default"
-                                        : "secondary"
-                                    }
-                                    className="text-xs"
+                                        ? "bg-blue-100 text-blue-700"
+                                        : "bg-slate-100 text-slate-600"
+                                    }`}
                                   >
                                     {a.status === "RENCANA"
                                       ? "Rencana"
                                       : "Realisasi"}
-                                  </Badge>
+                                  </span>
                                 </td>
-                                <td className="p-2 text-muted-foreground">
+                                <td className="px-3 py-2 text-muted-foreground">
                                   {a.ro.kro.kegiatan.program.code} ·{" "}
                                   {a.ro.kro.code} · {a.ro.code}
                                 </td>
-                                <td className="p-2 text-right font-medium">
+                                <td className="px-3 py-2 text-right font-medium">
                                   {formatRupiah(a.total)}
                                 </td>
-                                <td className="p-2 text-right text-muted-foreground">
+                                <td className="px-3 py-2 text-right text-muted-foreground">
                                   {a.outputTarget
                                     ? `${a.outputTarget} ${a.outputUnit || ""}`
-                                    : "-"}
-                                </td>
-                                <td className="p-2 text-right text-muted-foreground">
-                                  {a.outcomeTarget
-                                    ? `${a.outcomeTarget} ${a.outcomeUnit || ""}`
-                                    : "-"}
+                                    : "—"}
                                 </td>
                               </tr>
                             ))}
@@ -341,129 +494,153 @@ export function PlanningDetailDialog({
                     </div>
                   ))}
               </div>
-            )}
-          </div>
+            </Section>
+          )}
 
           {/* Prioritas */}
           {planning.prioritas.length > 0 && (
-            <>
-              <Separator />
-              <div>
-                <p className="text-sm font-medium mb-2">Prioritas</p>
-                <div className="space-y-1">
-                  {planning.prioritas.map((p) => (
+            <Section title="Prioritas">
+              <div className="rounded-lg border divide-y divide-border overflow-hidden">
+                {planning.prioritas.map((p) => {
+                  const aktif = [
+                    p.proyekPrioritas && "Proyek Prioritas",
+                    p.proyekRPIW && "RPIW",
+                    p.kegiatanBaru && "Kegiatan Baru",
+                    p.kegiatanWajib && "Kegiatan Wajib",
+                    p.proyekKonregFKS && "Konreg FKS",
+                    p.proyekMusrengbangnas && "Musrengbangnas",
+                  ].filter(Boolean);
+                  return (
                     <div
                       key={p.id}
-                      className="text-xs text-muted-foreground p-2 rounded-lg bg-muted/40"
+                      className="flex items-center justify-between px-3 py-2"
                     >
-                      <span className="font-medium text-foreground">
+                      <span className="text-xs text-muted-foreground">
                         Tahun {p.tahun}
                       </span>
-                      {" · "}
-                      {[
-                        p.proyekPrioritas && "Proyek Prioritas",
-                        p.proyekRPIW && "RPIW",
-                        p.kegiatanBaru && "Kegiatan Baru",
-                        p.kegiatanWajib && "Kegiatan Wajib",
-                      ]
-                        .filter(Boolean)
-                        .join(", ") || "Tidak ada prioritas"}
+                      <span className="text-xs font-medium">
+                        {aktif.length > 0 ? aktif.join(", ") : "—"}
+                      </span>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            </>
+            </Section>
           )}
 
           {/* Histori Review */}
           {planning.reviews.length > 0 && (
-            <>
-              <Separator />
-              <div>
-                <p className="text-sm font-medium mb-2">Histori Review</p>
-                <div className="space-y-2">
-                  {planning.reviews.map((r) => (
-                    <div key={r.id} className="flex items-start gap-3 text-sm">
-                      <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                        {r.action === "approve" ? (
-                          <CheckCircle size={14} className="text-green-600" />
-                        ) : r.action === "reject" ? (
-                          <XCircle size={14} className="text-destructive" />
-                        ) : (
-                          <RotateCcw size={14} className="text-amber-600" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="font-medium">
-                          {r.reviewer.name}{" "}
-                          <span className="font-normal text-muted-foreground">
-                            — {r.action}
-                          </span>
-                        </p>
-                        {r.catatan && (
-                          <p className="text-muted-foreground text-xs mt-0.5">
-                            {r.catatan}
-                          </p>
-                        )}
-                        <p className="text-xs text-muted-foreground mt-0.5">
+            <Section title="Histori Review">
+              <div className="space-y-2">
+                {planning.reviews.map((r) => (
+                  <div
+                    key={r.id}
+                    className="flex items-start gap-3 p-3 rounded-lg border bg-muted/20"
+                  >
+                    <div
+                      className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                        r.action === "approve"
+                          ? "bg-green-100"
+                          : r.action === "reject"
+                            ? "bg-red-100"
+                            : "bg-amber-100"
+                      }`}
+                    >
+                      {r.action === "approve" ? (
+                        <CheckCircle size={14} className="text-green-600" />
+                      ) : r.action === "reject" ? (
+                        <XCircle size={14} className="text-red-600" />
+                      ) : (
+                        <RotateCcw size={14} className="text-amber-600" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium">{r.reviewer.name}</p>
+                        <p className="text-xs text-muted-foreground">
                           {new Date(r.createdAt).toLocaleDateString("id-ID", {
                             dateStyle: "medium",
                           })}
                         </p>
                       </div>
+                      <p className="text-xs text-muted-foreground mt-0.5 capitalize">
+                        {r.action}
+                      </p>
+                      {r.catatan && (
+                        <p className="text-xs mt-1 text-foreground bg-background rounded px-2 py-1 border">
+                          {r.catatan}
+                        </p>
+                      )}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
-            </>
+            </Section>
           )}
 
-          {/* Review action */}
+          {/* Form Review */}
           {canReview && (
-            <>
-              <Separator />
-              <div className="space-y-3">
-                <p className="text-sm font-medium">Review Planning</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Aksi</Label>
-                    <Select
-                      value={reviewAction}
-                      onValueChange={setReviewAction}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Pilih aksi" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="approve">✅ Setujui</SelectItem>
-                        <SelectItem value="revision">
-                          🔄 Minta Revisi
-                        </SelectItem>
-                        <SelectItem value="reject">❌ Tolak</SelectItem>
-                      </SelectContent>
-                    </Select>
+            <Section title="Berikan Review">
+              <div className="rounded-lg border p-4 space-y-3 bg-muted/20">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">
+                    Keputusan <span className="text-destructive">*</span>
+                  </Label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      {
+                        value: "approve",
+                        label: "✅ Setujui",
+                        className:
+                          "border-green-200 hover:bg-green-50 data-[active=true]:bg-green-100 data-[active=true]:border-green-400 data-[active=true]:text-green-700",
+                      },
+                      {
+                        value: "revision",
+                        label: "🔄 Revisi",
+                        className:
+                          "border-amber-200 hover:bg-amber-50 data-[active=true]:bg-amber-100 data-[active=true]:border-amber-400 data-[active=true]:text-amber-700",
+                      },
+                      {
+                        value: "reject",
+                        label: "❌ Tolak",
+                        className:
+                          "border-red-200 hover:bg-red-50 data-[active=true]:bg-red-100 data-[active=true]:border-red-400 data-[active=true]:text-red-700",
+                      },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        data-active={reviewAction === opt.value}
+                        onClick={() => setReviewAction(opt.value)}
+                        className={`text-xs font-medium py-2 px-3 rounded-lg border transition-colors ${opt.className}`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Catatan (opsional)</Label>
-                    <Input
-                      placeholder="Catatan untuk satker..."
-                      value={reviewCatatan}
-                      onChange={(e) => setReviewCatatan(e.target.value)}
-                    />
-                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Catatan untuk SATKER</Label>
+                  <Input
+                    placeholder="Isi catatan jika diperlukan..."
+                    value={reviewCatatan}
+                    onChange={(e) => setReviewCatatan(e.target.value)}
+                    className="text-xs"
+                  />
                 </div>
                 <Button
                   onClick={handleReview}
                   disabled={!reviewAction || submitting}
                   className="w-full"
+                  size="sm"
                 >
                   {submitting && (
-                    <Loader2 size={14} className="mr-2 animate-spin" />
+                    <Loader2 size={13} className="mr-2 animate-spin" />
                   )}
                   Kirim Review
                 </Button>
               </div>
-            </>
+            </Section>
           )}
         </div>
       </DialogContent>

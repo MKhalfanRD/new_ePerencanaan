@@ -1,10 +1,15 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Naikkan limit body parser — diperlukan untuk payload besar (import Excel, resolusi massal)
+  app.use(json({ limit: '20mb' }));
+  app.use(urlencoded({ extended: true, limit: '20mb' }));
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -23,7 +28,7 @@ async function bootstrap() {
     .setTitle('ePerencanaan API')
     .setDescription('Dokumentasi REST API sistem e-Perencanaan')
     .setVersion('1.0')
-    .addBearerAuth() // tanpa nama custom, pakai default
+    .addBearerAuth()
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

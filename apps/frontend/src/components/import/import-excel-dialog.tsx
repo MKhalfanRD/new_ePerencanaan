@@ -16,6 +16,7 @@ import {
   Copy,
   RefreshCw,
   SkipForward,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
@@ -29,6 +30,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -232,6 +234,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
     Record<string, PlanningAction>
   >({});
   const [duplicatePage, setDuplicatePage] = useState(1);
+  const [duplicateSearch, setDuplicateSearch] = useState("");
   const [committing, setCommitting] = useState(false);
   const [result, setResult] = useState<CommitResult | null>(null);
   const [showParseErrors, setShowParseErrors] = useState(false);
@@ -246,6 +249,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
     setResolutions({});
     setPlanningActions({});
     setDuplicatePage(1);
+    setDuplicateSearch("");
     setResult(null);
     setShowParseErrors(false);
     setShowCommitErrors(false);
@@ -362,15 +366,24 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
     setPlanningActions(newActions);
   };
 
-  const duplicateTotalPages = preview
-    ? Math.ceil(preview.existingPlannings.length / duplicatePerPage)
-    : 0;
-  const duplicatePageData = preview
-    ? preview.existingPlannings.slice(
-        (duplicatePage - 1) * duplicatePerPage,
-        duplicatePage * duplicatePerPage,
-      )
-    : [];
+  const filteredExistingPlannings = useMemo(() => {
+    if (!preview) return [];
+    if (!duplicateSearch.trim()) return preview.existingPlannings;
+    const q = duplicateSearch.toLowerCase();
+    return preview.existingPlannings.filter(
+      (ep) =>
+        ep.namaProyek.toLowerCase().includes(q) ||
+        ep.balaiName.toLowerCase().includes(q),
+    );
+  }, [preview, duplicateSearch]);
+
+  const duplicateTotalPages = Math.ceil(
+    filteredExistingPlannings.length / duplicatePerPage,
+  );
+  const duplicatePageData = filteredExistingPlannings.slice(
+    (duplicatePage - 1) * duplicatePerPage,
+    duplicatePage * duplicatePerPage,
+  );
 
   const replaceCount = Object.values(planningActions).filter(
     (a) => a === "replace",
@@ -632,12 +645,9 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
           {/* STEP: Duplicate planning resolution */}
           {step === "duplicate" && preview && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  {preview.existingPlannings.length} planning sudah ada di
-                  sistem —
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground shrink-0">
                   <span className="text-amber-600 font-medium">
-                    {" "}
                     {skipCount} pakai lama
                   </span>
                   ,
@@ -646,7 +656,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                     {replaceCount} diganti baru
                   </span>
                 </p>
-                <div className="flex gap-2">
+                <div className="flex gap-2 shrink-0">
                   <Button
                     size="sm"
                     variant="outline"
@@ -666,87 +676,131 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                 </div>
               </div>
 
+              {/* Search box */}
+              <div className="relative">
+                <Search
+                  size={14}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                />
+                <Input
+                  placeholder="Cari nama proyek atau balai..."
+                  value={duplicateSearch}
+                  onChange={(e) => {
+                    setDuplicateSearch(e.target.value);
+                    setDuplicatePage(1);
+                  }}
+                  className="pl-9 h-9 text-sm"
+                />
+                {duplicateSearch && (
+                  <button
+                    onClick={() => {
+                      setDuplicateSearch("");
+                      setDuplicatePage(1);
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {duplicateSearch && (
+                <p className="text-xs text-muted-foreground">
+                  {filteredExistingPlannings.length} hasil ditemukan untuk
+                  &quot;{duplicateSearch}&quot;
+                </p>
+              )}
+
               <div className="space-y-2.5">
-                {duplicatePageData.map((ep) => {
-                  const action = planningActions[ep.groupKey] ?? "skip";
-                  return (
-                    <div
-                      key={ep.groupKey}
-                      className="rounded-lg border p-3 space-y-2"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            {ep.namaProyek}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {ep.balaiName}
-                          </p>
+                {duplicatePageData.length === 0 ? (
+                  <div className="text-center py-10 text-muted-foreground">
+                    <Search size={28} className="mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">
+                      Tidak ada planning yang cocok dengan pencarian
+                    </p>
+                  </div>
+                ) : (
+                  duplicatePageData.map((ep) => {
+                    const action = planningActions[ep.groupKey] ?? "skip";
+                    return (
+                      <div
+                        key={ep.groupKey}
+                        className="rounded-lg border p-3 space-y-2"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {ep.namaProyek}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {ep.balaiName}
+                            </p>
+                          </div>
+                          <Badge
+                            variant={
+                              action === "replace" ? "default" : "secondary"
+                            }
+                            className="text-xs shrink-0"
+                          >
+                            <Copy size={10} className="mr-1" /> Duplikat
+                          </Badge>
                         </div>
-                        <Badge
-                          variant={
-                            action === "replace" ? "default" : "secondary"
-                          }
-                          className="text-xs shrink-0"
-                        >
-                          <Copy size={10} className="mr-1" /> Duplikat
-                        </Badge>
-                      </div>
 
-                      <div className="grid grid-cols-2 gap-3 text-xs">
-                        <div className="rounded bg-muted/40 p-2">
-                          <p className="text-muted-foreground">Data Lama</p>
-                          <p className="font-medium">
-                            {ep.existingAlokasiCount} alokasi · Rp{" "}
-                            {formatRupiah(ep.existingTotal)}
-                          </p>
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div className="rounded bg-muted/40 p-2">
+                            <p className="text-muted-foreground">Data Lama</p>
+                            <p className="font-medium">
+                              {ep.existingAlokasiCount} alokasi · Rp{" "}
+                              {formatRupiah(ep.existingTotal)}
+                            </p>
+                          </div>
+                          <div className="rounded bg-blue-50 p-2">
+                            <p className="text-muted-foreground">
+                              Data Baru (Excel)
+                            </p>
+                            <p className="font-medium">
+                              {ep.newAlokasiCount} alokasi · Rp{" "}
+                              {formatRupiah(ep.newTotal)}
+                            </p>
+                          </div>
                         </div>
-                        <div className="rounded bg-blue-50 p-2">
-                          <p className="text-muted-foreground">
-                            Data Baru (Excel)
-                          </p>
-                          <p className="font-medium">
-                            {ep.newAlokasiCount} alokasi · Rp{" "}
-                            {formatRupiah(ep.newTotal)}
-                          </p>
-                        </div>
-                      </div>
 
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() =>
-                            setPlanningActions((p) => ({
-                              ...p,
-                              [ep.groupKey]: "skip",
-                            }))
-                          }
-                          className={`text-xs font-medium py-2 rounded-lg border transition-colors ${
-                            action === "skip"
-                              ? "bg-amber-100 border-amber-400 text-amber-700"
-                              : "border-border hover:bg-muted/40"
-                          }`}
-                        >
-                          Pakai Data Lama
-                        </button>
-                        <button
-                          onClick={() =>
-                            setPlanningActions((p) => ({
-                              ...p,
-                              [ep.groupKey]: "replace",
-                            }))
-                          }
-                          className={`text-xs font-medium py-2 rounded-lg border transition-colors ${
-                            action === "replace"
-                              ? "bg-blue-100 border-blue-400 text-blue-700"
-                              : "border-border hover:bg-muted/40"
-                          }`}
-                        >
-                          Ganti dengan Baru
-                        </button>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() =>
+                              setPlanningActions((p) => ({
+                                ...p,
+                                [ep.groupKey]: "skip",
+                              }))
+                            }
+                            className={`text-xs font-medium py-2 rounded-lg border transition-colors ${
+                              action === "skip"
+                                ? "bg-amber-100 border-amber-400 text-amber-700"
+                                : "border-border hover:bg-muted/40"
+                            }`}
+                          >
+                            Pakai Data Lama
+                          </button>
+                          <button
+                            onClick={() =>
+                              setPlanningActions((p) => ({
+                                ...p,
+                                [ep.groupKey]: "replace",
+                              }))
+                            }
+                            className={`text-xs font-medium py-2 rounded-lg border transition-colors ${
+                              action === "replace"
+                                ? "bg-blue-100 border-blue-400 text-blue-700"
+                                : "border-border hover:bg-muted/40"
+                            }`}
+                          >
+                            Ganti dengan Baru
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
 
               {duplicateTotalPages > 1 && (

@@ -4,7 +4,15 @@ import { useEffect, useState } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Plus, Trash2, ChevronDown } from "lucide-react";
+import {
+  Loader2,
+  Plus,
+  Trash2,
+  MapPin,
+  FileCheck,
+  Wallet,
+  ScrollText,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -24,7 +32,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import api from "@/lib/api";
 import { Balai, Periode, RO, Planning } from "@/types";
@@ -88,23 +95,27 @@ interface Props {
   editData?: Planning | null;
 }
 
-// Section wrapper
-function Section({
+// === Section header dengan icon, lebih lega ===
+function SectionHeader({
+  icon: Icon,
   title,
-  children,
+  description,
 }: {
+  icon: any;
   title: string;
-  children: React.ReactNode;
+  description?: string;
 }) {
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground whitespace-nowrap">
-          {title}
-        </p>
-        <div className="flex-1 h-px bg-border" />
+    <div className="flex items-center gap-3 pb-1">
+      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+        <Icon size={16} className="text-primary" />
       </div>
-      {children}
+      <div>
+        <p className="text-sm font-semibold">{title}</p>
+        {description && (
+          <p className="text-xs text-muted-foreground">{description}</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -221,12 +232,6 @@ export function PlanningFormDialog({
     }
   };
 
-  const dokumenStatusColor = (status: string) => {
-    if (status === "SUDAH_ADA") return "default";
-    if (status === "BELUM_ADA") return "destructive";
-    return "secondary";
-  };
-
   return (
     <Dialog
       open={open}
@@ -234,121 +239,123 @@ export function PlanningFormDialog({
         if (!isOpen) onClose();
       }}
     >
-      {" "}
       <DialogContent
-        className="max-w-2xl max-h-[88vh] flex flex-col p-0 gap-0 overflow-hidden"
+        className="!max-w-4xl !w-[92vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden"
         onInteractOutside={(e) => e.preventDefault()}
       >
-        {" "}
         {/* Header */}
-        <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-          <DialogTitle className="text-lg">
+        <DialogHeader className="px-8 pt-7 pb-5 border-b shrink-0">
+          <DialogTitle className="text-xl">
             {isEdit ? "Edit Planning" : "Buat Planning Baru"}
           </DialogTitle>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Lengkapi informasi proyek di bawah ini
+          <p className="text-sm text-muted-foreground mt-1">
+            Lengkapi informasi proyek perencanaan anggaran di bawah ini
           </p>
         </DialogHeader>
+
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+        <div className="flex-1 overflow-y-auto px-8 py-7 space-y-9">
           {loadingMaster ? (
-            <div className="flex items-center justify-center py-16">
+            <div className="flex items-center justify-center py-20">
               <Loader2
                 className="animate-spin text-muted-foreground"
-                size={24}
+                size={28}
               />
               <span className="ml-3 text-sm text-muted-foreground">
-                Memuat data...
+                Memuat data referensi...
               </span>
             </div>
           ) : (
             <>
               {/* === IDENTITAS PROYEK === */}
-              <Section title="Identitas Proyek">
-                {/* Balai full width */}
-                <div className="space-y-1.5">
-                  <Label>
-                    Balai <span className="text-destructive">*</span>
-                  </Label>
-                  <Select
-                    value={watch("balaiId")?.toString()}
-                    onValueChange={(v) => setValue("balaiId", Number(v))}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Pilih balai" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {balaiList.map((b) => (
-                        <SelectItem key={b.id} value={b.id.toString()}>
-                          <span className="font-medium">{b.shortName}</span>
-                          <span className="text-muted-foreground ml-2">
-                            — {b.name}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {errors.balaiId && (
-                    <p className="text-destructive text-xs">
-                      {errors.balaiId.message}
-                    </p>
-                  )}
-                </div>
+              <div className="space-y-5">
+                <SectionHeader
+                  icon={MapPin}
+                  title="Identitas Proyek"
+                  description="Informasi dasar mengenai proyek dan unit pelaksana"
+                />
 
-                {/* Periode full width */}
-                <div className="space-y-1.5">
-                  <Label>
-                    Periode <span className="text-destructive">*</span>
-                  </Label>
-                  <Select
-                    value={watch("periodeId")?.toString()}
-                    onValueChange={(v) => setValue("periodeId", Number(v))}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Pilih periode" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {periodeList.map((p) => (
-                        <SelectItem key={p.id} value={p.id.toString()}>
-                          <span className="font-medium">{p.label}</span>
-                          {p.isActive && (
-                            <Badge
-                              variant="default"
-                              className="ml-2 text-xs py-0"
-                            >
-                              Aktif
-                            </Badge>
-                          )}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {errors.periodeId && (
-                    <p className="text-destructive text-xs">
-                      {errors.periodeId.message}
-                    </p>
-                  )}
-                </div>
+                <div className="grid grid-cols-2 gap-5 pl-12">
+                  <div className="space-y-2">
+                    <Label>
+                      Balai <span className="text-destructive">*</span>
+                    </Label>
+                    <Select
+                      value={watch("balaiId")?.toString()}
+                      onValueChange={(v) => setValue("balaiId", Number(v))}
+                    >
+                      <SelectTrigger className="w-full h-10">
+                        <SelectValue placeholder="Pilih balai pelaksana" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {balaiList.map((b) => (
+                          <SelectItem key={b.id} value={b.id.toString()}>
+                            <span className="font-medium">{b.shortName}</span>
+                            <span className="text-muted-foreground ml-2">
+                              — {b.name}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {errors.balaiId && (
+                      <p className="text-destructive text-xs">
+                        {errors.balaiId.message}
+                      </p>
+                    )}
+                  </div>
 
-                {/* Nama proyek */}
-                <div className="space-y-1.5">
-                  <Label>
-                    Nama Proyek <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    placeholder="Contoh: Pembangunan Sumur Air Tanah di Kota Palangkaraya"
-                    {...register("projectName")}
-                  />
-                  {errors.projectName && (
-                    <p className="text-destructive text-xs">
-                      {errors.projectName.message}
-                    </p>
-                  )}
-                </div>
+                  <div className="space-y-2">
+                    <Label>
+                      Periode <span className="text-destructive">*</span>
+                    </Label>
+                    <Select
+                      value={watch("periodeId")?.toString()}
+                      onValueChange={(v) => setValue("periodeId", Number(v))}
+                    >
+                      <SelectTrigger className="w-full h-10">
+                        <SelectValue placeholder="Pilih periode anggaran" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {periodeList.map((p) => (
+                          <SelectItem key={p.id} value={p.id.toString()}>
+                            <span className="font-medium">{p.label}</span>
+                            {p.isActive && (
+                              <Badge
+                                variant="default"
+                                className="ml-2 text-xs py-0"
+                              >
+                                Aktif
+                              </Badge>
+                            )}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {errors.periodeId && (
+                      <p className="text-destructive text-xs">
+                        {errors.periodeId.message}
+                      </p>
+                    )}
+                  </div>
 
-                {/* Masa pelaksanaan + kewenangan */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
+                  <div className="col-span-2 space-y-2">
+                    <Label>
+                      Nama Proyek <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      className="h-10"
+                      placeholder="Contoh: Pembangunan Sumur Air Tanah di Kota Palangkaraya"
+                      {...register("projectName")}
+                    />
+                    {errors.projectName && (
+                      <p className="text-destructive text-xs">
+                        {errors.projectName.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
                     <Label>
                       Masa Pelaksanaan{" "}
                       <span className="text-destructive">*</span>
@@ -359,7 +366,7 @@ export function PlanningFormDialog({
                         setValue("masaPelaksanaan", v as any)
                       }
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="h-10">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -368,13 +375,13 @@ export function PlanningFormDialog({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label>Kewenangan</Label>
                     <Select
                       value={watch("kewenangan")}
                       onValueChange={(v) => setValue("kewenangan", v as any)}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="h-10">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -384,19 +391,25 @@ export function PlanningFormDialog({
                     </Select>
                   </div>
                 </div>
-              </Section>
+              </div>
 
               {/* === KESESUAIAN PROYEK === */}
-              <Section title="Kesesuaian Proyek">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
+              <div className="space-y-5">
+                <SectionHeader
+                  icon={FileCheck}
+                  title="Kesesuaian Proyek"
+                  description="Keterkaitan proyek dengan rencana tata ruang dan pengelolaan SDA"
+                />
+
+                <div className="grid grid-cols-2 gap-5 pl-12">
+                  <div className="space-y-2">
                     <Label>Sesuai RTRW/RDTR</Label>
                     <Select
                       value={watch("sesuaiRTRW") || ""}
                       onValueChange={(v) => setValue("sesuaiRTRW", v)}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Pilih" />
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Pilih status" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Sesuai">Sesuai</SelectItem>
@@ -409,24 +422,23 @@ export function PlanningFormDialog({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label>No. Perda RTRW</Label>
                     <Input
+                      className="h-10"
                       placeholder="Perda No. ... Tahun ..."
                       {...register("nomorPerdaRTRW")}
                     />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label>Sesuai Pola/Rencana SDA</Label>
                     <Select
                       value={watch("sesuaiPolaSDA") || ""}
                       onValueChange={(v) => setValue("sesuaiPolaSDA", v)}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Pilih" />
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Pilih status" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Sesuai">Sesuai</SelectItem>
@@ -439,24 +451,24 @@ export function PlanningFormDialog({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label>No. Kepmen PUPR</Label>
                     <Input
+                      className="h-10"
                       placeholder="Kepmen PUPR no. ..."
                       {...register("nomorKepmenPUPR")}
                     />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label>Sesuai Masterplan</Label>
                     <Input
+                      className="h-10"
                       placeholder="Masterplan ..."
                       {...register("sesuaiMasterplan")}
                     />
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label>Kebutuhan Tanah</Label>
                     <Select
                       value={watch("kebutuhanTanah") ? "ya" : "tidak"}
@@ -464,7 +476,7 @@ export function PlanningFormDialog({
                         setValue("kebutuhanTanah", v === "ya")
                       }
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="h-10">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -474,17 +486,23 @@ export function PlanningFormDialog({
                     </Select>
                   </div>
                 </div>
-              </Section>
+              </div>
 
               {/* === KRITERIA DOKUMEN === */}
-              <Section title="Kriteria Dokumen">
-                <div className="rounded-lg border overflow-hidden">
+              <div className="space-y-5">
+                <SectionHeader
+                  icon={ScrollText}
+                  title="Kriteria Dokumen"
+                  description="Status kelengkapan dokumen pendukung proyek"
+                />
+
+                <div className="pl-12 space-y-2.5">
                   {KRITERIA_JENIS.map((jenis, i) => {
                     const status = watch(`kriteriaDokumen.${i}.status`);
                     return (
                       <div
                         key={jenis}
-                        className="flex items-center gap-3 px-4 py-3 border-b last:border-0 hover:bg-muted/30 transition-colors"
+                        className="flex items-center gap-4 px-4 py-3 rounded-xl border bg-card hover:bg-accent/30 transition-colors"
                       >
                         <span className="text-sm flex-1 min-w-0">{jenis}</span>
                         <Select
@@ -493,7 +511,7 @@ export function PlanningFormDialog({
                             setValue(`kriteriaDokumen.${i}.status`, v as any)
                           }
                         >
-                          <SelectTrigger className="w-32 h-8 text-xs">
+                          <SelectTrigger className="w-36 h-9 text-xs shrink-0">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -508,7 +526,7 @@ export function PlanningFormDialog({
                           <Input
                             type="number"
                             placeholder="Tahun"
-                            className="w-24 h-8 text-xs"
+                            className="w-24 h-9 text-xs shrink-0"
                             {...register(`kriteriaDokumen.${i}.tahun`, {
                               valueAsNumber: true,
                             })}
@@ -518,19 +536,20 @@ export function PlanningFormDialog({
                     );
                   })}
                 </div>
-              </Section>
+              </div>
 
               {/* === ALOKASI === */}
               {!isEdit && (
-                <Section title="Alokasi Anggaran">
+                <div className="space-y-5">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs text-muted-foreground">
-                      {alokasiFields.length} alokasi ditambahkan
-                    </p>
+                    <SectionHeader
+                      icon={Wallet}
+                      title="Alokasi Anggaran"
+                      description="Rincian anggaran per tahun dan sumber dana"
+                    />
                     <Button
                       type="button"
                       variant="outline"
-                      size="sm"
                       onClick={() =>
                         appendAlokasi({
                           roId: "",
@@ -544,180 +563,189 @@ export function PlanningFormDialog({
                         })
                       }
                     >
-                      <Plus size={14} className="mr-1.5" /> Tambah Alokasi
+                      <Plus size={15} className="mr-1.5" /> Tambah Alokasi
                     </Button>
                   </div>
 
-                  {alokasiFields.length === 0 ? (
-                    <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-                      Belum ada alokasi. Klik tombol di atas untuk menambahkan.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {alokasiFields.map((field, i) => (
-                        <div
-                          key={field.id}
-                          className="rounded-lg border p-4 space-y-3 bg-muted/20"
-                        >
-                          {/* Header alokasi */}
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                              Alokasi {i + 1}
-                            </span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                              onClick={() => removeAlokasi(i)}
-                            >
-                              <Trash2 size={13} />
-                            </Button>
-                          </div>
-
-                          {/* RO full width */}
-                          <div className="space-y-1.5">
-                            <Label className="text-xs">
-                              RO (Rincian Output){" "}
-                              <span className="text-destructive">*</span>
-                            </Label>
-                            <Select
-                              value={watch(`alokasi.${i}.roId`)}
-                              onValueChange={(v) =>
-                                setValue(`alokasi.${i}.roId`, v)
-                              }
-                            >
-                              <SelectTrigger className="w-full text-xs">
-                                <SelectValue placeholder="Pilih RO" />
-                              </SelectTrigger>
-                              <SelectContent className="max-w-lg">
-                                {roList.map((r) => (
-                                  <SelectItem key={r.id} value={r.id}>
-                                    <span className="font-medium">
-                                      {r.kro.kegiatan.program.code} ·{" "}
-                                      {r.kro.code} · {r.code}
-                                    </span>
-                                    <span className="text-muted-foreground ml-2 text-xs">
-                                      — {r.name}
-                                    </span>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          {/* Tahun + Status */}
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1.5">
-                              <Label className="text-xs">Tahun</Label>
-                              <Input
-                                type="number"
-                                className="text-xs"
-                                {...register(`alokasi.${i}.tahun`, {
-                                  valueAsNumber: true,
-                                })}
-                              />
+                  <div className="pl-12">
+                    {alokasiFields.length === 0 ? (
+                      <div className="rounded-xl border-2 border-dashed p-10 text-center text-muted-foreground text-sm">
+                        Belum ada alokasi anggaran ditambahkan.
+                        <br />
+                        <span className="text-xs">
+                          Klik &quot;Tambah Alokasi&quot; untuk mulai mengisi
+                          rincian anggaran.
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {alokasiFields.map((field, i) => (
+                          <div
+                            key={field.id}
+                            className="rounded-xl border bg-card p-5 space-y-4"
+                          >
+                            {/* Header */}
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                Alokasi #{i + 1}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-muted-foreground hover:text-destructive"
+                                onClick={() => removeAlokasi(i)}
+                              >
+                                <Trash2 size={13} className="mr-1.5" /> Hapus
+                              </Button>
                             </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-xs">Status</Label>
+
+                            {/* RO */}
+                            <div className="space-y-2">
+                              <Label className="text-xs">
+                                RO (Rincian Output){" "}
+                                <span className="text-destructive">*</span>
+                              </Label>
                               <Select
-                                value={watch(`alokasi.${i}.status`)}
+                                value={watch(`alokasi.${i}.roId`)}
                                 onValueChange={(v) =>
-                                  setValue(`alokasi.${i}.status`, v as any)
+                                  setValue(`alokasi.${i}.roId`, v)
                                 }
                               >
-                                <SelectTrigger className="text-xs">
-                                  <SelectValue />
+                                <SelectTrigger className="w-full h-9 text-xs">
+                                  <SelectValue placeholder="Pilih RO" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="RENCANA">
-                                    Rencana
-                                  </SelectItem>
-                                  <SelectItem value="REALISASI">
-                                    Realisasi
-                                  </SelectItem>
+                                  {roList.map((r) => (
+                                    <SelectItem key={r.id} value={r.id}>
+                                      <span className="font-medium">
+                                        {r.kro.kegiatan.program.code} ·{" "}
+                                        {r.kro.code} · {r.code}
+                                      </span>
+                                      <span className="text-muted-foreground ml-2 text-xs">
+                                        — {r.name}
+                                      </span>
+                                    </SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
                             </div>
-                          </div>
 
-                          {/* Sumber dana */}
-                          <div>
-                            <Label className="text-xs mb-2 block">
-                              Sumber Dana (Rp)
-                            </Label>
-                            <div className="grid grid-cols-5 gap-2">
-                              {(
-                                ["rm", "rmp", "pln", "sbsn", "kpbu"] as const
-                              ).map((f) => (
-                                <div key={f} className="space-y-1">
-                                  <p className="text-xs text-center text-muted-foreground uppercase font-medium">
-                                    {f}
-                                  </p>
+                            {/* Tahun + Status */}
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label className="text-xs">Tahun</Label>
+                                <Input
+                                  type="number"
+                                  className="h-9 text-xs"
+                                  {...register(`alokasi.${i}.tahun`, {
+                                    valueAsNumber: true,
+                                  })}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label className="text-xs">Status</Label>
+                                <Select
+                                  value={watch(`alokasi.${i}.status`)}
+                                  onValueChange={(v) =>
+                                    setValue(`alokasi.${i}.status`, v as any)
+                                  }
+                                >
+                                  <SelectTrigger className="h-9 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="RENCANA">
+                                      Rencana
+                                    </SelectItem>
+                                    <SelectItem value="REALISASI">
+                                      Realisasi
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+
+                            {/* Sumber dana */}
+                            <div className="space-y-2">
+                              <Label className="text-xs">
+                                Sumber Dana (Rp)
+                              </Label>
+                              <div className="grid grid-cols-5 gap-3">
+                                {(
+                                  ["rm", "rmp", "pln", "sbsn", "kpbu"] as const
+                                ).map((f) => (
+                                  <div key={f} className="space-y-1.5">
+                                    <p className="text-xs text-center text-muted-foreground uppercase font-medium">
+                                      {f}
+                                    </p>
+                                    <Input
+                                      type="number"
+                                      className="text-xs text-center h-9 px-2"
+                                      placeholder="0"
+                                      {...register(`alokasi.${i}.${f}`, {
+                                        valueAsNumber: true,
+                                      })}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Output & Outcome */}
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label className="text-xs">Output Target</Label>
+                                <div className="flex gap-2">
                                   <Input
                                     type="number"
-                                    className="text-xs text-center px-2"
+                                    className="h-9 text-xs"
                                     placeholder="0"
-                                    {...register(`alokasi.${i}.${f}`, {
+                                    {...register(`alokasi.${i}.outputTarget`, {
                                       valueAsNumber: true,
                                     })}
                                   />
+                                  <Input
+                                    className="h-9 text-xs w-24 shrink-0"
+                                    placeholder="Satuan"
+                                    {...register(`alokasi.${i}.outputUnit`)}
+                                  />
                                 </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Output & Outcome */}
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1.5">
-                              <Label className="text-xs">Output Target</Label>
-                              <div className="flex gap-1.5">
-                                <Input
-                                  type="number"
-                                  className="text-xs"
-                                  placeholder="0"
-                                  {...register(`alokasi.${i}.outputTarget`, {
-                                    valueAsNumber: true,
-                                  })}
-                                />
-                                <Input
-                                  className="text-xs w-20 shrink-0"
-                                  placeholder="Satuan"
-                                  {...register(`alokasi.${i}.outputUnit`)}
-                                />
                               </div>
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-xs">Outcome Target</Label>
-                              <div className="flex gap-1.5">
-                                <Input
-                                  type="number"
-                                  className="text-xs"
-                                  placeholder="0"
-                                  {...register(`alokasi.${i}.outcomeTarget`, {
-                                    valueAsNumber: true,
-                                  })}
-                                />
-                                <Input
-                                  className="text-xs w-20 shrink-0"
-                                  placeholder="Satuan"
-                                  {...register(`alokasi.${i}.outcomeUnit`)}
-                                />
+                              <div className="space-y-2">
+                                <Label className="text-xs">
+                                  Outcome Target
+                                </Label>
+                                <div className="flex gap-2">
+                                  <Input
+                                    type="number"
+                                    className="h-9 text-xs"
+                                    placeholder="0"
+                                    {...register(`alokasi.${i}.outcomeTarget`, {
+                                      valueAsNumber: true,
+                                    })}
+                                  />
+                                  <Input
+                                    className="h-9 text-xs w-24 shrink-0"
+                                    placeholder="Satuan"
+                                    {...register(`alokasi.${i}.outcomeUnit`)}
+                                  />
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Section>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </>
           )}
         </div>
-        {/* Footer sticky */}
-        <DialogFooter className="px-6 py-4 border-t shrink-0 bg-background rounded-b-lg">
-          {" "}
+
+        {/* Footer */}
+        <DialogFooter className="px-8 py-5 border-t shrink-0 bg-background">
           <Button type="button" variant="outline" onClick={onClose}>
             Batal
           </Button>

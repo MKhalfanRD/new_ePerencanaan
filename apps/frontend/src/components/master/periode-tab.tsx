@@ -143,7 +143,7 @@ export function PeriodeTab() {
 
       <Dialog open={showForm} onOpenChange={(v) => !v && setShowForm(false)}>
         <DialogContent
-          className="max-w-sm"
+          className="!max-w-md !w-[80vw]"
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader>
@@ -151,13 +151,14 @@ export function PeriodeTab() {
               {editData ? "Edit Periode" : "Tambah Periode"}
             </DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
                 <Label>
                   Tahun Mulai <span className="text-destructive">*</span>
                 </Label>
                 <Input
+                  className="h-10"
                   type="number"
                   placeholder="2025"
                   {...register("startYear", { valueAsNumber: true })}
@@ -166,11 +167,12 @@ export function PeriodeTab() {
                   <p className="text-destructive text-xs">Wajib diisi</p>
                 )}
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label>
                   Tahun Selesai <span className="text-destructive">*</span>
                 </Label>
                 <Input
+                  className="h-10"
                   type="number"
                   placeholder="2029"
                   {...register("endYear", { valueAsNumber: true })}
@@ -180,11 +182,15 @@ export function PeriodeTab() {
                 )}
               </div>
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label>Label</Label>
-              <Input placeholder="2025-2029" {...register("label")} />
+              <Input
+                className="h-10"
+                placeholder="2025-2029"
+                {...register("label")}
+              />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 pt-1">
               <input
                 type="checkbox"
                 id="isActive"
@@ -195,7 +201,7 @@ export function PeriodeTab() {
                 Jadikan periode aktif
               </Label>
             </div>
-            <DialogFooter className="pt-2">
+            <DialogFooter className="pt-3">
               <Button
                 type="button"
                 variant="outline"

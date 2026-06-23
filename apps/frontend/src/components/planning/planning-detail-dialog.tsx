@@ -8,12 +8,13 @@ import {
   XCircle,
   RotateCcw,
   Loader2,
-  MapPin,
   Calendar,
   Building2,
   FileText,
   ChevronRight,
   AlertTriangle,
+  FileDown,
+  FileSpreadsheet,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,21 +35,19 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import api from "@/lib/api";
-import { useAuthStore } from "@/store/auth";
-import { Planning } from "@/types";
-
-import { FileSpreadsheet, FileDown } from "lucide-react";
-import {
-  exportPlanningDetailToExcel,
-  exportPlanningDetailToPDF,
-} from "@/lib/export-utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import api from "@/lib/api";
+import { useAuthStore } from "@/store/auth";
+import { Planning } from "@/types";
+import {
+  exportPlanningDetailToExcel,
+  exportPlanningDetailToPDF,
+} from "@/lib/export-utils";
 
 const statusConfig = {
   DRAFT: {
@@ -93,34 +92,23 @@ const formatRupiah = (val: string | number) =>
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   return (
-    <div className="flex items-start gap-2 py-1.5">
-      <span className="text-xs text-muted-foreground w-36 shrink-0 mt-0.5">
+    <div className="flex items-start gap-3 py-2">
+      <span className="text-xs text-muted-foreground w-40 shrink-0 mt-0.5">
         {label}
       </span>
-      <span className="text-xs font-medium flex-1">{value || "—"}</span>
+      <span className="text-sm font-medium flex-1">{value || "—"}</span>
     </div>
   );
 }
 
-function Section({
-  title,
-  icon: Icon,
-  children,
-}: {
-  title: string;
-  icon?: any;
-  children: React.ReactNode;
-}) {
+function SectionHeader({ icon: Icon, title }: { icon?: any; title: string }) {
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        {Icon && <Icon size={14} className="text-muted-foreground" />}
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          {title}
-        </p>
-        <div className="flex-1 h-px bg-border" />
-      </div>
-      {children}
+    <div className="flex items-center gap-2">
+      {Icon && <Icon size={14} className="text-muted-foreground" />}
+      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+        {title}
+      </p>
+      <div className="flex-1 h-px bg-border" />
     </div>
   );
 }
@@ -191,7 +179,6 @@ export function PlanningDetailDialog({
 
   const cfg = statusConfig[planning.status];
 
-  // Group alokasi by tahun
   const alokasiByTahun = planning.alokasi.reduce<
     Record<number, typeof planning.alokasi>
   >((acc, a) => {
@@ -203,17 +190,15 @@ export function PlanningDetailDialog({
   const totalRencana = planning.alokasi
     .filter((a) => a.status === "RENCANA")
     .reduce((s, a) => s + Number(a.total), 0);
-
   const totalRealisasi = planning.alokasi
     .filter((a) => a.status === "REALISASI")
     .reduce((s, a) => s + Number(a.total), 0);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+      <DialogContent className="!max-w-4xl !w-[92vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
         {/* Header */}
-        <div className="px-6 pt-5 pb-4 border-b shrink-0">
-          {/* Status badge */}
+        <div className="px-8 pt-6 pb-5 border-b shrink-0">
           <div className="flex items-center justify-between mb-3">
             <span
               className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${cfg.className}`}
@@ -241,7 +226,6 @@ export function PlanningDetailDialog({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-
               {canEdit && (
                 <Button
                   size="sm"
@@ -264,26 +248,21 @@ export function PlanningDetailDialog({
             </div>
           </div>
 
-          {/* Nama proyek */}
-          <h2 className="text-base font-semibold leading-snug">
+          <DialogTitle className="text-lg font-semibold leading-snug">
             {planning.projectName}
-          </h2>
+          </DialogTitle>
 
-          {/* Meta info */}
           <div className="flex items-center gap-4 mt-2">
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Building2 size={12} />
-              {planning.balai.name}
+              <Building2 size={12} /> {planning.balai.name}
             </span>
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Calendar size={12} />
-              {planning.periode.label}
+              <Calendar size={12} /> {planning.periode.label}
             </span>
           </div>
 
-          {/* Summary anggaran */}
           {totalRencana > 0 && (
-            <div className="flex items-center gap-4 mt-3 p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-4 mt-3 p-3 rounded-lg bg-muted/40 w-fit">
               <div>
                 <p className="text-xs text-muted-foreground">Total Rencana</p>
                 <p className="text-sm font-semibold">
@@ -307,11 +286,11 @@ export function PlanningDetailDialog({
           )}
         </div>
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {/* Banner status khusus */}
+        {/* Scrollable content — 2 kolom untuk manfaatkan lebar */}
+        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
+          {/* Banner status */}
           {planning.status === "REVISION" && planning.catatan && (
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
+            <div className="flex items-start gap-3 p-3.5 rounded-lg bg-amber-50 border border-amber-200">
               <AlertTriangle
                 size={16}
                 className="text-amber-600 shrink-0 mt-0.5"
@@ -324,9 +303,8 @@ export function PlanningDetailDialog({
               </div>
             </div>
           )}
-
           {planning.status === "REJECTED" && (
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-red-50 border border-red-200">
+            <div className="flex items-start gap-3 p-3.5 rounded-lg bg-red-50 border border-red-200">
               <XCircle size={16} className="text-red-600 shrink-0 mt-0.5" />
               <div>
                 <p className="text-xs font-semibold text-red-800 mb-0.5">
@@ -338,94 +316,132 @@ export function PlanningDetailDialog({
               </div>
             </div>
           )}
-
           {planning.status === "APPROVED" && (
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 border border-green-200">
+            <div className="flex items-start gap-3 p-3.5 rounded-lg bg-green-50 border border-green-200">
               <CheckCircle
                 size={16}
                 className="text-green-600 shrink-0 mt-0.5"
               />
-              <div>
-                <p className="text-xs font-semibold text-green-800">
-                  Planning Disetujui
-                </p>
-              </div>
+              <p className="text-xs font-semibold text-green-800">
+                Planning Disetujui
+              </p>
             </div>
           )}
 
-          {/* Info Proyek */}
-          <Section title="Informasi Proyek" icon={FileText}>
-            <div className="rounded-lg border divide-y divide-border overflow-hidden">
-              <InfoRow
-                label="Masa Pelaksanaan"
-                value={
-                  planning.masaPelaksanaan === "SINGLE_YEAR"
-                    ? "Single Year"
-                    : "Multi Year"
-                }
-              />
-              <InfoRow label="Kewenangan" value={planning.kewenangan} />
-              <InfoRow
-                label="Wilayah Sungai"
-                value={planning.wilayahSungai?.name}
-              />
-              <InfoRow
-                label="Kebutuhan Tanah"
-                value={planning.kebutuhanTanah ? "Ada" : "Tidak Ada"}
-              />
-              <InfoRow label="Sesuai RTRW" value={planning.sesuaiRTRW} />
-              <InfoRow label="No. Perda RTRW" value={planning.nomorPerdaRTRW} />
-              <InfoRow label="Sesuai Pola SDA" value={planning.sesuaiPolaSDA} />
-              <InfoRow
-                label="No. Kepmen PUPR"
-                value={planning.nomorKepmenPUPR}
-              />
-              <InfoRow
-                label="Sesuai Masterplan"
-                value={planning.sesuaiMasterplan}
-              />
-              <InfoRow
-                label="Dibuat oleh"
-                value={`${planning.createdBy.name} (${planning.createdBy.role.name})`}
-              />
-            </div>
-          </Section>
-
-          {/* Kriteria Dokumen */}
-          {planning.kriteriaDokumen.length > 0 && (
-            <Section title="Kriteria Dokumen" icon={FileText}>
+          {/* 2 kolom: Info Proyek + Kriteria Dokumen */}
+          <div className="grid grid-cols-2 gap-8">
+            <div className="space-y-2">
+              <SectionHeader title="Informasi Proyek" icon={FileText} />
               <div className="rounded-lg border divide-y divide-border overflow-hidden">
-                {planning.kriteriaDokumen.map((k) => {
-                  const dc = dokumenStatusConfig[k.status];
-                  return (
-                    <div
-                      key={k.id}
-                      className="flex items-center justify-between px-3 py-2"
-                    >
-                      <span className="text-xs text-muted-foreground">
-                        {k.jenis}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {k.tahun && (
-                          <span className="text-xs text-muted-foreground">
-                            {k.tahun}
-                          </span>
-                        )}
-                        <span className={`text-xs ${dc.className}`}>
-                          {dc.label}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
+                <InfoRow
+                  label="Masa Pelaksanaan"
+                  value={
+                    planning.masaPelaksanaan === "SINGLE_YEAR"
+                      ? "Single Year"
+                      : "Multi Year"
+                  }
+                />
+                <InfoRow label="Kewenangan" value={planning.kewenangan} />
+                <InfoRow
+                  label="Wilayah Sungai"
+                  value={planning.wilayahSungai?.name}
+                />
+                <InfoRow
+                  label="Kebutuhan Tanah"
+                  value={planning.kebutuhanTanah ? "Ada" : "Tidak Ada"}
+                />
+                <InfoRow label="Sesuai RTRW" value={planning.sesuaiRTRW} />
+                <InfoRow
+                  label="No. Perda RTRW"
+                  value={planning.nomorPerdaRTRW}
+                />
+                <InfoRow
+                  label="Sesuai Pola SDA"
+                  value={planning.sesuaiPolaSDA}
+                />
+                <InfoRow
+                  label="No. Kepmen PUPR"
+                  value={planning.nomorKepmenPUPR}
+                />
+                <InfoRow
+                  label="Dibuat oleh"
+                  value={`${planning.createdBy.name} (${planning.createdBy.role.name})`}
+                />
               </div>
-            </Section>
-          )}
+            </div>
 
-          {/* Alokasi */}
+            <div className="space-y-2">
+              <SectionHeader title="Kriteria Dokumen" icon={FileText} />
+              {planning.kriteriaDokumen.length > 0 ? (
+                <div className="rounded-lg border divide-y divide-border overflow-hidden">
+                  {planning.kriteriaDokumen.map((k) => {
+                    const dc = dokumenStatusConfig[k.status];
+                    return (
+                      <div
+                        key={k.id}
+                        className="flex items-center justify-between px-4 py-2.5"
+                      >
+                        <span className="text-xs text-muted-foreground">
+                          {k.jenis}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {k.tahun && (
+                            <span className="text-xs text-muted-foreground">
+                              {k.tahun}
+                            </span>
+                          )}
+                          <span className={`text-xs ${dc.className}`}>
+                            {dc.label}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground py-4 text-center border rounded-lg">
+                  Tidak ada data
+                </p>
+              )}
+
+              {planning.prioritas.length > 0 && (
+                <div className="pt-2">
+                  <SectionHeader title="Prioritas" />
+                  <div className="rounded-lg border divide-y divide-border overflow-hidden mt-2">
+                    {planning.prioritas.map((p) => {
+                      const aktif = [
+                        p.proyekPrioritas && "Proyek Prioritas",
+                        p.proyekRPIW && "RPIW",
+                        p.kegiatanBaru && "Kegiatan Baru",
+                        p.kegiatanWajib && "Kegiatan Wajib",
+                        p.proyekKonregFKS && "Konreg FKS",
+                        p.proyekMusrengbangnas && "Musrengbangnas",
+                      ].filter(Boolean);
+                      return (
+                        <div
+                          key={p.id}
+                          className="flex items-center justify-between px-4 py-2.5"
+                        >
+                          <span className="text-xs text-muted-foreground">
+                            Tahun {p.tahun}
+                          </span>
+                          <span className="text-xs font-medium text-right max-w-[60%]">
+                            {aktif.length > 0 ? aktif.join(", ") : "—"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Alokasi — full width karena tabel */}
           {Object.keys(alokasiByTahun).length > 0 && (
-            <Section title="Alokasi Anggaran" icon={Calendar}>
-              <div className="space-y-3">
+            <div className="space-y-3">
+              <SectionHeader title="Alokasi Anggaran" icon={Calendar} />
+              <div className="grid grid-cols-2 gap-4">
                 {Object.entries(alokasiByTahun)
                   .sort(([a], [b]) => Number(a) - Number(b))
                   .map(([tahun, alokasi]) => (
@@ -441,13 +457,10 @@ export function PlanningDetailDialog({
                                 Status
                               </th>
                               <th className="text-left px-3 py-2 font-medium">
-                                Nomenklatur
+                                RO
                               </th>
                               <th className="text-right px-3 py-2 font-medium">
                                 Total
-                              </th>
-                              <th className="text-right px-3 py-2 font-medium">
-                                Output
                               </th>
                             </tr>
                           </thead>
@@ -475,16 +488,10 @@ export function PlanningDetailDialog({
                                   </span>
                                 </td>
                                 <td className="px-3 py-2 text-muted-foreground">
-                                  {a.ro.kro.kegiatan.program.code} ·{" "}
-                                  {a.ro.kro.code} · {a.ro.code}
+                                  {a.ro.code}
                                 </td>
                                 <td className="px-3 py-2 text-right font-medium">
                                   {formatRupiah(a.total)}
-                                </td>
-                                <td className="px-3 py-2 text-right text-muted-foreground">
-                                  {a.outputTarget
-                                    ? `${a.outputTarget} ${a.outputUnit || ""}`
-                                    : "—"}
                                 </td>
                               </tr>
                             ))}
@@ -494,44 +501,14 @@ export function PlanningDetailDialog({
                     </div>
                   ))}
               </div>
-            </Section>
-          )}
-
-          {/* Prioritas */}
-          {planning.prioritas.length > 0 && (
-            <Section title="Prioritas">
-              <div className="rounded-lg border divide-y divide-border overflow-hidden">
-                {planning.prioritas.map((p) => {
-                  const aktif = [
-                    p.proyekPrioritas && "Proyek Prioritas",
-                    p.proyekRPIW && "RPIW",
-                    p.kegiatanBaru && "Kegiatan Baru",
-                    p.kegiatanWajib && "Kegiatan Wajib",
-                    p.proyekKonregFKS && "Konreg FKS",
-                    p.proyekMusrengbangnas && "Musrengbangnas",
-                  ].filter(Boolean);
-                  return (
-                    <div
-                      key={p.id}
-                      className="flex items-center justify-between px-3 py-2"
-                    >
-                      <span className="text-xs text-muted-foreground">
-                        Tahun {p.tahun}
-                      </span>
-                      <span className="text-xs font-medium">
-                        {aktif.length > 0 ? aktif.join(", ") : "—"}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </Section>
+            </div>
           )}
 
           {/* Histori Review */}
           {planning.reviews.length > 0 && (
-            <Section title="Histori Review">
-              <div className="space-y-2">
+            <div className="space-y-3">
+              <SectionHeader title="Histori Review" />
+              <div className="grid grid-cols-2 gap-3">
                 {planning.reviews.map((r) => (
                   <div
                     key={r.id}
@@ -575,18 +552,19 @@ export function PlanningDetailDialog({
                   </div>
                 ))}
               </div>
-            </Section>
+            </div>
           )}
 
           {/* Form Review */}
           {canReview && (
-            <Section title="Berikan Review">
-              <div className="rounded-lg border p-4 space-y-3 bg-muted/20">
-                <div className="space-y-1.5">
+            <div className="space-y-3">
+              <SectionHeader title="Berikan Review" />
+              <div className="rounded-lg border p-5 space-y-4 bg-muted/20">
+                <div className="space-y-2">
                   <Label className="text-xs">
                     Keputusan <span className="text-destructive">*</span>
                   </Label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 gap-3">
                     {[
                       {
                         value: "approve",
@@ -612,35 +590,33 @@ export function PlanningDetailDialog({
                         type="button"
                         data-active={reviewAction === opt.value}
                         onClick={() => setReviewAction(opt.value)}
-                        className={`text-xs font-medium py-2 px-3 rounded-lg border transition-colors ${opt.className}`}
+                        className={`text-sm font-medium py-2.5 px-3 rounded-lg border transition-colors ${opt.className}`}
                       >
                         {opt.label}
                       </button>
                     ))}
                   </div>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <Label className="text-xs">Catatan untuk SATKER</Label>
                   <Input
                     placeholder="Isi catatan jika diperlukan..."
                     value={reviewCatatan}
                     onChange={(e) => setReviewCatatan(e.target.value)}
-                    className="text-xs"
                   />
                 </div>
                 <Button
                   onClick={handleReview}
                   disabled={!reviewAction || submitting}
                   className="w-full"
-                  size="sm"
                 >
                   {submitting && (
-                    <Loader2 size={13} className="mr-2 animate-spin" />
+                    <Loader2 size={14} className="mr-2 animate-spin" />
                   )}
                   Kirim Review
                 </Button>
               </div>
-            </Section>
+            </div>
           )}
         </div>
       </DialogContent>

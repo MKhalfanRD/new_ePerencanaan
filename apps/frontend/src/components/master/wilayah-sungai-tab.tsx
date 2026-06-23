@@ -101,7 +101,7 @@ export function WilayahSungaiTab() {
 
       <Dialog open={showForm} onOpenChange={(v) => !v && setShowForm(false)}>
         <DialogContent
-          className="max-w-md"
+          className="!max-w-lg !w-[80vw]"
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader>
@@ -109,17 +109,18 @@ export function WilayahSungaiTab() {
               {editData ? "Edit Wilayah Sungai" : "Tambah Wilayah Sungai"}
             </DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 py-2">
-            <div className="space-y-1.5">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
+            <div className="space-y-2">
               <Label>
                 Nama <span className="text-destructive">*</span>
               </Label>
               <Input
+                className="h-10"
                 placeholder="Nama Wilayah Sungai"
                 {...register("name", { required: true })}
               />
             </div>
-            <DialogFooter className="pt-2">
+            <DialogFooter className="pt-3">
               <Button
                 type="button"
                 variant="outline"

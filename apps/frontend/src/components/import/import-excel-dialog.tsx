@@ -400,10 +400,10 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
       }}
     >
       <DialogContent
-        className="max-w-2xl w-[90vw] max-h-[88vh] flex flex-col p-0 gap-0 overflow-hidden"
+        className="!max-w-3xl !w-[92vw] max-h-[88vh] flex flex-col p-0 gap-0 overflow-hidden"
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <DialogHeader className="px-7 pt-6 pb-4 border-b shrink-0">
+        <DialogHeader className="px-8 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet size={20} className="text-primary" />
             Import Planning dari Excel
@@ -418,7 +418,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
           </p>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-7 py-6">
+        <div className="flex-1 overflow-y-auto px-8 py-6">
           {/* STEP: Upload */}
           {step === "upload" && (
             <div className="space-y-4">
@@ -746,26 +746,28 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                           </Badge>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3 text-xs">
-                          <div className="rounded bg-muted/40 p-2">
-                            <p className="text-muted-foreground">Data Lama</p>
-                            <p className="font-medium">
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                          <div className="rounded-lg bg-muted/40 p-3">
+                            <p className="text-muted-foreground mb-1">
+                              Data Lama
+                            </p>
+                            <p className="font-semibold text-sm">
                               {ep.existingAlokasiCount} alokasi · Rp{" "}
                               {formatRupiah(ep.existingTotal)}
                             </p>
                           </div>
-                          <div className="rounded bg-blue-50 p-2">
-                            <p className="text-muted-foreground">
+                          <div className="rounded-lg bg-blue-50 p-3">
+                            <p className="text-muted-foreground mb-1">
                               Data Baru (Excel)
                             </p>
-                            <p className="font-medium">
+                            <p className="font-semibold text-sm">
                               {ep.newAlokasiCount} alokasi · Rp{" "}
                               {formatRupiah(ep.newTotal)}
                             </p>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-2 gap-3">
                           <button
                             onClick={() =>
                               setPlanningActions((p) => ({
@@ -773,7 +775,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                                 [ep.groupKey]: "skip",
                               }))
                             }
-                            className={`text-xs font-medium py-2 rounded-lg border transition-colors ${
+                            className={`text-sm font-medium py-2.5 rounded-lg border transition-colors ${
                               action === "skip"
                                 ? "bg-amber-100 border-amber-400 text-amber-700"
                                 : "border-border hover:bg-muted/40"
@@ -788,7 +790,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                                 [ep.groupKey]: "replace",
                               }))
                             }
-                            className={`text-xs font-medium py-2 rounded-lg border transition-colors ${
+                            className={`text-sm font-medium py-2.5 rounded-lg border transition-colors ${
                               action === "replace"
                                 ? "bg-blue-100 border-blue-400 text-blue-700"
                                 : "border-border hover:bg-muted/40"
@@ -928,7 +930,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
           )}
         </div>
 
-        <DialogFooter className="px-7 py-5 border-t shrink-0 bg-background">
+        <DialogFooter className="px-8 py-5 border-t shrink-0 bg-background">
           {step === "upload" && (
             <>
               <Button variant="outline" onClick={handleClose}>

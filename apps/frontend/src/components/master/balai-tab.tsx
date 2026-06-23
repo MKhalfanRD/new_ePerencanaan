@@ -129,7 +129,7 @@ export function BalaiTab() {
 
       <Dialog open={showForm} onOpenChange={(v) => !v && setShowForm(false)}>
         <DialogContent
-          className="max-w-md"
+          className="!max-w-xl !w-[85vw]"
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader>
@@ -137,24 +137,36 @@ export function BalaiTab() {
               {editData ? "Edit Balai" : "Tambah Balai"}
             </DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 py-2">
-            {!editData && (
-              <div className="space-y-1.5">
-                <Label>
-                  ID Balai <span className="text-destructive">*</span>
-                </Label>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              {!editData && (
+                <div className="space-y-2">
+                  <Label>
+                    ID Balai <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    className="h-10"
+                    type="number"
+                    placeholder="1"
+                    {...register("id", { valueAsNumber: true })}
+                  />
+                </div>
+              )}
+              <div className={`space-y-2 ${editData ? "col-span-2" : ""}`}>
+                <Label>Kode</Label>
                 <Input
-                  type="number"
-                  placeholder="1"
-                  {...register("id", { valueAsNumber: true })}
+                  className="h-10"
+                  placeholder="BS1"
+                  {...register("code")}
                 />
               </div>
-            )}
-            <div className="space-y-1.5">
+            </div>
+            <div className="space-y-2">
               <Label>
                 Nama Balai <span className="text-destructive">*</span>
               </Label>
               <Input
+                className="h-10"
                 placeholder="Balai Wilayah Sungai..."
                 {...register("name")}
               />
@@ -164,29 +176,29 @@ export function BalaiTab() {
                 </p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Singkatan</Label>
-                <Input placeholder="BWSS1" {...register("shortName")} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Kode</Label>
-                <Input placeholder="BS1" {...register("code")} />
-              </div>
+            <div className="space-y-2">
+              <Label>Singkatan</Label>
+              <Input
+                className="h-10"
+                placeholder="BWSS1"
+                {...register("shortName")}
+              />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
                 <Label>Latitude</Label>
                 <Input
+                  className="h-10"
                   type="number"
                   step="any"
                   placeholder="-6.123"
                   {...register("latitude", { valueAsNumber: true })}
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label>Longitude</Label>
                 <Input
+                  className="h-10"
                   type="number"
                   step="any"
                   placeholder="106.123"
@@ -194,7 +206,7 @@ export function BalaiTab() {
                 />
               </div>
             </div>
-            <DialogFooter className="pt-2">
+            <DialogFooter className="pt-3">
               <Button
                 type="button"
                 variant="outline"

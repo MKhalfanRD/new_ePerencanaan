@@ -200,7 +200,7 @@ export function NomenklaturTab() {
 
       <Dialog open={showForm} onOpenChange={(v) => !v && setShowForm(false)}>
         <DialogContent
-          className="max-w-md"
+          className="!max-w-xl !w-[85vw]"
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader>
@@ -208,36 +208,42 @@ export function NomenklaturTab() {
               {editData ? `Edit ${activeSubTab}` : `Tambah ${activeSubTab}`}
             </DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
                 <Label>
                   ID <span className="text-destructive">*</span>
                 </Label>
                 <Input
+                  className="h-10"
                   placeholder="Contoh: FC, 7694, CBG"
                   {...register("id")}
                   disabled={!!editData}
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label>
                   Kode <span className="text-destructive">*</span>
                 </Label>
-                <Input placeholder="Kode" {...register("code")} />
+                <Input
+                  className="h-10"
+                  placeholder="Kode"
+                  {...register("code")}
+                />
               </div>
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label>
                 Nama <span className="text-destructive">*</span>
               </Label>
               <Input
+                className="h-10"
                 placeholder={`Nama ${activeSubTab}`}
                 {...register("name")}
               />
             </div>
             {activeSubTab === "Kegiatan" && (
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label>
                   Program <span className="text-destructive">*</span>
                 </Label>
@@ -245,7 +251,7 @@ export function NomenklaturTab() {
                   value={watch("programId")}
                   onValueChange={(v) => setValue("programId", v)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-10">
                     <SelectValue placeholder="Pilih Program" />
                   </SelectTrigger>
                   <SelectContent>
@@ -259,7 +265,7 @@ export function NomenklaturTab() {
               </div>
             )}
             {activeSubTab === "KRO" && (
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label>
                   Kegiatan <span className="text-destructive">*</span>
                 </Label>
@@ -267,7 +273,7 @@ export function NomenklaturTab() {
                   value={watch("kegiatanId")}
                   onValueChange={(v) => setValue("kegiatanId", v)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-10">
                     <SelectValue placeholder="Pilih Kegiatan" />
                   </SelectTrigger>
                   <SelectContent>
@@ -281,7 +287,7 @@ export function NomenklaturTab() {
               </div>
             )}
             {activeSubTab === "RO" && (
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label>
                   KRO <span className="text-destructive">*</span>
                 </Label>
@@ -289,7 +295,7 @@ export function NomenklaturTab() {
                   value={watch("kroId")}
                   onValueChange={(v) => setValue("kroId", v)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-10">
                     <SelectValue placeholder="Pilih KRO" />
                   </SelectTrigger>
                   <SelectContent>
@@ -302,7 +308,7 @@ export function NomenklaturTab() {
                 </Select>
               </div>
             )}
-            <DialogFooter className="pt-2">
+            <DialogFooter className="pt-3">
               <Button
                 type="button"
                 variant="outline"

@@ -15,6 +15,9 @@ import {
   AlertTriangle,
   FileDown,
   FileSpreadsheet,
+  Plus,
+  Trash2,
+  History,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,13 +44,30 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
-import { Planning } from "@/types";
+import { Planning, Alokasi } from "@/types";
 import {
   exportPlanningDetailToExcel,
   exportPlanningDetailToPDF,
 } from "@/lib/export-utils";
+import { AlokasiFormDialog } from "./alokasi-form-dialog";
 
 const statusConfig = {
   DRAFT: {
@@ -132,6 +152,10 @@ export function PlanningDetailDialog({
   const [reviewAction, setReviewAction] = useState("");
   const [reviewCatatan, setReviewCatatan] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showAlokasiForm, setShowAlokasiForm] = useState(false);
+  const [editAlokasi, setEditAlokasi] = useState<Alokasi | null>(null);
+  const [deleteAlokasiId, setDeleteAlokasiId] = useState<string | null>(null);
+  const [deletingAlokasi, setDeletingAlokasi] = useState(false);
 
   const canEdit =
     (user?.role === "SATKER" || user?.role === "ADMINISTRATOR") &&
@@ -144,6 +168,25 @@ export function PlanningDetailDialog({
   const canReview =
     (user?.role === "VERIFICATOR" || user?.role === "ADMINISTRATOR") &&
     planning.status === "SUBMITTED";
+
+  const canManageAlokasi =
+    (user?.role === "SATKER" || user?.role === "ADMINISTRATOR") &&
+    (planning.status === "DRAFT" || planning.status === "REVISION");
+
+  const handleDeleteAlokasi = async () => {
+    if (!deleteAlokasiId) return;
+    setDeletingAlokasi(true);
+    try {
+      await api.delete(`/alokasi/${deleteAlokasiId}`);
+      toast.success("Alokasi berhasil dihapus");
+      setDeleteAlokasiId(null);
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal menghapus alokasi");
+    } finally {
+      setDeletingAlokasi(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -438,69 +481,135 @@ export function PlanningDetailDialog({
           </div>
 
           {/* Alokasi — full width karena tabel */}
-          {Object.keys(alokasiByTahun).length > 0 && (
+          {(Object.keys(alokasiByTahun).length > 0 || canManageAlokasi) && (
             <div className="space-y-3">
-              <SectionHeader title="Alokasi Anggaran" icon={Calendar} />
-              <div className="grid grid-cols-2 gap-4">
-                {Object.entries(alokasiByTahun)
-                  .sort(([a], [b]) => Number(a) - Number(b))
-                  .map(([tahun, alokasi]) => (
-                    <div key={tahun}>
-                      <p className="text-xs font-semibold text-muted-foreground mb-1.5">
-                        Tahun {tahun}
-                      </p>
-                      <div className="rounded-lg border overflow-hidden">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="bg-muted/50 border-b">
-                              <th className="text-left px-3 py-2 font-medium">
-                                Status
-                              </th>
-                              <th className="text-left px-3 py-2 font-medium">
-                                RO
-                              </th>
-                              <th className="text-right px-3 py-2 font-medium">
-                                Total
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border">
-                            {alokasi.map((a) => (
-                              <tr
-                                key={a.id}
-                                className={
-                                  a.status === "RENCANA"
-                                    ? "bg-blue-50/40"
-                                    : "bg-slate-50/40"
-                                }
-                              >
-                                <td className="px-3 py-2">
-                                  <span
-                                    className={`inline-flex items-center text-xs font-medium px-1.5 py-0.5 rounded-full ${
-                                      a.status === "RENCANA"
-                                        ? "bg-blue-100 text-blue-700"
-                                        : "bg-slate-100 text-slate-600"
-                                    }`}
-                                  >
-                                    {a.status === "RENCANA"
-                                      ? "Rencana"
-                                      : "Realisasi"}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-2 text-muted-foreground">
-                                  {a.ro.code}
-                                </td>
-                                <td className="px-3 py-2 text-right font-medium">
-                                  {formatRupiah(a.total)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  ))}
+              <div className="flex items-center justify-between">
+                <SectionHeader title="Alokasi Anggaran" icon={Calendar} />
+                {canManageAlokasi && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 ml-3"
+                    onClick={() => {
+                      setEditAlokasi(null);
+                      setShowAlokasiForm(true);
+                    }}
+                  >
+                    <Plus size={13} className="mr-1.5" /> Tambah Alokasi
+                  </Button>
+                )}
               </div>
+
+              {Object.keys(alokasiByTahun).length === 0 ? (
+                <div className="rounded-lg border-2 border-dashed p-8 text-center text-muted-foreground text-sm">
+                  Belum ada alokasi anggaran untuk planning ini
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  {Object.entries(alokasiByTahun)
+                    .sort(([a], [b]) => Number(a) - Number(b))
+                    .map(([tahun, alokasi]) => (
+                      <div key={tahun}>
+                        <p className="text-xs font-semibold text-muted-foreground mb-1.5">
+                          Tahun {tahun}
+                        </p>
+                        <div className="rounded-lg border overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-muted/50 border-b">
+                                <th className="text-left px-3 py-2 font-medium">
+                                  Status
+                                </th>
+                                <th className="text-left px-3 py-2 font-medium">
+                                  RO
+                                </th>
+                                <th className="text-right px-3 py-2 font-medium">
+                                  Total
+                                </th>
+                                {canManageAlokasi && <th className="w-16" />}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {alokasi.map((a) => (
+                                <tr
+                                  key={a.id}
+                                  className={
+                                    a.status === "RENCANA"
+                                      ? "bg-blue-50/40"
+                                      : "bg-slate-50/40"
+                                  }
+                                >
+                                  <td className="px-3 py-2">
+                                    <span
+                                      className={`inline-flex items-center text-xs font-medium px-1.5 py-0.5 rounded-full ${
+                                        a.status === "RENCANA"
+                                          ? "bg-blue-100 text-blue-700"
+                                          : "bg-slate-100 text-slate-600"
+                                      }`}
+                                    >
+                                      {a.status === "RENCANA"
+                                        ? "Rencana"
+                                        : "Realisasi"}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-muted-foreground">
+                                    {a.ro.code}
+                                  </td>
+                                  <td className="px-3 py-2 text-right font-medium">
+                                    {formatRupiah(a.total)}
+                                  </td>
+                                  {canManageAlokasi && (
+                                    <td className="px-2 py-2">
+                                      <TooltipProvider delayDuration={300}>
+                                        <div className="flex items-center gap-0.5 justify-end">
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6"
+                                                onClick={() => {
+                                                  setEditAlokasi(a);
+                                                  setShowAlokasiForm(true);
+                                                }}
+                                              >
+                                                <Edit size={11} />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              Edit Alokasi
+                                            </TooltipContent>
+                                          </Tooltip>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                onClick={() =>
+                                                  setDeleteAlokasiId(a.id)
+                                                }
+                                              >
+                                                <Trash2 size={11} />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              Hapus Alokasi
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </div>
+                                      </TooltipProvider>
+                                    </td>
+                                  )}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -620,6 +729,43 @@ export function PlanningDetailDialog({
           )}
         </div>
       </DialogContent>
+
+      {/* Alokasi Form */}
+      <AlokasiFormDialog
+        open={showAlokasiForm}
+        onClose={() => setShowAlokasiForm(false)}
+        onSuccess={() => {
+          setShowAlokasiForm(false);
+          onRefresh();
+        }}
+        planningId={planning.id}
+        editData={editAlokasi}
+      />
+
+      {/* Delete Alokasi Confirm */}
+      <AlertDialog
+        open={!!deleteAlokasiId}
+        onOpenChange={() => setDeleteAlokasiId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Alokasi?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Alokasi yang dihapus tidak dapat dikembalikan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteAlokasi}
+              disabled={deletingAlokasi}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {deletingAlokasi ? "Menghapus..." : "Hapus"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

@@ -25,7 +25,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import api from "@/lib/api";
-import { RO, Alokasi } from "@/types";
+import { RO } from "@/types";
+
+interface AlokasiLike {
+  id: string;
+  roId?: string;
+  ro?: { id: string };
+  tahun: number;
+  status: "RENCANA" | "REALISASI";
+  rm: string | number;
+  rmp: string | number;
+  pln: string | number;
+  sbsn: string | number;
+  kpbu: string | number;
+  outputTarget?: string | number;
+  outputUnit?: string;
+  outcomeTarget?: string | number;
+  outcomeUnit?: string;
+  catatan?: string;
+}
 
 const schema = z.object({
   roId: z.string().min(1, "RO wajib dipilih"),
@@ -50,7 +68,7 @@ interface Props {
   onClose: () => void;
   onSuccess: () => void;
   planningId: string;
-  editData?: Alokasi | null;
+  editData?: AlokasiLike | null;
 }
 
 export function AlokasiFormDialog({
@@ -96,7 +114,7 @@ export function AlokasiFormDialog({
   useEffect(() => {
     if (editData) {
       reset({
-        roId: editData.roId,
+        roId: editData.roId || editData.ro?.id || "",
         tahun: editData.tahun,
         status: editData.status,
         rm: Number(editData.rm),

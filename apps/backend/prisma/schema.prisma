@@ -1,3 +1,7 @@
+// =============================================
+// ePerencanaan - Schema Lengkap
+// =============================================
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -43,6 +47,12 @@ enum StatusDokumen {
 enum AllokasiStatus {
   RENCANA
   REALISASI
+}
+
+enum TipeKoordinat {
+  TITIK
+  GARIS
+  POLIGON
 }
 
 // =============================================
@@ -387,13 +397,26 @@ model LokasiAlokasi {
   alokasiId String
   alokasi   Alokasi @relation(fields: [alokasiId], references: [id], onDelete: Cascade)
 
-  name       String  @db.VarChar(255)
+  name          String?        @db.VarChar(255)
+  tipeKoordinat TipeKoordinat  @default(TITIK)
+
+  // Wilayah administratif
   provinceId String? @db.VarChar(10)
+  provinceName String? @db.VarChar(100)
   cityId     String? @db.VarChar(10)
-  latitude   Float?
-  longitude  Float?
+  cityName   String? @db.VarChar(100)
+  districtId String? @db.VarChar(10)
+  districtName String? @db.VarChar(100)
+  villageId  String? @db.VarChar(10)
+  villageName String? @db.VarChar(100)
+
+  // Koordinat: untuk TITIK pakai latitude/longitude, untuk GARIS/POLIGON pakai coordinates (JSON array of [lat,lng])
+  latitude    Float?
+  longitude   Float?
+  coordinates Json?   // [[lat, lng], [lat, lng], ...] untuk garis/poligon
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("lokasi_alokasi")
 }

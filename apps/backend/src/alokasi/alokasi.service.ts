@@ -35,7 +35,21 @@ export class AlokasiService {
       );
     }
 
-    return this.prisma.alokasi.create({
+    const pairedStatus = dto.status === 'RENCANA' ? 'REALISASI' : 'RENCANA';
+
+    // Cek apakah pasangannya (status sebaliknya) sudah ada untuk RO+tahun yang sama
+    const existingPair = await this.prisma.alokasi.findUnique({
+      where: {
+        planningId_roId_tahun_status: {
+          planningId: dto.planningId,
+          roId: dto.roId,
+          tahun: dto.tahun,
+          status: pairedStatus as any,
+        },
+      },
+    });
+
+    const created = await this.prisma.alokasi.create({
       data: {
         planningId: dto.planningId,
         roId: dto.roId,
@@ -55,6 +69,48 @@ export class AlokasiService {
       },
       include: { ro: { include: { kro: true } }, lokasi: true },
     });
+
+    // Auto-buat pasangan dengan nilai 0 kalau belum ada, supaya tabel selalu lengkap Rencana+Realisasi
+    if (!existingPair) {
+      await this.prisma.alokasi.create({
+        data: {
+          planningId: dto.planningId,
+          roId: dto.roId,
+          tahun: dto.tahun,
+          status: pairedStatus as any,
+          rm: 0,
+          rmp: 0,
+          pln: 0,
+          sbsn: 0,
+          kpbu: 0,
+          total: 0,
+          outputUnit: dto.outputUnit,
+          outcomeUnit: dto.outcomeUnit,
+          catatan: 'Dibuat otomatis sebagai pasangan',
+        },
+      });
+    }
+
+    return created;
+  }
+
+  async findOne(id: string) {
+    const alokasi = await this.prisma.alokasi.findUnique({
+      where: { id },
+      include: {
+        planning: { select: { id: true, projectName: true } },
+        ro: {
+          include: {
+            indikatorRO: true,
+            kro: { include: { kegiatan: { include: { program: true } } } },
+          },
+        },
+        lokasi: { orderBy: { createdAt: 'desc' } },
+        historiAlokasi: { orderBy: { changedAt: 'desc' } },
+      },
+    });
+    if (!alokasi) throw new NotFoundException('Alokasi tidak ditemukan');
+    return alokasi;
   }
 
   async update(id: string, dto: UpdateAlokasiDto, user: any) {
@@ -102,7 +158,15 @@ export class AlokasiService {
         outcomeUnit: dto.outcomeUnit,
         catatan: dto.catatan,
       },
-      include: { ro: true, lokasi: true, historiAlokasi: true },
+      include: {
+        ro: {
+          include: {
+            kro: { include: { kegiatan: { include: { program: true } } } },
+          },
+        },
+        lokasi: true,
+        historiAlokasi: { orderBy: { changedAt: 'desc' } },
+      },
     });
   }
 
@@ -118,8 +182,54 @@ export class AlokasiService {
       where: { id: alokasiId },
     });
     if (!alokasi) throw new NotFoundException('Alokasi tidak ditemukan');
+
     return this.prisma.lokasiAlokasi.create({
-      data: { alokasiId, ...dto },
+      data: {
+        alokasiId,
+        name: dto.name,
+        tipeKoordinat: dto.tipeKoordinat as any,
+        provinceId: dto.provinceId,
+        provinceName: dto.provinceName,
+        cityId: dto.cityId,
+        cityName: dto.cityName,
+        districtId: dto.districtId,
+        districtName: dto.districtName,
+        villageId: dto.villageId,
+        villageName: dto.villageName,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        coordinates: dto.coordinates
+          ? JSON.stringify(dto.coordinates)
+          : undefined,
+      },
+    });
+  }
+
+  async updateLokasi(lokasiId: string, dto: CreateLokasiDto) {
+    const lokasi = await this.prisma.lokasiAlokasi.findUnique({
+      where: { id: lokasiId },
+    });
+    if (!lokasi) throw new NotFoundException('Lokasi tidak ditemukan');
+
+    return this.prisma.lokasiAlokasi.update({
+      where: { id: lokasiId },
+      data: {
+        name: dto.name,
+        tipeKoordinat: dto.tipeKoordinat as any,
+        provinceId: dto.provinceId,
+        provinceName: dto.provinceName,
+        cityId: dto.cityId,
+        cityName: dto.cityName,
+        districtId: dto.districtId,
+        districtName: dto.districtName,
+        villageId: dto.villageId,
+        villageName: dto.villageName,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        coordinates: dto.coordinates
+          ? JSON.stringify(dto.coordinates)
+          : undefined,
+      },
     });
   }
 

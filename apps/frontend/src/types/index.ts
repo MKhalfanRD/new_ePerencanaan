@@ -66,9 +66,20 @@ export interface Alokasi {
 
 export interface LokasiAlokasi {
   id: string;
-  name: string;
+  name?: string;
+  tipeKoordinat: "TITIK" | "GARIS" | "POLIGON";
   latitude?: number;
   longitude?: number;
+  coordinates?: number[][];
+  provinceId?: string;
+  provinceName?: string;
+  cityId?: string;
+  cityName?: string;
+  districtId?: string;
+  districtName?: string;
+  villageId?: string;
+  villageName?: string;
+  createdAt: string;
 }
 
 export interface Planning {

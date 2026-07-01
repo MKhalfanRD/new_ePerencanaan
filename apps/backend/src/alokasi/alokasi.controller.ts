@@ -27,11 +27,53 @@ import {
 export class AlokasiController {
   constructor(private readonly alokasiService: AlokasiService) {}
 
+  // ============================================
+  // Route spesifik (lokasi/:lokasiId) HARUS didahulukan
+  // sebelum route generik (:id) agar tidak salah tangkap
+  // ============================================
+
+  @ApiOperation({ summary: 'Edit lokasi alokasi' })
+  @Roles('SATKER', 'ADMINISTRATOR')
+  @Patch('lokasi/:lokasiId')
+  updateLokasi(
+    @Param('lokasiId') lokasiId: string,
+    @Body() dto: CreateLokasiDto,
+  ) {
+    return this.alokasiService.updateLokasi(lokasiId, dto);
+  }
+
+  @ApiOperation({ summary: 'Hapus lokasi alokasi' })
+  @Roles('SATKER', 'ADMINISTRATOR')
+  @Delete('lokasi/:lokasiId')
+  removeLokasi(@Param('lokasiId') lokasiId: string) {
+    return this.alokasiService.removeLokasi(lokasiId);
+  }
+
+  // ============================================
+  // Route generik berbasis :id
+  // ============================================
+
   @ApiOperation({ summary: 'Tambah alokasi ke planning' })
   @Roles('SATKER', 'ADMINISTRATOR')
   @Post()
   create(@Body() dto: CreateAlokasiDto) {
     return this.alokasiService.create(dto);
+  }
+
+  @ApiOperation({
+    summary: 'Detail alokasi lengkap (nomenklatur, lokasi, histori)',
+  })
+  @Roles('SATKER', 'VERIFICATOR', 'ADMINISTRATOR')
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.alokasiService.findOne(id);
+  }
+
+  @ApiOperation({ summary: 'Lihat histori perubahan alokasi' })
+  @Roles('SATKER', 'VERIFICATOR', 'ADMINISTRATOR')
+  @Get(':id/histori')
+  getHistori(@Param('id') id: string) {
+    return this.alokasiService.getHistori(id);
   }
 
   @ApiOperation({ summary: 'Edit alokasi (otomatis simpan histori)' })
@@ -57,19 +99,5 @@ export class AlokasiController {
   @Post(':id/lokasi')
   addLokasi(@Param('id') id: string, @Body() dto: CreateLokasiDto) {
     return this.alokasiService.addLokasi(id, dto);
-  }
-
-  @ApiOperation({ summary: 'Hapus lokasi alokasi' })
-  @Roles('SATKER', 'ADMINISTRATOR')
-  @Delete('lokasi/:lokasiId')
-  removeLokasi(@Param('lokasiId') lokasiId: string) {
-    return this.alokasiService.removeLokasi(lokasiId);
-  }
-
-  @ApiOperation({ summary: 'Lihat histori perubahan alokasi' })
-  @Roles('SATKER', 'VERIFICATOR', 'ADMINISTRATOR')
-  @Get(':id/histori')
-  getHistori(@Param('id') id: string) {
-    return this.alokasiService.getHistori(id);
   }
 }

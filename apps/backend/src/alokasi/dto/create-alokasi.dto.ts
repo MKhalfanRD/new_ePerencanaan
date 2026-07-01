@@ -1,4 +1,11 @@
-import { IsEnum, IsInt, IsNumber, IsOptional, IsString } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsIn,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateAlokasiDto {
@@ -83,12 +90,37 @@ export class UpdateAlokasiDto {
 }
 
 export class CreateLokasiDto {
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  name: string;
+  name?: string;
+
+  @ApiProperty({ enum: ['TITIK', 'GARIS', 'POLIGON'], default: 'TITIK' })
+  @IsIn(['TITIK', 'GARIS', 'POLIGON'])
+  tipeKoordinat: string;
 
   @ApiPropertyOptional() @IsOptional() @IsString() provinceId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() provinceName?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() cityId?: string;
-  @ApiPropertyOptional() @IsOptional() @IsNumber() latitude?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber() longitude?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() cityName?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() districtId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() districtName?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() villageId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() villageName?: string;
+
+  @ApiPropertyOptional({ description: 'Untuk tipe TITIK' })
+  @IsOptional()
+  @IsNumber()
+  latitude?: number;
+
+  @ApiPropertyOptional({ description: 'Untuk tipe TITIK' })
+  @IsOptional()
+  @IsNumber()
+  longitude?: number;
+
+  @ApiPropertyOptional({
+    description: 'Untuk tipe GARIS/POLIGON, array [[lat,lng],...]',
+  })
+  @IsOptional()
+  coordinates?: number[][];
 }

@@ -12,6 +12,7 @@ import { PlanningsModule } from './plannings/plannings.module';
 import { MasterModule } from './master/master.module';
 import { AlokasiModule } from './alokasi/alokasi.module';
 import { ImportModule } from './import/import.module';
+import { WilayahModule } from './wilayah/wilayah.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ImportModule } from './import/import.module';
     MasterModule,
     AlokasiModule,
     ImportModule,
+    WilayahModule,
   ],
   controllers: [AppController],
   providers: [AppService],

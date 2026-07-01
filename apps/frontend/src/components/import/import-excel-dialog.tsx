@@ -1,36 +1,24 @@
 "use client";
 
-import { useState, useRef, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
-  Upload,
-  FileSpreadsheet,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-  ArrowRight,
-  ArrowLeft,
-  X,
-  Sparkles,
-  AlertTriangle,
-  Download,
-  Copy,
-  RefreshCw,
-  SkipForward,
+  Plus,
   Search,
+  Filter,
+  FileText,
+  Eye,
+  Trash2,
+  Send,
+  ChevronDown,
+  ChevronRight,
+  Layers,
+  List,
 } from "lucide-react";
 import { toast } from "sonner";
-import * as XLSX from "xlsx";
 
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -38,954 +26,611 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+
 import api from "@/lib/api";
+import { useAuthStore } from "@/store/auth";
+import { Planning, PaginatedResponse } from "@/types";
+import { PlanningFormDialog } from "@/components/planning/planning-form-dialog";
+import { PlanningDetailDialog } from "@/components/planning/planning-detail-dialog";
 
-interface MatchedBalai {
-  excelName: string;
-  balaiId: number;
-  balaiName: string;
-}
-interface UnmatchedBalai {
-  excelName: string;
-  suggestions: { id: number; name: string; score: number }[];
-}
-interface ExistingPlanning {
-  groupKey: string;
-  namaProyek: string;
-  balaiName: string;
-  existingId: string;
-  existingAlokasiCount: number;
-  existingTotal: number;
-  newAlokasiCount: number;
-  newTotal: number;
-}
-interface ParseError {
-  sheetName: string;
-  excelRowNumber: number;
-  namaProyek: string;
-  balaiName: string;
-  tahun: number;
-  reason: string;
-}
-
-interface PreviewResult {
-  sessionId: string;
-  summary: {
-    totalRowsExcel: number;
-    totalRowsValid: number;
-    totalRowsError: number;
-    totalPlanning: number;
-    totalPlanningBaru: number;
-    totalPlanningDuplikat: number;
-    totalBalaiTerdeteksi: number;
-    totalBalaiMatched: number;
-    totalBalaiUnmatched: number;
-  };
-  matched: MatchedBalai[];
-  unmatched: UnmatchedBalai[];
-  existingPlannings: ExistingPlanning[];
-  parseErrors: ParseError[];
-}
-
-interface CommitResult {
-  message: string;
-  createdPlanning: number;
-  updatedPlanning: number;
-  skippedPlanning: number;
-  createdAlokasi: number;
-  skipped: number;
-  commitErrors: ParseError[];
-}
-
-type Resolution = {
-  excelName: string;
-  useExistingBalaiId?: number;
-  createNew?: boolean;
+const statusConfig = {
+  DRAFT: {
+    label: "Draft",
+    className: "bg-slate-100 text-slate-600 border border-slate-200",
+    icon: "📝",
+  },
+  SUBMITTED: {
+    label: "Menunggu Review",
+    className: "bg-blue-100 text-blue-700 border border-blue-200",
+    icon: "⏳",
+  },
+  REVISION: {
+    label: "Perlu Revisi",
+    className: "bg-amber-100 text-amber-700 border border-amber-200",
+    icon: "🔄",
+  },
+  REJECTED: {
+    label: "Ditolak",
+    className: "bg-red-100 text-red-700 border border-red-200",
+    icon: "❌",
+  },
+  APPROVED: {
+    label: "Disetujui",
+    className: "bg-green-100 text-green-700 border border-green-200",
+    icon: "✅",
+  },
 };
-type PlanningAction = "skip" | "replace";
 
-interface Props {
-  open: boolean;
-  onClose: () => void;
-  onSuccess: () => void;
-}
+const formatRupiah = (val: string | number) =>
+  new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(
+    Number(val),
+  );
 
-const formatRupiah = (val: number) =>
-  new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(val);
+const formatRupiahShort = (val: number) => {
+  if (val >= 1_000_000_000) return `${(val / 1_000_000_000).toFixed(1)}M`;
+  if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(0)}jt`;
+  if (val === 0) return "-";
+  return formatRupiah(val);
+};
 
-function downloadErrorsToExcel(errors: ParseError[], filename: string) {
-  const rows = errors.map((e) => ({
-    Sheet: e.sheetName,
-    "Baris Excel": e.excelRowNumber,
-    "Nama Proyek": e.namaProyek,
-    Balai: e.balaiName,
-    Tahun: e.tahun || "-",
-    "Alasan Gagal": e.reason,
-  }));
-  const ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = [
-    { wch: 10 },
-    { wch: 12 },
-    { wch: 40 },
-    { wch: 30 },
-    { wch: 8 },
-    { wch: 50 },
-  ];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Data Error");
-  XLSX.writeFile(wb, `${filename}-${Date.now()}.xlsx`);
-}
-
-// Tabel error dengan pagination — supaya tidak crash render ribuan baris
-function ErrorTable({
-  errors,
-  showBalaiTahun = true,
-}: {
-  errors: ParseError[];
-  showBalaiTahun?: boolean;
-}) {
+export default function PlanningsPage() {
+  const { user } = useAuthStore();
+  const [plannings, setPlannings] = useState<Planning[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
   const [page, setPage] = useState(1);
-  const perPage = 25;
-  const totalPages = Math.ceil(errors.length / perPage);
-  const pageData = useMemo(
-    () => errors.slice((page - 1) * perPage, page * perPage),
-    [errors, page],
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [viewMode, setViewMode] = useState<"grouped" | "flat">("grouped");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
+    new Set(),
+  );
+
+  const [showForm, setShowForm] = useState(false);
+  const [editData, setEditData] = useState<Planning | null>(null);
+  const [detailData, setDetailData] = useState<Planning | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const fetchPlannings = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: "100",
+        ...(search && { search }),
+        ...(statusFilter !== "ALL" && { status: statusFilter }),
+      });
+      const res = await api.get<PaginatedResponse<Planning>>(
+        `/plannings?${params}`,
+      );
+      setPlannings(res.data.data);
+      setTotalPages(res.data.meta.totalPages);
+      setTotal(res.data.meta.total);
+    } catch {
+      toast.error("Gagal memuat data planning");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPlannings();
+  }, [page, statusFilter]);
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setPage(1);
+      fetchPlannings();
+    }, 400);
+    return () => clearTimeout(timeout);
+  }, [search]);
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/plannings/${deleteId}`);
+      toast.success("Planning berhasil dihapus");
+      setDeleteId(null);
+      fetchPlannings();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal menghapus planning");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleSubmit = async (id: string) => {
+    try {
+      await api.patch(`/plannings/${id}/submit`);
+      toast.success("Planning berhasil diajukan");
+      fetchPlannings();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal mengajukan planning");
+    }
+  };
+
+  const canSubmit = (p: Planning) =>
+    user?.role === "SATKER" &&
+    (p.status === "DRAFT" || p.status === "REVISION");
+
+  const canDelete = (p: Planning) =>
+    p.status === "DRAFT" &&
+    (user?.role === "ADMINISTRATOR" || p.createdBy.id === user?.id);
+
+  const groups = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        kegiatanCode: string;
+        kegiatanName: string;
+        programCode: string;
+        plannings: Planning[];
+        totalByYear: Record<number, number>;
+        grandTotal: number;
+      }
+    >();
+
+    const years = new Set<number>();
+
+    for (const p of plannings) {
+      const firstAlokasi = p.alokasi[0];
+      const kegiatanCode = firstAlokasi?.ro?.kro?.kegiatan?.code || "LAINNYA";
+      const kegiatanName =
+        firstAlokasi?.ro?.kro?.kegiatan?.name || "Belum ada alokasi";
+      const programCode = firstAlokasi?.ro?.kro?.kegiatan?.program?.code || "-";
+
+      if (!map.has(kegiatanCode)) {
+        map.set(kegiatanCode, {
+          kegiatanCode,
+          kegiatanName,
+          programCode,
+          plannings: [],
+          totalByYear: {},
+          grandTotal: 0,
+        });
+      }
+
+      const group = map.get(kegiatanCode)!;
+      group.plannings.push(p);
+
+      for (const a of p.alokasi.filter((a) => a.status === "RENCANA")) {
+        years.add(a.tahun);
+        group.totalByYear[a.tahun] =
+          (group.totalByYear[a.tahun] || 0) + Number(a.total);
+        group.grandTotal += Number(a.total);
+      }
+    }
+
+    const sortedYears = [...years].sort((a, b) => a - b);
+    return {
+      groups: [...map.values()].sort((a, b) =>
+        a.kegiatanCode.localeCompare(b.kegiatanCode),
+      ),
+      years: sortedYears,
+    };
+  }, [plannings]);
+
+  const toggleGroup = (code: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  };
+
+  const renderActions = (p: Planning) => (
+    <TooltipProvider delayDuration={300}>
+      <div className="flex items-center gap-1 shrink-0">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setDetailData(p)}
+            >
+              <Eye size={14} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Lihat Detail</TooltipContent>
+        </Tooltip>
+        {canSubmit(p) && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                onClick={() => handleSubmit(p.id)}
+              >
+                <Send size={14} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Ajukan ke Verifikator</TooltipContent>
+          </Tooltip>
+        )}
+        {canDelete(p) && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setDeleteId(p.id)}
+              >
+                <Trash2 size={14} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Hapus Planning</TooltipContent>
+          </Tooltip>
+        )}
+      </div>
+    </TooltipProvider>
   );
 
   return (
-    <div>
-      <div className="max-h-56 overflow-y-auto">
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-red-50">
-            <tr>
-              <th className="text-left p-2 font-medium">Sheet</th>
-              <th className="text-left p-2 font-medium">Baris</th>
-              <th className="text-left p-2 font-medium">Proyek</th>
-              {showBalaiTahun && (
-                <th className="text-left p-2 font-medium">Balai</th>
-              )}
-              {showBalaiTahun && (
-                <th className="text-left p-2 font-medium">Tahun</th>
-              )}
-              <th className="text-left p-2 font-medium">Alasan</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {pageData.map((e, i) => (
-              <tr key={i}>
-                <td className="p-2 text-muted-foreground">{e.sheetName}</td>
-                <td className="p-2 text-muted-foreground">
-                  #{e.excelRowNumber}
-                </td>
-                <td className="p-2 truncate max-w-[120px]">{e.namaProyek}</td>
-                {showBalaiTahun && (
-                  <td className="p-2 truncate max-w-[100px] text-muted-foreground">
-                    {e.balaiName}
-                  </td>
-                )}
-                {showBalaiTahun && <td className="p-2">{e.tahun || "-"}</td>}
-                <td className="p-2 text-red-600">{e.reason}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Planning</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            {total} planning ditemukan
+          </p>
+        </div>
+        {(user?.role === "SATKER" || user?.role === "ADMINISTRATOR") && (
+          <Button
+            onClick={() => {
+              setEditData(null);
+              setShowForm(true);
+            }}
+          >
+            <Plus size={16} className="mr-2" />
+            Buat Planning
+          </Button>
+        )}
       </div>
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 p-2 border-t bg-white">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 text-xs"
-            disabled={page === 1}
-            onClick={() => setPage((p) => p - 1)}
+
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex gap-3 flex-1">
+          <div className="relative flex-1 max-w-sm">
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              placeholder="Cari nama proyek..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => {
+              setStatusFilter(v);
+              setPage(1);
+            }}
           >
-            Sebelumnya
-          </Button>
-          <span className="text-xs text-muted-foreground">
-            Halaman {page} dari {totalPages}
-          </span>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 text-xs"
-            disabled={page === totalPages}
-            onClick={() => setPage((p) => p + 1)}
+            <SelectTrigger className="w-44">
+              <Filter size={14} className="mr-2 text-muted-foreground" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Semua Status</SelectItem>
+              <SelectItem value="DRAFT">Draft</SelectItem>
+              <SelectItem value="SUBMITTED">Menunggu Review</SelectItem>
+              <SelectItem value="REVISION">Perlu Revisi</SelectItem>
+              <SelectItem value="APPROVED">Disetujui</SelectItem>
+              <SelectItem value="REJECTED">Ditolak</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex gap-1 p-1 bg-muted/60 rounded-lg shrink-0">
+          <button
+            onClick={() => setViewMode("grouped")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+              viewMode === "grouped"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
           >
-            Berikutnya
-          </Button>
+            <Layers size={13} /> Kelompok
+          </button>
+          <button
+            onClick={() => setViewMode("flat")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+              viewMode === "flat"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <List size={13} /> Daftar
+          </button>
+        </div>
+      </div>
+
+      {viewMode === "grouped" && (
+        <div className="space-y-4">
+          {loading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="h-20 bg-muted rounded-xl animate-pulse"
+                />
+              ))}
+            </div>
+          ) : groups.groups.length === 0 ? (
+            <Card>
+              <CardContent className="text-center py-16 text-muted-foreground">
+                <FileText size={40} className="mx-auto mb-3 opacity-30" />
+                <p className="text-sm font-medium">Tidak ada planning</p>
+              </CardContent>
+            </Card>
+          ) : (
+            groups.groups.map((group) => {
+              const isCollapsed = collapsedGroups.has(group.kegiatanCode);
+              return (
+                <Card key={group.kegiatanCode} className="overflow-hidden">
+                  <button
+                    onClick={() => toggleGroup(group.kegiatanCode)}
+                    className="w-full flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-primary/5 to-transparent hover:from-primary/10 transition-colors text-left"
+                  >
+                    {isCollapsed ? (
+                      <ChevronRight
+                        size={16}
+                        className="text-muted-foreground shrink-0"
+                      />
+                    ) : (
+                      <ChevronDown
+                        size={16}
+                        className="text-muted-foreground shrink-0"
+                      />
+                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs font-mono bg-primary/10 text-primary px-2 py-1 rounded font-semibold">
+                        {group.programCode}.{group.kegiatanCode}
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold truncate">
+                        {group.kegiatanName}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {group.plannings.length} proyek
+                      </p>
+                    </div>
+
+                    <div className="hidden md:flex items-center gap-4 shrink-0 overflow-x-auto max-w-md">
+                      {groups.years.slice(-4).map((year) => (
+                        <div key={year} className="text-right shrink-0">
+                          <p className="text-[10px] text-muted-foreground">
+                            {year}
+                          </p>
+                          <p className="text-xs font-semibold">
+                            {formatRupiahShort(group.totalByYear[year] || 0)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="text-right shrink-0 pl-4 border-l">
+                      <p className="text-[10px] text-muted-foreground">
+                        Total Rencana
+                      </p>
+                      <p className="text-sm font-bold">
+                        {formatRupiahShort(group.grandTotal)}
+                      </p>
+                    </div>
+                  </button>
+
+                  {!isCollapsed && (
+                    <CardContent className="p-0 divide-y divide-border border-t">
+                      {group.plannings.map((p) => {
+                        const cfg = statusConfig[p.status];
+                        const alokasiByYear: Record<number, number> = {};
+                        for (const a of p.alokasi.filter(
+                          (a) => a.status === "RENCANA",
+                        )) {
+                          alokasiByYear[a.tahun] =
+                            (alokasiByYear[a.tahun] || 0) + Number(a.total);
+                        }
+
+                        return (
+                          <div
+                            key={p.id}
+                            className="px-5 py-3.5 hover:bg-accent/30 transition-colors"
+                          >
+                            <div className="flex items-center gap-4">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span
+                                    className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ${cfg.className}`}
+                                  >
+                                    {cfg.icon} {cfg.label}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground truncate">
+                                    {p.balai.shortName}
+                                  </span>
+                                </div>
+                                <p
+                                  className="text-sm font-medium cursor-pointer hover:text-primary transition-colors truncate"
+                                  onDoubleClick={() => setDetailData(p)}
+                                  title="Klik 2x untuk detail"
+                                >
+                                  {p.projectName}
+                                </p>
+                              </div>
+
+                              <div className="hidden lg:flex items-center gap-4 shrink-0">
+                                {groups.years.slice(-4).map((year) => (
+                                  <div key={year} className="w-20 text-right">
+                                    <p className="text-xs font-medium">
+                                      {formatRupiahShort(
+                                        alokasiByYear[year] || 0,
+                                      )}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {renderActions(p)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })
+          )}
         </div>
       )}
+
+      {viewMode === "flat" && (
+        <Card>
+          <CardContent className="p-0">
+            {loading ? (
+              <div className="space-y-0 divide-y divide-border">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="p-4 animate-pulse">
+                    <div className="h-4 bg-muted rounded w-2/3 mb-2" />
+                    <div className="h-3 bg-muted rounded w-1/3" />
+                  </div>
+                ))}
+              </div>
+            ) : plannings.length === 0 ? (
+              <div className="text-center py-16 text-muted-foreground">
+                <FileText size={40} className="mx-auto mb-3 opacity-30" />
+                <p className="text-sm font-medium">Tidak ada planning</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {plannings.map((p) => {
+                  const cfg = statusConfig[p.status];
+                  const totalRencana = p.alokasi
+                    .filter((a) => a.status === "RENCANA")
+                    .reduce((s, a) => s + Number(a.total), 0);
+
+                  return (
+                    <div
+                      key={p.id}
+                      className="p-4 hover:bg-accent/30 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span
+                              className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${cfg.className}`}
+                            >
+                              {cfg.icon} {cfg.label}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {p.balai.shortName} · {p.periode.label}
+                            </span>
+                          </div>
+                          <p
+                            className="font-medium text-sm cursor-pointer hover:text-primary transition-colors"
+                            onDoubleClick={() => setDetailData(p)}
+                            title="Klik 2x untuk lihat detail"
+                          >
+                            {p.projectName}
+                          </p>
+                          <div className="flex items-center gap-4 mt-1.5">
+                            <span className="text-xs text-muted-foreground">
+                              {p.masaPelaksanaan === "SINGLE_YEAR"
+                                ? "Single Year"
+                                : "Multi Year"}
+                            </span>
+                            {totalRencana > 0 && (
+                              <span className="text-xs font-medium text-foreground">
+                                {formatRupiah(totalRencana)}
+                              </span>
+                            )}
+                            <span className="text-xs text-muted-foreground">
+                              oleh {p.createdBy.name}
+                            </span>
+                          </div>
+                        </div>
+                        {renderActions(p)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <PlanningFormDialog
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        onSuccess={() => {
+          setShowForm(false);
+          fetchPlannings();
+        }}
+        editData={editData}
+      />
+
+      {detailData && (
+        <PlanningDetailDialog
+          open={!!detailData}
+          planning={detailData}
+          onClose={() => setDetailData(null)}
+          onEdit={(p) => {
+            setDetailData(null);
+            setEditData(p);
+            setShowForm(true);
+          }}
+          onRefresh={fetchPlannings}
+        />
+      )}
+
+      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Planning?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Planning yang dihapus tidak dapat dikembalikan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {deleting ? "Menghapus..." : "Hapus"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
-  );
-}
-
-export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [step, setStep] = useState<"upload" | "balai" | "duplicate" | "done">(
-    "upload",
-  );
-  const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [preview, setPreview] = useState<PreviewResult | null>(null);
-  const [resolutions, setResolutions] = useState<Record<string, Resolution>>(
-    {},
-  );
-  const [planningActions, setPlanningActions] = useState<
-    Record<string, PlanningAction>
-  >({});
-  const [duplicatePage, setDuplicatePage] = useState(1);
-  const [duplicateSearch, setDuplicateSearch] = useState("");
-  const [committing, setCommitting] = useState(false);
-  const [result, setResult] = useState<CommitResult | null>(null);
-  const [showParseErrors, setShowParseErrors] = useState(false);
-  const [showCommitErrors, setShowCommitErrors] = useState(false);
-
-  const duplicatePerPage = 10;
-
-  const reset = () => {
-    setStep("upload");
-    setFile(null);
-    setPreview(null);
-    setResolutions({});
-    setPlanningActions({});
-    setDuplicatePage(1);
-    setDuplicateSearch("");
-    setResult(null);
-    setShowParseErrors(false);
-    setShowCommitErrors(false);
-  };
-
-  const handleClose = () => {
-    reset();
-    onClose();
-  };
-
-  const handleFileSelect = (selectedFile: File) => {
-    if (!selectedFile.name.match(/\.(xlsx|xls)$/i)) {
-      toast.error("File harus berformat .xlsx atau .xls");
-      return;
-    }
-    setFile(selectedFile);
-  };
-
-  const handleUpload = async () => {
-    if (!file) return;
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await api.post<PreviewResult>("/import/preview", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      setPreview(res.data);
-
-      const initialResolutions: Record<string, Resolution> = {};
-      for (const u of res.data.unmatched) {
-        initialResolutions[u.excelName] =
-          u.suggestions.length > 0
-            ? {
-                excelName: u.excelName,
-                useExistingBalaiId: u.suggestions[0].id,
-              }
-            : { excelName: u.excelName, createNew: true };
-      }
-      setResolutions(initialResolutions);
-
-      // Default semua planning duplikat: skip
-      const initialActions: Record<string, PlanningAction> = {};
-      for (const ep of res.data.existingPlannings) {
-        initialActions[ep.groupKey] = "skip";
-      }
-      setPlanningActions(initialActions);
-
-      setStep("balai");
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Gagal memproses file Excel");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleResolutionChange = (excelName: string, value: string) => {
-    if (value === "CREATE_NEW") {
-      setResolutions((prev) => ({
-        ...prev,
-        [excelName]: { excelName, createNew: true },
-      }));
-    } else {
-      setResolutions((prev) => ({
-        ...prev,
-        [excelName]: { excelName, useExistingBalaiId: Number(value) },
-      }));
-    }
-  };
-
-  const handleNextFromBalai = () => {
-    if (preview && preview.existingPlannings.length > 0) {
-      setStep("duplicate");
-    } else {
-      handleCommit();
-    }
-  };
-
-  const handleCommit = async () => {
-    if (!preview) return;
-    setCommitting(true);
-    try {
-      const planningResolutions = Object.entries(planningActions).map(
-        ([groupKey, action]) => ({
-          groupKey,
-          action,
-        }),
-      );
-
-      const res = await api.post<CommitResult>("/import/commit", {
-        sessionId: preview.sessionId,
-        balaiResolutions: Object.values(resolutions),
-        planningResolutions,
-      });
-      setResult(res.data);
-      setStep("done");
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Gagal melakukan import");
-    } finally {
-      setCommitting(false);
-    }
-  };
-
-  const handleFinish = () => {
-    onSuccess();
-    handleClose();
-  };
-
-  const setAllPlanningAction = (action: PlanningAction) => {
-    if (!preview) return;
-    const newActions: Record<string, PlanningAction> = {};
-    for (const ep of preview.existingPlannings)
-      newActions[ep.groupKey] = action;
-    setPlanningActions(newActions);
-  };
-
-  const filteredExistingPlannings = useMemo(() => {
-    if (!preview) return [];
-    if (!duplicateSearch.trim()) return preview.existingPlannings;
-    const q = duplicateSearch.toLowerCase();
-    return preview.existingPlannings.filter(
-      (ep) =>
-        ep.namaProyek.toLowerCase().includes(q) ||
-        ep.balaiName.toLowerCase().includes(q),
-    );
-  }, [preview, duplicateSearch]);
-
-  const duplicateTotalPages = Math.ceil(
-    filteredExistingPlannings.length / duplicatePerPage,
-  );
-  const duplicatePageData = filteredExistingPlannings.slice(
-    (duplicatePage - 1) * duplicatePerPage,
-    duplicatePage * duplicatePerPage,
-  );
-
-  const replaceCount = Object.values(planningActions).filter(
-    (a) => a === "replace",
-  ).length;
-  const skipCount = Object.values(planningActions).filter(
-    (a) => a === "skip",
-  ).length;
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        if (!v) handleClose();
-      }}
-    >
-      <DialogContent
-        className="!max-w-3xl !w-[92vw] max-h-[88vh] flex flex-col p-0 gap-0 overflow-hidden"
-        onInteractOutside={(e) => e.preventDefault()}
-      >
-        <DialogHeader className="px-8 pt-6 pb-4 border-b shrink-0">
-          <DialogTitle className="flex items-center gap-2">
-            <FileSpreadsheet size={20} className="text-primary" />
-            Import Planning dari Excel
-          </DialogTitle>
-          <p className="text-sm text-muted-foreground mt-1">
-            {step === "upload" &&
-              "Upload file Excel rekapitulasi rencana anggaran"}
-            {step === "balai" && "Periksa hasil pemetaan data balai"}
-            {step === "duplicate" &&
-              "Beberapa planning sudah ada di sistem — pilih tindakan"}
-            {step === "done" && "Import telah selesai diproses"}
-          </p>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-y-auto px-8 py-6">
-          {/* STEP: Upload */}
-          {step === "upload" && (
-            <div className="space-y-4">
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const f = e.dataTransfer.files[0];
-                  if (f) handleFileSelect(f);
-                }}
-                className="border-2 border-dashed rounded-xl p-12 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors"
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls"
-                  className="hidden"
-                  onChange={(e) => {
-                    const s = e.target.files?.[0];
-                    if (s) handleFileSelect(s);
-                  }}
-                />
-                <Upload
-                  size={32}
-                  className="mx-auto mb-3 text-muted-foreground"
-                />
-                <p className="text-sm font-medium">
-                  {file ? file.name : "Klik atau seret file Excel ke sini"}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Format .xlsx atau .xls, sheet 7691/7692/7693/7694
-                </p>
-              </div>
-
-              {file && (
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border">
-                  <FileSpreadsheet
-                    size={18}
-                    className="text-green-600 shrink-0"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{file.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {(file.size / 1024).toFixed(0)} KB
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => setFile(null)}
-                  >
-                    <X size={14} />
-                  </Button>
-                </div>
-              )}
-
-              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 flex gap-2.5">
-                <Sparkles size={15} className="text-blue-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-700">
-                  Sistem akan mendeteksi proyek baru maupun yang sudah ada, lalu
-                  meminta konfirmasi sebelum data disimpan.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* STEP: Balai resolution */}
-          {step === "balai" && preview && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-4 gap-3">
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold">
-                    {preview.summary.totalPlanning}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Total Planning
-                  </p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold text-green-600">
-                    {preview.summary.totalPlanningBaru}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Baru</p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold text-amber-600">
-                    {preview.summary.totalPlanningDuplikat}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Sudah Ada
-                  </p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold">
-                    {preview.summary.totalRowsValid}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Alokasi Valid
-                  </p>
-                </div>
-              </div>
-
-              {preview.summary.totalRowsError > 0 && (
-                <div className="rounded-lg border border-red-200 bg-red-50 overflow-hidden">
-                  <button
-                    onClick={() => setShowParseErrors(!showParseErrors)}
-                    className="w-full flex items-center justify-between p-3 hover:bg-red-100/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle size={15} className="text-red-600" />
-                      <span className="text-sm font-medium text-red-700">
-                        {preview.summary.totalRowsError} baris tidak dapat
-                        dibaca
-                      </span>
-                    </div>
-                    <span className="text-xs text-red-600 underline">
-                      {showParseErrors ? "Tutup" : "Lihat detail"}
-                    </span>
-                  </button>
-                  {showParseErrors && (
-                    <div className="border-t border-red-200 bg-white">
-                      <ErrorTable
-                        errors={preview.parseErrors}
-                        showBalaiTahun={false}
-                      />
-                      <div className="p-2 border-t border-red-200">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="w-full text-xs h-8"
-                          onClick={() =>
-                            downloadErrorsToExcel(
-                              preview.parseErrors,
-                              "baris-gagal-dibaca",
-                            )
-                          }
-                        >
-                          <Download size={12} className="mr-1.5" /> Download
-                          Daftar Error
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {preview.matched.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <CheckCircle2 size={14} className="text-green-600" />
-                    <p className="text-sm font-medium">
-                      {preview.matched.length} Balai Cocok Otomatis
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {preview.matched.map((m) => (
-                      <Badge
-                        key={m.excelName}
-                        variant="secondary"
-                        className="text-xs"
-                      >
-                        {m.balaiName}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {preview.unmatched.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <AlertCircle size={14} className="text-amber-600" />
-                    <p className="text-sm font-medium">
-                      {preview.unmatched.length} Balai Perlu Konfirmasi
-                    </p>
-                  </div>
-                  <div className="space-y-2.5">
-                    {preview.unmatched.map((u) => (
-                      <div
-                        key={u.excelName}
-                        className="rounded-lg border p-3 space-y-2"
-                      >
-                        <p className="text-sm font-medium">{u.excelName}</p>
-                        <Select
-                          value={
-                            resolutions[u.excelName]?.createNew
-                              ? "CREATE_NEW"
-                              : resolutions[
-                                  u.excelName
-                                ]?.useExistingBalaiId?.toString() || ""
-                          }
-                          onValueChange={(v) =>
-                            handleResolutionChange(u.excelName, v)
-                          }
-                        >
-                          <SelectTrigger className="w-full h-9 text-xs">
-                            <SelectValue placeholder="Pilih tindakan" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {u.suggestions.map((s) => (
-                              <SelectItem key={s.id} value={s.id.toString()}>
-                                Gunakan:{" "}
-                                <span className="font-medium">{s.name}</span>
-                                <span className="text-muted-foreground ml-1">
-                                  ({Math.round(s.score * 100)}% mirip)
-                                </span>
-                              </SelectItem>
-                            ))}
-                            <SelectItem value="CREATE_NEW">
-                              ➕ Buat balai baru: &quot;{u.excelName}&quot;
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* STEP: Duplicate planning resolution */}
-          {step === "duplicate" && preview && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-muted-foreground shrink-0">
-                  <span className="text-amber-600 font-medium">
-                    {skipCount} pakai lama
-                  </span>
-                  ,
-                  <span className="text-blue-600 font-medium">
-                    {" "}
-                    {replaceCount} diganti baru
-                  </span>
-                </p>
-                <div className="flex gap-2 shrink-0">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs"
-                    onClick={() => setAllPlanningAction("skip")}
-                  >
-                    <SkipForward size={12} className="mr-1.5" /> Skip Semua
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs"
-                    onClick={() => setAllPlanningAction("replace")}
-                  >
-                    <RefreshCw size={12} className="mr-1.5" /> Replace Semua
-                  </Button>
-                </div>
-              </div>
-
-              {/* Search box */}
-              <div className="relative">
-                <Search
-                  size={14}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                />
-                <Input
-                  placeholder="Cari nama proyek atau balai..."
-                  value={duplicateSearch}
-                  onChange={(e) => {
-                    setDuplicateSearch(e.target.value);
-                    setDuplicatePage(1);
-                  }}
-                  className="pl-9 h-9 text-sm"
-                />
-                {duplicateSearch && (
-                  <button
-                    onClick={() => {
-                      setDuplicateSearch("");
-                      setDuplicatePage(1);
-                    }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-
-              {duplicateSearch && (
-                <p className="text-xs text-muted-foreground">
-                  {filteredExistingPlannings.length} hasil ditemukan untuk
-                  &quot;{duplicateSearch}&quot;
-                </p>
-              )}
-
-              <div className="space-y-2.5">
-                {duplicatePageData.length === 0 ? (
-                  <div className="text-center py-10 text-muted-foreground">
-                    <Search size={28} className="mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">
-                      Tidak ada planning yang cocok dengan pencarian
-                    </p>
-                  </div>
-                ) : (
-                  duplicatePageData.map((ep) => {
-                    const action = planningActions[ep.groupKey] ?? "skip";
-                    return (
-                      <div
-                        key={ep.groupKey}
-                        className="rounded-lg border p-3 space-y-2"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {ep.namaProyek}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {ep.balaiName}
-                            </p>
-                          </div>
-                          <Badge
-                            variant={
-                              action === "replace" ? "default" : "secondary"
-                            }
-                            className="text-xs shrink-0"
-                          >
-                            <Copy size={10} className="mr-1" /> Duplikat
-                          </Badge>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4 text-xs">
-                          <div className="rounded-lg bg-muted/40 p-3">
-                            <p className="text-muted-foreground mb-1">
-                              Data Lama
-                            </p>
-                            <p className="font-semibold text-sm">
-                              {ep.existingAlokasiCount} alokasi · Rp{" "}
-                              {formatRupiah(ep.existingTotal)}
-                            </p>
-                          </div>
-                          <div className="rounded-lg bg-blue-50 p-3">
-                            <p className="text-muted-foreground mb-1">
-                              Data Baru (Excel)
-                            </p>
-                            <p className="font-semibold text-sm">
-                              {ep.newAlokasiCount} alokasi · Rp{" "}
-                              {formatRupiah(ep.newTotal)}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <button
-                            onClick={() =>
-                              setPlanningActions((p) => ({
-                                ...p,
-                                [ep.groupKey]: "skip",
-                              }))
-                            }
-                            className={`text-sm font-medium py-2.5 rounded-lg border transition-colors ${
-                              action === "skip"
-                                ? "bg-amber-100 border-amber-400 text-amber-700"
-                                : "border-border hover:bg-muted/40"
-                            }`}
-                          >
-                            Pakai Data Lama
-                          </button>
-                          <button
-                            onClick={() =>
-                              setPlanningActions((p) => ({
-                                ...p,
-                                [ep.groupKey]: "replace",
-                              }))
-                            }
-                            className={`text-sm font-medium py-2.5 rounded-lg border transition-colors ${
-                              action === "replace"
-                                ? "bg-blue-100 border-blue-400 text-blue-700"
-                                : "border-border hover:bg-muted/40"
-                            }`}
-                          >
-                            Ganti dengan Baru
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {duplicateTotalPages > 1 && (
-                <div className="flex items-center justify-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={duplicatePage === 1}
-                    onClick={() => setDuplicatePage((p) => p - 1)}
-                  >
-                    Sebelumnya
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    Halaman {duplicatePage} dari {duplicateTotalPages}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={duplicatePage === duplicateTotalPages}
-                    onClick={() => setDuplicatePage((p) => p + 1)}
-                  >
-                    Berikutnya
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* STEP: Done */}
-          {step === "done" && result && (
-            <div className="space-y-5">
-              <div className="text-center py-4 space-y-3">
-                <div
-                  className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto ${
-                    result.skipped > 0 ? "bg-amber-100" : "bg-green-100"
-                  }`}
-                >
-                  {result.skipped > 0 ? (
-                    <AlertTriangle size={32} className="text-amber-600" />
-                  ) : (
-                    <CheckCircle2 size={32} className="text-green-600" />
-                  )}
-                </div>
-                <div>
-                  <p className="text-lg font-semibold">
-                    {result.skipped > 0
-                      ? "Import Selesai (dengan beberapa error)"
-                      : "Import Berhasil!"}
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Data dari Excel telah diproses ke dalam sistem
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-2.5">
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-xl font-bold text-green-600">
-                    {result.createdPlanning}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Baru</p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-xl font-bold text-blue-600">
-                    {result.updatedPlanning}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Diganti</p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-xl font-bold text-amber-600">
-                    {result.skippedPlanning}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Di-skip</p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p
-                    className={`text-xl font-bold ${result.skipped > 0 ? "text-red-600" : "text-muted-foreground"}`}
-                  >
-                    {result.skipped}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Error</p>
-                </div>
-              </div>
-
-              {result.skipped > 0 && (
-                <div className="rounded-lg border border-red-200 bg-red-50 overflow-hidden">
-                  <button
-                    onClick={() => setShowCommitErrors(!showCommitErrors)}
-                    className="w-full flex items-center justify-between p-3 hover:bg-red-100/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle size={15} className="text-red-600" />
-                      <span className="text-sm font-medium text-red-700">
-                        Lihat {result.skipped} data error
-                      </span>
-                    </div>
-                    <span className="text-xs text-red-600 underline">
-                      {showCommitErrors ? "Tutup" : "Lihat detail"}
-                    </span>
-                  </button>
-                  {showCommitErrors && (
-                    <div className="border-t border-red-200 bg-white">
-                      <ErrorTable errors={result.commitErrors} />
-                      <div className="p-2 border-t border-red-200">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="w-full text-xs h-8"
-                          onClick={() =>
-                            downloadErrorsToExcel(
-                              result.commitErrors,
-                              "data-error-saat-import",
-                            )
-                          }
-                        >
-                          <Download size={12} className="mr-1.5" /> Download
-                          Daftar Error
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <DialogFooter className="px-8 py-5 border-t shrink-0 bg-background">
-          {step === "upload" && (
-            <>
-              <Button variant="outline" onClick={handleClose}>
-                Batal
-              </Button>
-              <Button onClick={handleUpload} disabled={!file || uploading}>
-                {uploading ? (
-                  <Loader2 size={15} className="mr-2 animate-spin" />
-                ) : (
-                  <ArrowRight size={15} className="mr-2" />
-                )}
-                {uploading ? "Memproses..." : "Lanjutkan"}
-              </Button>
-            </>
-          )}
-          {step === "balai" && (
-            <>
-              <Button variant="outline" onClick={() => setStep("upload")}>
-                <ArrowLeft size={15} className="mr-2" /> Kembali
-              </Button>
-              <Button onClick={handleNextFromBalai} disabled={committing}>
-                {committing && (
-                  <Loader2 size={15} className="mr-2 animate-spin" />
-                )}
-                {preview && preview.existingPlannings.length > 0
-                  ? "Lanjutkan"
-                  : committing
-                    ? "Mengimpor..."
-                    : "Import Sekarang"}
-                {preview && preview.existingPlannings.length > 0 && (
-                  <ArrowRight size={15} className="ml-2" />
-                )}
-              </Button>
-            </>
-          )}
-          {step === "duplicate" && (
-            <>
-              <Button variant="outline" onClick={() => setStep("balai")}>
-                <ArrowLeft size={15} className="mr-2" /> Kembali
-              </Button>
-              <Button onClick={handleCommit} disabled={committing}>
-                {committing && (
-                  <Loader2 size={15} className="mr-2 animate-spin" />
-                )}
-                {committing ? "Mengimpor..." : "Import Sekarang"}
-              </Button>
-            </>
-          )}
-          {step === "done" && (
-            <Button onClick={handleFinish} className="w-full">
-              Selesai
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

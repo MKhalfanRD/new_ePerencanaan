@@ -11,7 +11,7 @@ const SHEETS_TO_PROCESS = ['7691', '7692', '7693', '7694'];
 const DEFAULT_PROGRAM_ID = 'FC';
 const DEFAULT_PROGRAM_NAME = 'FC Ketahanan Sumber Daya Air';
 
-export interface ParsedRow {
+interface ParsedRow {
   sheetName: string;
   excelRowNumber: number;
   ta: number;
@@ -96,6 +96,66 @@ function levenshtein(a: string, b: string): number {
 @Injectable()
 export class ImportService {
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * Bangun data alokasi dari baris Excel, dan otomatis tambahkan pasangan
+   * RENCANA/REALISASI bernilai 0 untuk RO+tahun yang belum punya pasangan,
+   * supaya konsisten dengan alokasi yang dibuat manual.
+   */
+  private buildAlokasiWithPairs(
+    rows: ParsedRow[],
+    currentYear: number,
+    isReplace = false,
+  ) {
+    const result: any[] = [];
+    const seenKeys = new Set<string>(); // roId|tahun|status yang sudah ada dari Excel
+
+    for (const row of rows) {
+      const status = row.ta <= currentYear ? 'REALISASI' : 'RENCANA';
+      seenKeys.add(`${row.kdRO}|${row.ta}|${status}`);
+
+      result.push({
+        roId: row.kdRO,
+        tahun: row.ta,
+        status,
+        rm: row.jumlah,
+        total: row.jumlah,
+        outputTarget: row.outputTarget,
+        outputUnit: row.outputUnit,
+        outcomeTarget: row.outcomeTarget,
+        outcomeUnit: row.outcomeUnit,
+        catatan: isReplace
+          ? 'Hasil import dari Excel (replace)'
+          : 'Hasil import dari Excel',
+      });
+    }
+
+    // Tambahkan pasangan kosong untuk RO+tahun yang cuma punya satu status
+    for (const row of rows) {
+      const pairedStatus = row.ta <= currentYear ? 'RENCANA' : 'REALISASI';
+      const pairedKey = `${row.kdRO}|${row.ta}|${pairedStatus}`;
+
+      if (!seenKeys.has(pairedKey)) {
+        seenKeys.add(pairedKey);
+        result.push({
+          roId: row.kdRO,
+          tahun: row.ta,
+          status: pairedStatus,
+          rm: 0,
+          rmp: 0,
+          pln: 0,
+          sbsn: 0,
+          kpbu: 0,
+          total: 0,
+          outputUnit: row.outputUnit,
+          outcomeUnit: row.outcomeUnit,
+          catatan: 'Dibuat otomatis sebagai pasangan (import Excel)',
+        });
+      }
+    }
+
+    return result;
+  }
 
   async preview(fileBuffer: Buffer) {
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
@@ -455,30 +515,22 @@ export class ImportService {
           await this.prisma.alokasi.deleteMany({
             where: { planningId: existing.id },
           });
+          const alokasiData = this.buildAlokasiWithPairs(
+            groupRows,
+            currentYear,
+            true,
+          );
           await this.prisma.planning.update({
             where: { id: existing.id },
             data: {
               masaPelaksanaan:
                 groupRows.length > 1 ? 'MULTI_YEAR' : 'SINGLE_YEAR',
               provinceId: first.provinsi || undefined,
-              alokasi: {
-                create: groupRows.map((row) => ({
-                  roId: row.kdRO,
-                  tahun: row.ta,
-                  status: row.ta <= currentYear ? 'REALISASI' : 'RENCANA',
-                  rm: row.jumlah,
-                  total: row.jumlah,
-                  outputTarget: row.outputTarget,
-                  outputUnit: row.outputUnit,
-                  outcomeTarget: row.outcomeTarget,
-                  outcomeUnit: row.outcomeUnit,
-                  catatan: 'Hasil import dari Excel (replace)',
-                })),
-              },
+              alokasi: { create: alokasiData },
             },
           });
           updatedPlanning++;
-          createdAlokasi += groupRows.length;
+          createdAlokasi += alokasiData.length;
         } catch (err: any) {
           for (const row of groupRows) {
             commitErrors.push({
@@ -496,6 +548,7 @@ export class ImportService {
 
       // Planning baru
       try {
+        const alokasiData = this.buildAlokasiWithPairs(groupRows, currentYear);
         await this.prisma.planning.create({
           data: {
             balaiId,
@@ -507,24 +560,11 @@ export class ImportService {
             provinceId: first.provinsi || undefined,
             status: 'DRAFT',
             createdById: userId,
-            alokasi: {
-              create: groupRows.map((row) => ({
-                roId: row.kdRO,
-                tahun: row.ta,
-                status: row.ta <= currentYear ? 'REALISASI' : 'RENCANA',
-                rm: row.jumlah,
-                total: row.jumlah,
-                outputTarget: row.outputTarget,
-                outputUnit: row.outputUnit,
-                outcomeTarget: row.outcomeTarget,
-                outcomeUnit: row.outcomeUnit,
-                catatan: 'Hasil import dari Excel',
-              })),
-            },
+            alokasi: { create: alokasiData },
           },
         });
         createdPlanning++;
-        createdAlokasi += groupRows.length;
+        createdAlokasi += alokasiData.length;
       } catch (err: any) {
         for (const row of groupRows) {
           commitErrors.push({

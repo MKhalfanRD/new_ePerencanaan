@@ -68,6 +68,7 @@ import {
   exportPlanningDetailToPDF,
 } from "@/lib/export-utils";
 import { AlokasiFormDialog } from "./alokasi-form-dialog";
+import { AlokasiDetailDialog } from "./alokasi-detail-dialog";
 
 const statusConfig = {
   DRAFT: {
@@ -111,12 +112,13 @@ const formatRupiah = (val: string | number) =>
   }).format(Number(val));
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
   return (
     <div className="flex items-start gap-3 py-2">
       <span className="text-xs text-muted-foreground w-40 shrink-0 mt-0.5">
         {label}
       </span>
-      <span className="text-sm font-medium flex-1">{value || "—"}</span>
+      <span className="text-sm font-medium flex-1">{value}</span>
     </div>
   );
 }
@@ -156,6 +158,7 @@ export function PlanningDetailDialog({
   const [editAlokasi, setEditAlokasi] = useState<Alokasi | null>(null);
   const [deleteAlokasiId, setDeleteAlokasiId] = useState<string | null>(null);
   const [deletingAlokasi, setDeletingAlokasi] = useState(false);
+  const [detailAlokasiId, setDetailAlokasiId] = useState<string | null>(null);
 
   const canEdit =
     (user?.role === "SATKER" || user?.role === "ADMINISTRATOR") &&
@@ -533,11 +536,9 @@ export function PlanningDetailDialog({
                               {alokasi.map((a) => (
                                 <tr
                                   key={a.id}
-                                  className={
-                                    a.status === "RENCANA"
-                                      ? "bg-blue-50/40"
-                                      : "bg-slate-50/40"
-                                  }
+                                  className={`cursor-pointer hover:brightness-95 transition-all ${a.status === "RENCANA" ? "bg-blue-50/40" : "bg-slate-50/40"}`}
+                                  onDoubleClick={() => setDetailAlokasiId(a.id)}
+                                  title="Klik 2x untuk lihat detail"
                                 >
                                   <td className="px-3 py-2">
                                     <span
@@ -561,7 +562,10 @@ export function PlanningDetailDialog({
                                   {canManageAlokasi && (
                                     <td className="px-2 py-2">
                                       <TooltipProvider delayDuration={300}>
-                                        <div className="flex items-center gap-0.5 justify-end">
+                                        <div
+                                          className="flex items-center gap-0.5 justify-end"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
                                           <Tooltip>
                                             <TooltipTrigger asChild>
                                               <Button
@@ -766,6 +770,15 @@ export function PlanningDetailDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* Alokasi Detail */}
+      {detailAlokasiId && (
+        <AlokasiDetailDialog
+          open={!!detailAlokasiId}
+          onClose={() => setDetailAlokasiId(null)}
+          alokasiId={detailAlokasiId}
+          onRefreshParent={onRefresh}
+        />
+      )}
     </Dialog>
   );
 }

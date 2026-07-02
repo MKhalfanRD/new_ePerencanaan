@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Upload } from "lucide-react";
-import ImportExcelDialog from "@/components/import/import-excel-dialog";
+import { ImportExcelDialog } from "@/components/import/import-excel-dialog";
 import {
   Select,
   SelectContent,
@@ -304,7 +304,13 @@ export default function PlanningsPage() {
           <div className="flex items-center gap-2">
             {(user?.role === "SATKER" || user?.role === "ADMINISTRATOR") && (
               <>
-                <Button variant="outline" onClick={() => setShowImport(true)}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    console.log("Tombol diklik");
+                    setShowImport(true);
+                  }}
+                >
                   <Upload size={16} className="mr-2" /> Import Excel
                 </Button>
                 <Button
@@ -621,6 +627,15 @@ export default function PlanningsPage() {
           onRefresh={fetchPlannings}
         />
       )}
+
+      <ImportExcelDialog
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onSuccess={() => {
+          setShowImport(false);
+          fetchPlannings();
+        }}
+      />
 
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>

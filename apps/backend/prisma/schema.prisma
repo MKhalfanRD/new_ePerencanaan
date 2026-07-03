@@ -254,6 +254,62 @@ model WilayahSungai {
 }
 
 // =============================================
+// WILAYAH ADMINISTRATIF (di-host lokal)
+// =============================================
+// Sebelumnya di-proxy live dari emsifa.com saat runtime — rentan terhadap
+// masalah TLS/DNS pihak ketiga (lihat "Update — Perbaikan Fitur Reverse
+// Geocode Otomatis" di dokumen analisis). Solusi jangka panjang: import
+// sekali ke tabel-tabel ini (lihat `prisma/scripts/import-wilayah.ts`),
+// setelah itu WilayahService membaca dari sini, bukan dari internet.
+// ID memakai kode resmi Kemendagri (String) sesuai emsifa.com, BUKAN
+// auto-increment/cuid, supaya konsisten dengan field provinceId/cityId/dst.
+// yang sudah dipakai di Balai/Planning/LokasiAlokasi (String @db.VarChar(10)).
+
+model WilayahProvince {
+  id   String @id @db.VarChar(10)
+  name String @db.VarChar(150)
+
+  regencies WilayahRegency[]
+
+  @@map("wilayah_provinces")
+}
+
+model WilayahRegency {
+  id         String @id @db.VarChar(10)
+  name       String @db.VarChar(150)
+  provinceId String @db.VarChar(10)
+
+  province  WilayahProvince   @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  districts WilayahDistrict[]
+
+  @@index([provinceId])
+  @@map("wilayah_regencies")
+}
+
+model WilayahDistrict {
+  id       String @id @db.VarChar(10)
+  name     String @db.VarChar(150)
+  regencyId String @db.VarChar(10)
+
+  regency  WilayahRegency   @relation(fields: [regencyId], references: [id], onDelete: Cascade)
+  villages WilayahVillage[]
+
+  @@index([regencyId])
+  @@map("wilayah_districts")
+}
+
+model WilayahVillage {
+  id         String @id @db.VarChar(10)
+  name       String @db.VarChar(150)
+  districtId String @db.VarChar(10)
+
+  district WilayahDistrict @relation(fields: [districtId], references: [id], onDelete: Cascade)
+
+  @@index([districtId])
+  @@map("wilayah_villages")
+}
+
+// =============================================
 // PLANNING UTAMA
 // =============================================
 

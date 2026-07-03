@@ -11,8 +11,10 @@ import {
   Send,
   ChevronDown,
   ChevronRight,
-  Layers,
-  List,
+  ChevronLeft,
+  Maximize2,
+  Minimize2,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -44,8 +46,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
-
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
 import { Planning, PaginatedResponse } from "@/types";
@@ -102,7 +102,6 @@ export default function PlanningsPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [viewMode, setViewMode] = useState<"grouped" | "flat">("grouped");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set(),
   );
@@ -187,8 +186,10 @@ export default function PlanningsPage() {
         kegiatanName: string;
         programCode: string;
         plannings: Planning[];
-        totalByYear: Record<number, number>;
-        grandTotal: number;
+        rencanaByYear: Record<number, number>;
+        realisasiByYear: Record<number, number>;
+        grandTotalRencana: number;
+        grandTotalRealisasi: number;
       }
     >();
 
@@ -207,19 +208,28 @@ export default function PlanningsPage() {
           kegiatanName,
           programCode,
           plannings: [],
-          totalByYear: {},
-          grandTotal: 0,
+          rencanaByYear: {},
+          realisasiByYear: {},
+          grandTotalRencana: 0,
+          grandTotalRealisasi: 0,
         });
       }
 
       const group = map.get(kegiatanCode)!;
       group.plannings.push(p);
 
-      for (const a of p.alokasi.filter((a) => a.status === "RENCANA")) {
+      for (const a of p.alokasi) {
         years.add(a.tahun);
-        group.totalByYear[a.tahun] =
-          (group.totalByYear[a.tahun] || 0) + Number(a.total);
-        group.grandTotal += Number(a.total);
+        const value = Number(a.total);
+        if (a.status === "RENCANA") {
+          group.rencanaByYear[a.tahun] =
+            (group.rencanaByYear[a.tahun] || 0) + value;
+          group.grandTotalRencana += value;
+        } else {
+          group.realisasiByYear[a.tahun] =
+            (group.realisasiByYear[a.tahun] || 0) + value;
+          group.grandTotalRealisasi += value;
+        }
       }
     }
 
@@ -232,6 +242,9 @@ export default function PlanningsPage() {
     };
   }, [plannings]);
 
+  const allCollapsed =
+    groups.groups.length > 0 && collapsedGroups.size === groups.groups.length;
+
   const toggleGroup = (code: string) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -239,6 +252,50 @@ export default function PlanningsPage() {
       else next.add(code);
       return next;
     });
+  };
+
+  const toggleAllGroups = () => {
+    if (allCollapsed) {
+      setCollapsedGroups(new Set());
+    } else {
+      setCollapsedGroups(new Set(groups.groups.map((g) => g.kegiatanCode)));
+    }
+  };
+
+  // Kode identitas ringkas per proyek, mis. "WA.7755.EBA" — dari kode Balai +
+  // Program.Kegiatan pada alokasi pertamanya. Ditampilkan langsung di baris
+  // list supaya user tidak perlu buka detail hanya untuk mengenali proyek.
+  const getPlanningKode = (p: Planning) => {
+    const a = p.alokasi[0];
+    const balaiCode = p.balai.code || p.balai.shortName || "-";
+    const programCode = a?.ro?.kro?.kegiatan?.program?.code || "-";
+    const kegiatanCode = a?.ro?.kro?.kegiatan?.code || "-";
+    return `${balaiCode}.${programCode}.${kegiatanCode}`;
+  };
+
+  const realisasiPct = (rencana: number, realisasi: number) => {
+    if (rencana > 0) return Math.round((realisasi / rencana) * 100);
+    return realisasi > 0 ? 100 : 0;
+  };
+
+  // Sel angka per tahun: baris atas = Rencana, baris bawah = Realisasi
+  // (dengan centang bila sudah terisi). Dipakai di baris tiap proyek.
+  const renderYearCell = (
+    v: { rencana: number; realisasi: number } | undefined,
+  ) => {
+    const rencana = v?.rencana || 0;
+    const realisasi = v?.realisasi || 0;
+    return (
+      <div className="w-24 shrink-0 text-right">
+        <p className="text-xs font-semibold">{formatRupiahShort(rencana)}</p>
+        <p className="text-[11px] text-emerald-600 flex items-center justify-end gap-1">
+          {realisasi > 0 && (
+            <CheckCircle2 size={10} className="text-emerald-500 shrink-0" />
+          )}
+          {formatRupiahShort(realisasi)}
+        </p>
+      </div>
+    );
   };
 
   const renderActions = (p: Planning) => (
@@ -363,245 +420,240 @@ export default function PlanningsPage() {
           </Select>
         </div>
 
-        <div className="flex gap-1 p-1 bg-muted/60 rounded-lg shrink-0">
-          <button
-            onClick={() => setViewMode("grouped")}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-              viewMode === "grouped"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <Layers size={13} /> Kelompok
-          </button>
-          <button
-            onClick={() => setViewMode("flat")}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-              viewMode === "flat"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <List size={13} /> Daftar
-          </button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={toggleAllGroups}
+          className="shrink-0 text-xs"
+        >
+          {allCollapsed ? (
+            <Maximize2 size={13} className="mr-1.5" />
+          ) : (
+            <Minimize2 size={13} className="mr-1.5" />
+          )}
+          {allCollapsed ? "Buka Semua" : "Tutup Semua"}
+        </Button>
       </div>
 
-      {viewMode === "grouped" && (
-        <div className="space-y-4">
-          {loading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="h-20 bg-muted rounded-xl animate-pulse"
-                />
-              ))}
-            </div>
-          ) : groups.groups.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-16 text-muted-foreground">
-                <FileText size={40} className="mx-auto mb-3 opacity-30" />
-                <p className="text-sm font-medium">Tidak ada planning</p>
-              </CardContent>
-            </Card>
-          ) : (
-            groups.groups.map((group) => {
-              const isCollapsed = collapsedGroups.has(group.kegiatanCode);
-              return (
-                <Card key={group.kegiatanCode} className="overflow-hidden">
-                  <button
-                    onClick={() => toggleGroup(group.kegiatanCode)}
-                    className="w-full flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-primary/5 to-transparent hover:from-primary/10 transition-colors text-left"
-                  >
+      {/* Sub-header kolom tahun — sekali saja untuk seluruh daftar */}
+      {!loading && groups.groups.length > 0 && (
+        <div className="hidden md:flex items-center gap-4 px-5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+          <div className="flex-1 min-w-0" />
+          <div className="flex items-center gap-4">
+            {groups.years.map((year) => (
+              <div key={year} className="w-24 shrink-0 text-right">
+                {year}
+              </div>
+            ))}
+            <div className="w-24 shrink-0 text-right border-l pl-3">Total</div>
+          </div>
+          <div className="w-[76px] shrink-0" />
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-20 bg-muted rounded-xl animate-pulse" />
+            ))}
+          </div>
+        ) : groups.groups.length === 0 ? (
+          <Card>
+            <CardContent className="text-center py-16 text-muted-foreground">
+              <FileText size={40} className="mx-auto mb-3 opacity-30" />
+              <p className="text-sm font-medium">Tidak ada planning</p>
+            </CardContent>
+          </Card>
+        ) : (
+          groups.groups.map((group) => {
+            const isCollapsed = collapsedGroups.has(group.kegiatanCode);
+            const pct = realisasiPct(
+              group.grandTotalRencana,
+              group.grandTotalRealisasi,
+            );
+            const barColor =
+              pct >= 80
+                ? "bg-emerald-400"
+                : pct >= 40
+                  ? "bg-amber-400"
+                  : "bg-rose-400";
+
+            return (
+              <Card key={group.kegiatanCode} className="overflow-hidden">
+                <button
+                  onClick={() => toggleGroup(group.kegiatanCode)}
+                  className="w-full text-left bg-gradient-to-r from-blue-700 to-blue-600 text-white hover:from-blue-800 hover:to-blue-700 transition-colors"
+                >
+                  <div className="flex items-center gap-3 px-5 pt-3.5 pb-2">
                     {isCollapsed ? (
                       <ChevronRight
                         size={16}
-                        className="text-muted-foreground shrink-0"
+                        className="text-blue-200 shrink-0"
                       />
                     ) : (
                       <ChevronDown
                         size={16}
-                        className="text-muted-foreground shrink-0"
+                        className="text-blue-200 shrink-0"
                       />
                     )}
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs font-mono bg-primary/10 text-primary px-2 py-1 rounded font-semibold">
-                        {group.programCode}.{group.kegiatanCode}
-                      </span>
-                    </div>
+                    <span className="text-xs font-mono bg-white/15 px-2 py-1 rounded font-semibold shrink-0">
+                      {group.programCode}.{group.kegiatanCode}
+                    </span>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold truncate">
                         {group.kegiatanName}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-blue-200">
                         {group.plannings.length} proyek
                       </p>
                     </div>
 
-                    <div className="hidden md:flex items-center gap-4 shrink-0 overflow-x-auto max-w-md">
-                      {groups.years.slice(-4).map((year) => (
-                        <div key={year} className="text-right shrink-0">
-                          <p className="text-[10px] text-muted-foreground">
-                            {year}
+                    {/* Total per tahun & keseluruhan — atas Rencana, bawah Realisasi */}
+                    <div className="hidden md:flex items-center gap-4 shrink-0">
+                      {groups.years.map((year) => (
+                        <div key={year} className="w-24 shrink-0 text-right">
+                          <p className="text-xs font-semibold tabular-nums">
+                            {formatRupiahShort(group.rencanaByYear[year] || 0)}
                           </p>
-                          <p className="text-xs font-semibold">
-                            {formatRupiahShort(group.totalByYear[year] || 0)}
+                          <p className="text-[11px] text-blue-200 tabular-nums">
+                            {formatRupiahShort(
+                              group.realisasiByYear[year] || 0,
+                            )}
                           </p>
                         </div>
                       ))}
-                    </div>
-
-                    <div className="text-right shrink-0 pl-4 border-l">
-                      <p className="text-[10px] text-muted-foreground">
-                        Total Rencana
-                      </p>
-                      <p className="text-sm font-bold">
-                        {formatRupiahShort(group.grandTotal)}
-                      </p>
-                    </div>
-                  </button>
-
-                  {!isCollapsed && (
-                    <CardContent className="p-0 divide-y divide-border border-t">
-                      {group.plannings.map((p) => {
-                        const cfg = statusConfig[p.status];
-                        const alokasiByYear: Record<number, number> = {};
-                        for (const a of p.alokasi.filter(
-                          (a) => a.status === "RENCANA",
-                        )) {
-                          alokasiByYear[a.tahun] =
-                            (alokasiByYear[a.tahun] || 0) + Number(a.total);
-                        }
-
-                        return (
-                          <div
-                            key={p.id}
-                            className="px-5 py-3.5 hover:bg-accent/30 transition-colors"
-                          >
-                            <div className="flex items-center gap-4">
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span
-                                    className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ${cfg.className}`}
-                                  >
-                                    {cfg.icon} {cfg.label}
-                                  </span>
-                                  <span className="text-xs text-muted-foreground truncate">
-                                    {p.balai.shortName}
-                                  </span>
-                                </div>
-                                <p
-                                  className="text-sm font-medium cursor-pointer hover:text-primary transition-colors truncate"
-                                  onDoubleClick={() => setDetailData(p)}
-                                  title="Klik 2x untuk detail"
-                                >
-                                  {p.projectName}
-                                </p>
-                              </div>
-
-                              <div className="hidden lg:flex items-center gap-4 shrink-0">
-                                {groups.years.slice(-4).map((year) => (
-                                  <div key={year} className="w-20 text-right">
-                                    <p className="text-xs font-medium">
-                                      {formatRupiahShort(
-                                        alokasiByYear[year] || 0,
-                                      )}
-                                    </p>
-                                  </div>
-                                ))}
-                              </div>
-
-                              {renderActions(p)}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </CardContent>
-                  )}
-                </Card>
-              );
-            })
-          )}
-        </div>
-      )}
-
-      {viewMode === "flat" && (
-        <Card>
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="space-y-0 divide-y divide-border">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="p-4 animate-pulse">
-                    <div className="h-4 bg-muted rounded w-2/3 mb-2" />
-                    <div className="h-3 bg-muted rounded w-1/3" />
-                  </div>
-                ))}
-              </div>
-            ) : plannings.length === 0 ? (
-              <div className="text-center py-16 text-muted-foreground">
-                <FileText size={40} className="mx-auto mb-3 opacity-30" />
-                <p className="text-sm font-medium">Tidak ada planning</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-border">
-                {plannings.map((p) => {
-                  const cfg = statusConfig[p.status];
-                  const totalRencana = p.alokasi
-                    .filter((a) => a.status === "RENCANA")
-                    .reduce((s, a) => s + Number(a.total), 0);
-
-                  return (
-                    <div
-                      key={p.id}
-                      className="p-4 hover:bg-accent/30 transition-colors"
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span
-                              className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${cfg.className}`}
-                            >
-                              {cfg.icon} {cfg.label}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {p.balai.shortName} · {p.periode.label}
-                            </span>
-                          </div>
-                          <p
-                            className="font-medium text-sm cursor-pointer hover:text-primary transition-colors"
-                            onDoubleClick={() => setDetailData(p)}
-                            title="Klik 2x untuk lihat detail"
-                          >
-                            {p.projectName}
-                          </p>
-                          <div className="flex items-center gap-4 mt-1.5">
-                            <span className="text-xs text-muted-foreground">
-                              {p.masaPelaksanaan === "SINGLE_YEAR"
-                                ? "Single Year"
-                                : "Multi Year"}
-                            </span>
-                            {totalRencana > 0 && (
-                              <span className="text-xs font-medium text-foreground">
-                                {formatRupiah(totalRencana)}
-                              </span>
-                            )}
-                            <span className="text-xs text-muted-foreground">
-                              oleh {p.createdBy.name}
-                            </span>
-                          </div>
-                        </div>
-                        {renderActions(p)}
+                      <div className="w-24 shrink-0 text-right border-l border-white/20 pl-3">
+                        <p className="text-sm font-bold tabular-nums">
+                          {formatRupiahShort(group.grandTotalRencana)}
+                        </p>
+                        <p className="text-[11px] text-blue-200 tabular-nums">
+                          {formatRupiahShort(group.grandTotalRealisasi)}
+                        </p>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    <div className="w-[76px] shrink-0" />
+                  </div>
+                  <div className="px-5 pb-2.5 flex items-center gap-2">
+                    <div className="h-1 w-full max-w-[200px] rounded-full bg-white/25 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${barColor}`}
+                        style={{ width: `${Math.min(100, pct)}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-blue-100 tabular-nums w-8 text-right">
+                      {pct}%
+                    </span>
+                  </div>
+                </button>
+
+                {!isCollapsed && (
+                  <CardContent className="p-0 divide-y divide-border border-t">
+                    {group.plannings.map((p) => {
+                      const cfg = statusConfig[p.status];
+                      const byYear: Record<
+                        number,
+                        { rencana: number; realisasi: number }
+                      > = {};
+                      for (const a of p.alokasi) {
+                        if (!byYear[a.tahun]) {
+                          byYear[a.tahun] = { rencana: 0, realisasi: 0 };
+                        }
+                        if (a.status === "RENCANA") {
+                          byYear[a.tahun].rencana += Number(a.total);
+                        } else {
+                          byYear[a.tahun].realisasi += Number(a.total);
+                        }
+                      }
+                      const total = Object.values(byYear).reduce(
+                        (acc, v) => {
+                          acc.rencana += v.rencana;
+                          acc.realisasi += v.realisasi;
+                          return acc;
+                        },
+                        { rencana: 0, realisasi: 0 },
+                      );
+
+                      return (
+                        <div
+                          key={p.id}
+                          className="px-5 py-3 hover:bg-accent/30 transition-colors"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span
+                                  className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ${cfg.className}`}
+                                >
+                                  {cfg.icon} {cfg.label}
+                                </span>
+                                <span className="text-[11px] font-mono font-medium text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded shrink-0 truncate">
+                                  {getPlanningKode(p)}
+                                </span>
+                              </div>
+                              <p
+                                className="text-sm font-medium cursor-pointer hover:text-primary transition-colors truncate mb-0.5"
+                                onDoubleClick={() => setDetailData(p)}
+                                title="Klik 2x untuk detail"
+                              >
+                                {p.projectName}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground truncate">
+                                {p.balai.shortName}
+                              </p>
+                            </div>
+
+                            <div className="hidden md:flex items-center gap-4 shrink-0">
+                              {groups.years.map((year) =>
+                                renderYearCell(byYear[year]),
+                              )}
+                              <div className="w-24 shrink-0 text-right border-l pl-3">
+                                <p className="text-xs font-bold">
+                                  {formatRupiahShort(total.rencana)}
+                                </p>
+                                <p className="text-[11px] font-semibold text-emerald-600">
+                                  {formatRupiahShort(total.realisasi)}
+                                </p>
+                              </div>
+                            </div>
+
+                            {renderActions(p)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })
+        )}
+      </div>
+
+      {!loading && groups.groups.length > 0 && totalPages > 1 && (
+        <div className="flex items-center justify-between pt-1">
+          <p className="text-xs text-muted-foreground">
+            Halaman {page} dari {totalPages} &middot; {total} planning total
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+            >
+              <ChevronLeft size={14} className="mr-1" /> Sebelumnya
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+            >
+              Berikutnya <ChevronRight size={14} className="ml-1" />
+            </Button>
+          </div>
+        </div>
       )}
 
       <PlanningFormDialog

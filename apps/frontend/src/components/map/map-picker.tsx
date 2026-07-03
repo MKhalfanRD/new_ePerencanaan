@@ -17,6 +17,7 @@ interface MapPickerProps {
   onShapeChange?: (coords: number[][]) => void;
   height?: string;
   readOnly?: boolean;
+  flyToTrigger?: { lat: number; lng: number } | null;
 }
 
 // Default center: Indonesia
@@ -33,6 +34,7 @@ export function MapPicker({
   onShapeChange,
   height = "320px",
   readOnly = false,
+  flyToTrigger,
 }: MapPickerProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -46,12 +48,19 @@ export function MapPicker({
     if (!mapContainerRef.current || mapRef.current) return;
 
     let L: any;
+    let cancelled = false;
 
     (async () => {
       L = (await import("leaflet")).default;
+      // React Strict Mode (dev) menjalankan effect ini 2x secara berurutan;
+      // cek ulang di setiap titik `await` supaya tidak membuat 2 instance peta
+      // di container DOM yang sama ("Map container is already initialized").
+      if (cancelled || mapRef.current) return;
+
       // leaflet-draw mengharapkan window.L tersedia secara global sebelum di-import
       (window as any).L = L;
       await import("leaflet-draw");
+      if (cancelled || mapRef.current) return;
 
       // Fix icon path issue dengan Leaflet di Next.js
       delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -156,12 +165,36 @@ export function MapPicker({
     })();
 
     return () => {
+      cancelled = true;
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isReady || !mapRef.current || !flyToTrigger || readOnly) return;
+    if (tipeKoordinat !== "TITIK") return;
+
+    const { lat, lng } = flyToTrigger;
+    mapRef.current.setView([lat, lng], 15);
+
+    (async () => {
+      const L = (await import("leaflet")).default;
+      if (!drawnItemsRef.current) return;
+      drawnItemsRef.current.clearLayers();
+      const marker = L.marker([lat, lng], { draggable: true });
+      marker.addTo(drawnItemsRef.current);
+      layerRef.current = marker;
+      marker.on("dragend", (e: any) => {
+        const pos = e.target.getLatLng();
+        onPointChange?.(pos.lat, pos.lng);
+      });
+      onPointChange?.(lat, lng);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flyToTrigger]);
 
   const handleLocateMe = () => {
     if (!mapRef.current) return;

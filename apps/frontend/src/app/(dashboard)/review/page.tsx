@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Search, ClipboardCheck, Clock, Filter } from "lucide-react";
+import {
+  Search,
+  ClipboardCheck,
+  Clock,
+  Filter,
+  FileEdit,
+  AlertCircle,
+  XCircle,
+  CheckCircle2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -24,22 +33,27 @@ const statusConfig = {
   DRAFT: {
     label: "Draft",
     className: "bg-slate-100 text-slate-600 border border-slate-200",
+    icon: FileEdit,
   },
   SUBMITTED: {
     label: "Menunggu Review",
     className: "bg-blue-100 text-blue-700 border border-blue-200",
+    icon: Clock,
   },
   REVISION: {
     label: "Perlu Revisi",
     className: "bg-amber-100 text-amber-700 border border-amber-200",
+    icon: AlertCircle,
   },
   REJECTED: {
     label: "Ditolak",
     className: "bg-red-100 text-red-700 border border-red-200",
+    icon: XCircle,
   },
   APPROVED: {
     label: "Disetujui",
     className: "bg-green-100 text-green-700 border border-green-200",
+    icon: CheckCircle2,
   },
 };
 
@@ -192,7 +206,7 @@ export default function ReviewPage() {
                           <span
                             className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${cfg.className}`}
                           >
-                            {cfg.icon} {cfg.label}
+                            <cfg.icon size={11} /> {cfg.label}
                           </span>
                           <span className="text-xs text-muted-foreground">
                             {p.balai.shortName} · {p.periode.label}

@@ -17,7 +17,9 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import api from "@/lib/api";
+import { wilayahApi } from "@/lib/wilayah-api";
 import { CascadingWilayah, WilayahValue } from "./cascading-wilayah";
+import { LocationSearchBox } from "./location-search-box";
 import type { TipeKoordinat } from "./map-picker";
 
 // Dynamic import — Leaflet butuh window, tidak bisa SSR
@@ -65,19 +67,19 @@ export function LokasiFormDialog({
   alokasiId,
   editData,
 }: Props) {
-  const [name, setName] = useState("");
   const [tipeKoordinat, setTipeKoordinat] = useState<TipeKoordinat>("TITIK");
   const [latitude, setLatitude] = useState<number | undefined>();
   const [longitude, setLongitude] = useState<number | undefined>();
   const [coordinates, setCoordinates] = useState<number[][]>([]);
   const [wilayah, setWilayah] = useState<WilayahValue>({});
   const [submitting, setSubmitting] = useState(false);
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [flyTo, setFlyTo] = useState<{ lat: number; lng: number } | null>(null);
 
   const isEdit = !!editData;
 
   useEffect(() => {
     if (editData) {
-      setName(editData.name || "");
       setTipeKoordinat(editData.tipeKoordinat);
       setLatitude(editData.latitude);
       setLongitude(editData.longitude);
@@ -93,7 +95,6 @@ export function LokasiFormDialog({
         villageName: editData.villageName,
       });
     } else {
-      setName("");
       setTipeKoordinat("TITIK");
       setLatitude(undefined);
       setLongitude(undefined);
@@ -101,6 +102,55 @@ export function LokasiFormDialog({
       setWilayah({});
     }
   }, [editData, open]);
+
+  const handlePointChange = async (lat: number, lng: number) => {
+    setLatitude(lat);
+    setLongitude(lng);
+
+    setIsGeocoding(true);
+    try {
+      const geo = await wilayahApi.reverseGeocode(lat, lng);
+      console.log("[reverseGeocode] hasil:", geo);
+      setWilayah({
+        provinceId: geo.provinceId,
+        provinceName: geo.provinceName,
+        cityId: geo.cityId,
+        cityName: geo.cityName,
+        districtId: geo.districtId,
+        districtName: geo.districtName,
+        villageId: geo.villageId,
+        villageName: geo.villageName,
+      });
+
+      if (geo.matchedLevel === "village") {
+        toast.success("Wilayah administratif otomatis terisi");
+      } else if (geo.matchedLevel === "none") {
+        toast.warning(
+          "Wilayah tidak dapat dideteksi otomatis, silakan pilih manual",
+        );
+      } else {
+        toast.info(
+          "Sebagian wilayah terisi otomatis, silakan lengkapi sisanya",
+        );
+      }
+    } catch (err) {
+      console.error("[reverseGeocode] gagal:", err);
+      toast.error(
+        "Gagal mendeteksi wilayah otomatis, silakan pilih manual di bawah",
+      );
+    } finally {
+      setIsGeocoding(false);
+    }
+  };
+
+  const handleSearchSelect = (
+    lat: number,
+    lng: number,
+    _displayName: string,
+  ) => {
+    setFlyTo({ lat, lng }); // pindahkan peta & marker
+    handlePointChange(lat, lng); // reuse alur reverse-geocode yang sudah ada
+  };
 
   const handleSubmit = async () => {
     if (tipeKoordinat === "TITIK" && (!latitude || !longitude)) {
@@ -118,7 +168,6 @@ export function LokasiFormDialog({
     setSubmitting(true);
     try {
       const payload = {
-        name: name || undefined,
         tipeKoordinat,
         latitude: tipeKoordinat === "TITIK" ? latitude : undefined,
         longitude: tipeKoordinat === "TITIK" ? longitude : undefined,
@@ -163,15 +212,9 @@ export function LokasiFormDialog({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-7 py-6 space-y-5">
-          <div className="space-y-2">
-            <Label>Nama Lokasi (opsional)</Label>
-            <Input
-              className="h-10"
-              placeholder="Contoh: Titik Bendung Hulu"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
+          {tipeKoordinat === "TITIK" && (
+            <LocationSearchBox onSelect={handleSearchSelect} />
+          )}
 
           <MapPicker
             tipeKoordinat={tipeKoordinat}
@@ -179,11 +222,9 @@ export function LokasiFormDialog({
             latitude={latitude}
             longitude={longitude}
             coordinates={coordinates}
-            onPointChange={(lat, lng) => {
-              setLatitude(lat);
-              setLongitude(lng);
-            }}
+            onPointChange={handlePointChange}
             onShapeChange={setCoordinates}
+            flyToTrigger={flyTo}
           />
 
           {tipeKoordinat === "TITIK" && latitude && longitude && (
@@ -210,8 +251,14 @@ export function LokasiFormDialog({
           <Separator />
 
           <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
               Wilayah Administratif
+              {isGeocoding && (
+                <span className="inline-flex items-center gap-1 normal-case tracking-normal font-normal text-muted-foreground/80">
+                  <Loader2 size={11} className="animate-spin" />
+                  Mendeteksi otomatis...
+                </span>
+              )}
             </p>
             <CascadingWilayah value={wilayah} onChange={setWilayah} />
           </div>

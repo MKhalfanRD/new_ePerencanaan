@@ -1,269 +1,84 @@
-# Analisis Project: ePerencanaan (Full-Stack)
+tar --exclude='node_modules' --exclude='.next' --exclude='.git' --exclude='dist' --exclude='build' --exclude='.turbo' --exclude='node_modules.zip' --exclude='src.zip' --exclude='\*.tsbuildinfo' -czf project.tar.gz apps
 
-## Ringkasan
+## Update — Fix Bug Substring-Match, Fitur Search Lokasi Baru, & Pembersihan Field
 
-**ePerencanaan** adalah aplikasi web untuk sistem **perencanaan & penganggaran proyek infrastruktur Sumber Daya Air (PUPR)** — terlihat dari istilah domain seperti "Balai", "Wilayah Sungai", nomenklatur anggaran Program→Kegiatan→KRO→RO, dan skema pendanaan RM/RMP/PLN/SBSN/KPBU.
+> Sesi ini melanjutkan [Update sebelumnya](#update--tuntas-ssl-inspection-import-data-wilayah--perbaikan-reverse-geocode-matching), yang meninggalkan satu bug prioritas tinggi belum diperbaiki: **false-positive substring match** (kasus "Maluku"). Status akhir sesi ini: bug tsb **sudah diperbaiki**, ditemukan **satu regresi baru** dari fix-nya (sudah diperbaiki juga), dan **fitur baru** (search lokasi di peta) selesai dibangun.
 
-Project ini berbentuk **monorepo** (`apps/frontend` + `apps/backend`):
+### ✅ Fix bug false-positive substring match ("Maluku") — sudah diterapkan
 
-| Layer | Teknologi |
-|---|---|
-| **Frontend** | Next.js (App Router) + TypeScript, Axios, Leaflet, xlsx, jsPDF |
-| **Backend** | **NestJS 11** + TypeScript, **Prisma ORM** (PostgreSQL), JWT Auth, Redis (cache), Swagger |
+Root cause (dari sesi sebelumnya): field Nominatim di level bawah (mis. `region` di `cityCandidates`) kadang cuma **mengulang** nama level atasnya yang sudah resolve (mis. provinsi "Maluku"), tapi tetap dicoba dicocokkan lewat substring match (skor 0.9 di `findBestMatch`) — dan sering "menang" secara kebetulan lawan kabupaten yang namanya mengandung nama provinsi (mis. "Kabupaten Maluku Barat Daya"), menghasilkan assignment yang **kelihatan valid tapi salah**.
 
-Dokumen ini mencakup analisis **frontend dan backend sekaligus**, termasuk skema database sesungguhnya dari Prisma.
+**Verifikasi dari data**: dicek dari `scan-wilayah-gaps-result.json` (170 titik, 34 provinsi × 5 sampel) — 3 dari 5 titik anchor "Maluku" ke-assign salah ke `KABUPATEN MALUKU BARAT DAYA` (cityId `8108`) padahal raw address Nominatim cuma berisi `state: "Maluku"` / `region: "Maluku"`, tanpa info kabupaten sama sekali.
 
-## Stack Teknologi
+**Fix yang diterapkan** di `apps/backend/src/wilayah/wilayah.service.ts`:
 
-### Frontend (`apps/frontend`)
-- **Next.js** (App Router, route group `(dashboard)`)
-- **TypeScript**
-- **Axios** untuk komunikasi API (`src/lib/api.ts`) dengan interceptor JWT & auto-logout saat 401
-- **Leaflet + leaflet-draw** untuk peta interaktif (titik/garis/poligon)
-- **xlsx** untuk import/export Excel
-- **jsPDF + jspdf-autotable** untuk export PDF
-- Komponen UI custom bergaya shadcn/ui (`src/components/ui/`)
+- Fungsi baru `stripCandidatesMatchingParent()` — membuang kandidat yang namanya (setelah normalisasi) sama persis dengan nama level parent yang sudah resolve, **sebelum** dicoba di-match ke level bawahnya. Diterapkan di 3 titik: `cityCandidates` vs `province.name`, `districtCandidates` vs `city.name`, dan `villageCandidates` (baik lewat jalur normal maupun `findVillageAcrossCity`) vs `city.name`/`district.name`.
+- Logging diagnostik disatukan lewat parameter opsional `debugLabel` di `findBestMatchFromCandidates()` — kalau semua kandidat di suatu level gagal match, dicetak kandidat data master terdekat + skornya, mencakup level kota & kecamatan (dulu cuma ada untuk desa).
 
-### Backend (`apps/backend`)
-- **NestJS 11** (Express platform), modular per domain
-- **Prisma ORM 5** dengan **PostgreSQL**
-- **Autentikasi**: JWT (`@nestjs/jwt` + `passport-jwt`), password di-hash dengan **bcrypt**; dependency `argon2` juga terpasang (tersedia tapi login aktif masih pakai bcrypt)
-- **Redis** (`ioredis` + `@keyv/redis` + `@nestjs/cache-manager`) sebagai cache layer, TTL default 60 detik, mendukung invalidasi cache berbasis prefix
-- **class-validator / class-transformer** untuk validasi DTO
-- **Swagger** (`@nestjs/swagger`) untuk dokumentasi API otomatis
-- **xlsx (SheetJS)** + **multer** untuk fitur import Excel (preview → commit)
-- Testing: **Jest** (unit + e2e), sudah ada beberapa `*.spec.ts` untuk auth, users, plannings
+### 🐛 Regresi baru ditemukan dari fix di atas — sudah diperbaiki
 
-## Struktur Folder
+**Masalah**: `stripCandidatesMatchingParent()` awalnya membandingkan dua nama pakai `normalizeName()` — fungsi yang juga membuang kata admin generik (`KOTA`/`KABUPATEN`/`KECAMATAN`/dst). Ini menyebabkan dua wilayah **berbeda** yang kebetulan tersusun dari kata sama tapi urutan beda bisa ternormalisasi jadi string identik.
+
+**Kasus nyata yang membuktikan**: Kota Batam punya kecamatan asli bernama **"Batam Kota"**. Simulasi:
 
 ```
-src/
-├── app/
-│   ├── (dashboard)/
-│   │   ├── dashboard/page.tsx
-│   │   ├── plannings/page.tsx
-│   │   ├── review/page.tsx
-│   │   ├── users/page.tsx
-│   │   ├── master/page.tsx
-│   │   └── layout.tsx
-│   ├── login/page.tsx
-│   └── layout.tsx, globals.css, page.tsx
-├── components/
-│   ├── import/       -> import-excel-dialog.tsx
-│   ├── layout/        -> sidebar.tsx
-│   ├── map/            -> map-picker, lokasi-form/detail-dialog, cascading-wilayah
-│   ├── master/        -> balai, periode, nomenklatur, major-project, tindak-lanjut, wilayah-sungai
-│   ├── planning/     -> planning & alokasi form/detail dialogs
-│   ├── ui/                -> button, card, dialog, select, dll. (design system)
-│   └── users/          -> user-form-dialog.tsx
-├── lib/
-│   ├── api.ts              -> axios instance + interceptors
-│   ├── export-utils.ts  -> export Excel & PDF
-│   ├── wilayah-api.ts   -> API wilayah administratif Indonesia
-│   └── utils.ts
-├── store/
-│   └── auth.ts             -> state autentikasi
-└── types/
-    └── index.ts             -> semua tipe domain (Planning, Alokasi, RO, dll.)
+normalizeName("Kota Batam")  -> "BATAM"
+normalizeName("Batam Kota")  -> "BATAM"   (SAMA — padahal kecamatan valid, bukan pengulangan nama kota)
 ```
 
-## Struktur Folder Backend
+Kalau tidak diperbaiki, field `city_district: "Batam Kota"` dari Nominatim akan ikut ter-skip, menyebabkan hasil reverse-geocode berhenti jujur di level kota padahal seharusnya bisa sampai kecamatan — bukan salah data (aman), tapi kurang presisi untuk kasus yang sebetulnya bisa lebih detail.
 
-```
-apps/backend/src/
-├── auth/          -> login (JWT), guard, strategy
-├── users/         -> CRUD user
-├── plannings/     -> CRUD planning + submit + review workflow
-├── alokasi/       -> CRUD alokasi anggaran + lokasi + histori
-├── master/        -> semua data referensi (balai, periode, nomenklatur, dst.)
-├── import/        -> import Excel (preview → commit)
-├── wilayah/       -> proxy data wilayah administratif (provinsi/kota/kec/desa)
-├── redis/         -> cache module (global)
-├── prisma/        -> Prisma service (koneksi DB)
-└── scripts/
-apps/backend/prisma/
-├── schema.prisma  -> skema database lengkap
-├── seed.ts        -> seeder data awal
-└── migrations/
-```
+**Fix**: tambah fungsi pembanding baru `stripPunctuationOnly()` — cuma uppercase + buang spasi/tanda baca, **tanpa** membuang kata admin generik. Dipakai khusus di `stripCandidatesMatchingParent()`, sementara `normalizeName()` asli tetap dipakai di `findBestMatch()` seperti sebelumnya (tidak diubah, supaya fuzzy-match utama tidak kena efek samping).
 
-## Skema Database (Prisma / PostgreSQL)
+### ✨ Fitur baru: Search lokasi di peta
 
-Skema database mengonfirmasi & melengkapi struktur data yang sebelumnya hanya diduga dari sisi frontend.
+Sebelumnya form tambah/edit lokasi (`lokasi-form-dialog.tsx`) cuma punya 3 cara input titik: klik manual di peta, "Lokasi Saya" (geolocation browser), atau isi dropdown wilayah manual — **tidak ada** cara ketik nama tempat untuk lompat ke lokasi (forward geocoding). Fitur ini dibangun dari nol.
 
-### Enum
-| Enum | Nilai |
-|---|---|
-| `UserStatus` | ACTIVE, INACTIVE |
-| `PlanningStatus` | DRAFT, SUBMITTED, REVISION, REJECTED, APPROVED |
-| `MasaPelaksanaan` | SINGLE_YEAR, MULTI_YEAR |
-| `Kewenangan` | PUSAT, DAERAH |
-| `StatusDokumen` | TIDAK_PERLU, BELUM_ADA, SUDAH_ADA |
-| `AllokasiStatus` | RENCANA, REALISASI |
-| `TipeKoordinat` | TITIK, GARIS, POLIGON |
+**Backend** (`apps/backend/src/wilayah/`):
 
-### Entitas Utama & Relasi
+- `wilayah.service.ts` — method baru `searchAddress(query)`, forward-geocode via endpoint `/search` Nominatim (bukan `/reverse`), hasil di-cache Redis 1 hari (lebih pendek dari cache reverse-geocode 30 hari, karena variasi query teks jauh lebih tinggi). Tipe hasil: `LocationSearchResult[]` (`displayName`, `lat`, `lng`), di-export supaya bisa dipakai sebagai return type publik lintas file.
+- `wilayah.controller.ts` — endpoint baru `GET /wilayah/search?q=...`.
 
-- **Role** ↔ **User** (many-to-one): role menentukan hak akses (ADMINISTRATOR/SATKER/VERIFICATOR di level data, bukan enum — jadi role bisa ditambah dinamis lewat tabel `roles`)
-- **User** — punya `balaiId` (opsional), riwayat login, soft-delete (`deletedAt`)
-- **Balai** — punya koordinat lokasi sendiri (`latitude`/`longitude`) dan referensi wilayah
-- **Periode** — rentang tahun anggaran (`startYear`–`endYear`), hanya satu yang `isActive`
-- **Nomenklatur berjenjang**: `Program` → `Kegiatan` → `KRO` → `RO` → `IndikatorRO` (4 level hierarki, masing-masing punya `code`)
-- **Planning** (tabel inti) — relasi ke Balai, Periode, WilayahSungai, dan User (`createdBy`); punya soft-delete; diindeks pada `balaiId`, `status`, `createdById`, `periodeId`
-  - `KriteriaDokumen` (1-ke-banyak, unique per `[planningId, jenis]`) — status kesesuaian dokumen per jenis
-  - `PlanningMajorProject` & `PlanningTindakLanjut` — tabel pivot many-to-many ke Major Project & Tindak Lanjut
-  - `Prioritas` — data prioritas proyek **per tahun** (unique per `[planningId, tahun]`)
-  - `Alokasi` — anggaran per RO per tahun per status (unique per `[planningId, roId, tahun, status]`), dengan 5 sumber dana (rm, rmp, pln, sbsn, kpbu) + total, plus target output/outcome
-    - `LokasiAlokasi` — lokasi geografis per alokasi, mendukung TITIK (lat/lng) maupun GARIS/POLIGON (`coordinates` JSON array)
-    - `HistoriAlokasi` — **log perubahan** nilai alokasi (audit trail), mencatat `changedBy` & `changedAt`
-  - `PlanningReview` — riwayat aksi review (approve/reject/revisi) dengan `reviewerId` & catatan
+**Frontend** (`apps/frontend/src/`):
 
-**Insight menarik**: skema ini punya **audit trail eksplisit** (`HistoriAlokasi`) dan **soft-delete** (`deletedAt` pada User & Planning) — desain yang cukup matang untuk sistem pemerintahan yang butuh jejak audit.
+- `lib/wilayah-api.ts` — method `searchLocation(q)` + tipe `LocationSearchResult`.
+- `components/map/location-search-box.tsx` (baru) — input search dengan debounce 500ms (sejalan dengan kebijakan fair-use Nominatim 1 req/detik, minimal 3 karakter sebelum query jalan), dropdown hasil, klik-di-luar untuk menutup dropdown.
+- `components/map/map-picker.tsx` — prop baru `flyToTrigger` + `useEffect` terpisah dari effect inisialisasi peta, supaya peta bisa "dipanggil" pindah lokasi & pasang marker dari luar (dipicu tiap kali user pilih hasil pencarian), bukan cuma dari klik manual di peta.
+- `components/map/lokasi-form-dialog.tsx` — pasang `<LocationSearchBox>` di atas `<MapPicker>` untuk tipe koordinat `TITIK`; handler `handleSearchSelect` men-trigger `flyTo` sekaligus reuse alur `handlePointChange` yang sudah ada (jadi reverse-geocode & pengisian wilayah otomatis tetap jalan persis seperti klik manual).
 
-## Endpoint API Backend (Sesuai Controller Asli)
+Dua input di atas peta sekarang punya peran terpisah: **"Cari nama tempat..."** untuk mencari & memindahkan titik (fungsional, terhubung ke Nominatim), sedangkan field nama lokasi lama murni label teks bebas.
 
-### Auth
-| Method | Endpoint | Role |
-|---|---|---|
-| POST | `/auth/login` | publik |
+### 🧹 Pembersihan: field "Nama Lokasi (opsional)" dihapus
 
-### Plannings
-| Method | Endpoint | Role |
-|---|---|---|
-| POST | `/plannings` | SATKER, ADMINISTRATOR |
-| GET | `/plannings` | SATKER, VERIFICATOR, ADMINISTRATOR |
-| GET | `/plannings/:id` | SATKER, VERIFICATOR, ADMINISTRATOR |
-| PATCH | `/plannings/:id/submit` | SATKER |
-| PATCH | `/plannings/:id/review` | VERIFICATOR, ADMINISTRATOR |
-| PATCH | `/plannings/:id` | SATKER, ADMINISTRATOR |
-| DELETE | `/plannings/:id` | SATKER, ADMINISTRATOR |
+Field ini (`name`) ternyata tidak dipakai user — dihapus dari `lokasi-form-dialog.tsx`: state `name`, isi awal saat edit (`setName(editData.name || "")`), reset saat form dibuka baru, key `name` di payload submit, dan blok input JSX-nya. Import `Label`/`Input` tetap dipertahankan karena masih dipakai komponen lain di file yang sama (field Latitude/Longitude read-only).
 
-### Alokasi
-| Method | Endpoint | Role |
-|---|---|---|
-| POST | `/alokasi` | SATKER, ADMINISTRATOR |
-| GET | `/alokasi/:id` | SATKER, VERIFICATOR, ADMINISTRATOR |
-| GET | `/alokasi/:id/histori` | SATKER, VERIFICATOR, ADMINISTRATOR |
-| PATCH | `/alokasi/:id` | SATKER, ADMINISTRATOR |
-| DELETE | `/alokasi/:id` | SATKER, ADMINISTRATOR |
-| POST | `/alokasi/:id/lokasi` | SATKER, ADMINISTRATOR |
-| PATCH | `/alokasi/lokasi/:lokasiId` | SATKER, ADMINISTRATOR |
-| DELETE | `/alokasi/lokasi/:lokasiId` | SATKER, ADMINISTRATOR |
+Interface `LokasiData.name?: string` dan fallback `data.name || "Detail Lokasi"` di `lokasi-detail-dialog.tsx` **sengaja dibiarkan** — aman walau field-nya selalu kosong ke depannya, tidak menyebabkan error. Kolom `name` di skema Prisma/database juga belum disentuh (di luar cakupan sesi ini).
 
-### Import
-| Method | Endpoint | Role |
-|---|---|---|
-| POST | `/import/preview` | ADMINISTRATOR, SATKER |
-| POST | `/import/commit` | ADMINISTRATOR, SATKER |
+### 🛠️ Build error yang ditemukan & diperbaiki selama implementasi
 
-*(Pola preview → commit: file diparse & divalidasi dulu, ditampilkan ke user untuk konfirmasi, baru disimpan ke DB — good practice untuk mencegah import data salah secara langsung)*
+| Error                                                                               | Penyebab                                                                                                                                                                                               | Fix                                                                                                                                    |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `TS2693`/`TS2365` di `wilayah.service.ts` saat build backend                        | Generic inline multi-baris `this.redis.get<{ displayName: string; ... }[]>(cacheKey)` rusak ke-parse (kemungkinan efek reformat editor)                                                                | Ganti jadi interface bernama `LocationSearchResult`, generic-nya jadi single-token: `this.redis.get<LocationSearchResult[]>(cacheKey)` |
+| `TS4053` di `wilayah.controller.ts`                                                 | Interface `LocationSearchResult` di `wilayah.service.ts` dipakai sebagai return type method publik lintas file tapi tidak di-`export`                                                                  | Tambah kata `export` di depan interface                                                                                                |
+| `ReferenceError: flyToTrigger is not defined` (runtime browser) di `map-picker.tsx` | Prop `flyToTrigger` sudah ditambahkan ke interface `MapPickerProps` tapi lupa ditambahkan ke daftar destructure parameter function `MapPicker`                                                         | Tambah `flyToTrigger` ke parameter destructure                                                                                         |
+| `TS2339: Property 'icon' does not exist` di `review/page.tsx`                       | Bug pre-existing (bukan dari sesi ini) — `statusConfig` dipakai dengan `cfg.icon` tapi tidak satupun dari 5 varian status (`DRAFT`/`SUBMITTED`/`REVISION`/`REJECTED`/`APPROVED`) punya properti `icon` | Tambah properti `icon` (komponen lucide-react) ke tiap varian `statusConfig`, render sebagai `<cfg.icon size={11} />`                  |
 
-### Master Data (semua di-guard JWT; endpoint tulis khusus ADMINISTRATOR)
-`GET /master/{balai|periodes|programs|kegiatan|kro|ro|major-projects|tindak-lanjut|wilayah-sungai|roles}` — dapat diakses semua user login.
-`POST|PATCH|DELETE` tersedia untuk semua entitas di atas (kecuali `roles`), khusus role **ADMINISTRATOR**.
+### 📋 Status akhir per area (update)
 
-### Users
-| Method | Endpoint | Role |
-|---|---|---|
-| GET | `/users`, `/users/:id` | ADMINISTRATOR |
-| POST | `/users` | ADMINISTRATOR |
-| PATCH | `/users/:id`, `/users/:id/status` | ADMINISTRATOR |
-| DELETE | `/users/:id` | ADMINISTRATOR |
+| Area                                                                        | Status                                                                                                           |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| False-positive substring match ("Maluku")                                   | ✅ Tuntas — `stripCandidatesMatchingParent()`                                                                    |
+| Regresi normalisasi ("Batam Kota" vs "Kota Batam")                          | ✅ Tuntas — `stripPunctuationOnly()`                                                                             |
+| Logging diagnostik city & district match failure                            | ✅ Diterapkan lewat `debugLabel`                                                                                 |
+| Fitur search lokasi (forward geocode) di form tambah/edit lokasi            | ✅ Selesai dibangun (backend + frontend)                                                                         |
+| Field "Nama Lokasi (opsional)"                                              | ✅ Dihapus dari form (tidak dipakai)                                                                             |
+| Anomali `city_district` Pontianak Timur (dari sesi sebelumnya)              | ❓ Masih belum terjelaskan — logging diagnostik baru sudah tersedia, tapi scan belum diulang untuk mengonfirmasi |
+| Audit data planning yang mungkin tercemar bug Maluku (dari sesi sebelumnya) | ⏳ Belum dikerjakan                                                                                              |
+| Baseline migration history Prisma (dari sesi sebelumnya)                    | ⏳ Belum dikerjakan, independen                                                                                  |
 
-### Wilayah (proxy wilayah administratif)
-`GET /wilayah/provinces`, `/wilayah/regencies/:provinceId`, `/wilayah/districts/:regencyId`, `/wilayah/villages/:districtId` — semua butuh login, tanpa batasan role.
+### 🔜 Rekomendasi lanjutan
 
-## Fitur yang Sudah Ada
-
-### 1. Autentikasi & Role-based Access
-- Login (`/login`) dengan JWT disimpan di `localStorage`
-- Auto-redirect ke login saat token invalid/expired (401)
-- 3 role pengguna: **ADMINISTRATOR**, **SATKER**, **VERIFICATOR**
-- Menu sidebar menyesuaikan role yang login
-
-### 2. Dashboard (`/dashboard`)
-- Kartu statistik: total planning, draft, menunggu review, disetujui
-- Total rencana anggaran (format Rupiah)
-- Daftar 5 planning terbaru beserta status
-
-### 3. Modul Planning (`/plannings`) — inti aplikasi
-- CRUD planning proyek: nama proyek, balai, periode, masa pelaksanaan (single/multi year), kewenangan (pusat/daerah)
-- Kriteria dokumen pendukung (kesesuaian RTRW, Pola SDA, Masterplan, dsb.) dengan status TIDAK_PERLU/BELUM_ADA/SUDAH_ADA
-- Data prioritas proyek per tahun (proyek prioritas, RPIW, kegiatan baru/wajib, Konreg FKS, Musrenbangnas)
-- **Alokasi anggaran** per RO (Rincian Output), dengan rincian sumber dana RM, RMP, PLN, SBSN, KPBU per tahun, status RENCANA/REALISASI, serta target output & outcome
-- **Lokasi proyek berbasis peta** (Leaflet) — mendukung tipe TITIK, GARIS, atau POLIGON, terhubung ke wilayah administratif (provinsi → kota → kecamatan → desa)
-- Submit planning untuk direview, hapus planning, import massal dari Excel
-- Filter status, pencarian, tampilan grup (per periode/status)
-
-### 4. Modul Review (`/review`) — role VERIFICATOR & ADMINISTRATOR
-- Daftar planning berstatus `SUBMITTED` untuk diverifikasi
-- Aksi **approve / reject / minta revisi** dengan catatan reviewer
-- Riwayat aksi review per planning
-
-### 5. Master Data (`/master`) — role ADMINISTRATOR
-Kelola data referensi via tab:
-- **Balai**
-- **Periode** (tahun anggaran)
-- **Nomenklatur** (hierarki Program → Kegiatan → KRO → RO)
-- **Major Project**
-- **Tindak Lanjut**
-- **Wilayah Sungai**
-
-### 6. Manajemen Pengguna (`/users`) — role ADMINISTRATOR
-- CRUD user
-- Aktivasi/nonaktifkan status akun
-
-### 7. Import / Export
-- Import planning dari file Excel (`import-excel-dialog.tsx`)
-- Export ke **Excel** (ringkasan daftar planning)
-- Export ke **PDF** (ringkasan & detail per planning) menggunakan jsPDF + autotable
-
-### 8. Integrasi Wilayah
-- API wilayah administratif Indonesia untuk cascading dropdown (provinsi/kota/kecamatan/desa) yang dipakai di form lokasi proyek
-
-## Alur Bisnis (Workflow)
-
-```
-SATKER buat Planning (DRAFT)
-        │
-        ▼
-   Submit → SUBMITTED
-        │
-        ▼
-VERIFICATOR review
-   ├─ Approve  → APPROVED
-   ├─ Reject     → REJECTED
-   └─ Revisi     → REVISION → (Satker perbaiki) → SUBMITTED lagi
-```
-
-## Endpoint API yang Digunakan (Ringkasan)
-
-| Modul | Endpoint |
-|---|---|
-| Auth | `POST /auth/login` |
-| Planning | `GET/POST /plannings`, `PATCH .../submit`, `PATCH .../review`, `DELETE /plannings/:id`, `POST /plannings/import` |
-| Alokasi | `GET/POST/PATCH/DELETE /alokasi`, `/alokasi/:id/lokasi` |
-| Master | `/master/balai`, `/master/periodes`, `/master/programs`, `/master/kegiatan`, `/master/kro`, `/master/ro`, `/master/major-projects`, `/master/tindak-lanjut`, `/master/wilayah-sungai` |
-| Users | `GET/POST/PATCH/DELETE /users`, `PATCH /users/:id/status` |
-| Wilayah | `GET /wilayah/provinces` (dan turunannya) |
-
-## Autentikasi & Keamanan (Backend)
-
-- Login: cek `username` + `password` (bcrypt compare) → tanda tangan JWT berisi `sub` (user id), `username`, `role`
-- Proteksi endpoint dua lapis: `JwtAuthGuard` (wajib login) + `RolesGuard` dengan decorator `@Roles(...)` per endpoint — role dicek dari payload JWT, cocok dengan role dinamis di tabel `roles`
-- Redis dipakai sebagai **cache layer** (bukan session store) — TTL default 60 detik, mendukung invalidasi berbasis prefix (`delByPrefix`), kemungkinan dipakai untuk cache hasil query master data atau dashboard
-
-## Kesimpulan
-
-Aplikasi **ePerencanaan** adalah sistem full-stack **CRUD + workflow approval** yang matang untuk pengelolaan rencana & anggaran proyek infrastruktur SDA:
-
-- **Alur bisnis jelas**: Satker input → submit → Verificator review (approve/reject/revisi) → monitoring via dashboard
-- **Model data granular**: anggaran dipecah per RO × tahun × status × 5 sumber dana, dengan audit trail (`HistoriAlokasi`) dan lokasi geografis presisi (titik/garis/poligon)
-- **Keamanan berlapis**: JWT + role-based guard konsisten di seluruh endpoint backend, sinkron dengan role yang dipakai di frontend
-- **Fitur pendukung lengkap**: import/export Excel & PDF, integrasi peta (Leaflet) & wilayah administratif, caching Redis
-
-### Potensi Area untuk Ditinjau Lebih Lanjut
-- Dependency `argon2` terpasang di backend tapi alur login aktif masih pakai `bcrypt` — perlu dipastikan apakah ini sisa migrasi yang belum selesai
-- Field `email` pada `User` bersifat opsional (`String?`) — perlu dicek apakah ini disengaja (login berbasis username, bukan email)
-- Endpoint `master/roles` hanya `GET` (tidak ada create/update role dari API) — pengelolaan role kemungkinan manual via seed/database langsung
-- Belum ada endpoint khusus untuk melihat `PlanningReview` history di sisi API planning (data review tampaknya diakses lewat relasi, perlu dicek DTO response `GET /plannings/:id`)
+1. **Jalankan ulang `scan-wilayah-gaps.js`** sekarang setelah kedua fix (`stripCandidatesMatchingParent` + `stripPunctuationOnly`) live di backend, lalu upload ulang `scan-wilayah-gaps-result.json` — perlu verifikasi: (a) kasus Maluku sudah tidak lagi salah assign ke kabupaten, (b) kasus tipe "Batam Kota" tetap sampai level kecamatan (tidak ke-skip keliru), (c) anomali Pontianak Timur akhirnya kelihatan penyebabnya dari log `debugLabel` yang baru.
+2. **Audit data planning lama** yang `cityId`-nya di-set otomatis dari reverse-geocode sebelum fix Maluku diterapkan, terutama untuk provinsi yang nama kabupatennya mengandung nama provinsi sebagai substring (Maluku, Maluku Utara, Kalimantan/Sulawesi/Sumatera/Papua/Nusa Tenggara + arah mata angin) — rekomendasi ini masih menggantung dari sesi sebelumnya.
+3. **Rate-limit endpoint `/wilayah/search`** di sisi backend — saat ini cuma diproteksi debounce 500ms di frontend (per user), belum ada pembatasan agregat kalau banyak user search bersamaan, padahal kebijakan fair-use Nominatim maks 1 req/detik total (bukan per user). Cache Redis 1 hari sudah membantu untuk query yang berulang, tapi query unik pertama kali tetap langsung ke Nominatim tanpa guard tambahan.
+4. **Baseline migration history Prisma** — masih menggantung dari sesi-sesi sebelumnya, independen dari semua isu di atas.

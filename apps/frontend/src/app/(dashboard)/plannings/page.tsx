@@ -50,35 +50,9 @@ import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
 import { Planning, PaginatedResponse } from "@/types";
 import { PlanningFormDialog } from "@/components/planning/planning-form-dialog";
-import { PlanningDetailDialog } from "@/components/planning/planning-detail-dialog";
-
-const statusConfig = {
-  DRAFT: {
-    label: "Draft",
-    className: "bg-slate-100 text-slate-600 border border-slate-200",
-    icon: "📝",
-  },
-  SUBMITTED: {
-    label: "Menunggu Review",
-    className: "bg-blue-100 text-blue-700 border border-blue-200",
-    icon: "⏳",
-  },
-  REVISION: {
-    label: "Perlu Revisi",
-    className: "bg-amber-100 text-amber-700 border border-amber-200",
-    icon: "🔄",
-  },
-  REJECTED: {
-    label: "Ditolak",
-    className: "bg-red-100 text-red-700 border border-red-200",
-    icon: "❌",
-  },
-  APPROVED: {
-    label: "Disetujui",
-    className: "bg-green-100 text-green-700 border border-green-200",
-    icon: "✅",
-  },
-};
+import { PlanningDetailSheet } from "@/components/planning/planning-detail-sheet";
+import { Badge } from "@/components/ui/badge";
+import { statusConfig } from "@/components/shared/status-config";
 
 const formatRupiah = (val: string | number) =>
   new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(
@@ -480,31 +454,34 @@ export default function PlanningsPage() {
                   : "bg-rose-400";
 
             return (
-              <Card key={group.kegiatanCode} className="overflow-hidden">
+              <Card
+                key={group.kegiatanCode}
+                className="overflow-hidden border-l-4 border-l-blue-600 py-0"
+              >
                 <button
                   onClick={() => toggleGroup(group.kegiatanCode)}
-                  className="w-full text-left bg-gradient-to-r from-blue-700 to-blue-600 text-white hover:from-blue-800 hover:to-blue-700 transition-colors"
+                  className="w-full text-left bg-card text-foreground transition-colors hover:bg-accent/40"
                 >
                   <div className="flex items-center gap-3 px-5 pt-3.5 pb-2">
                     {isCollapsed ? (
                       <ChevronRight
                         size={16}
-                        className="text-blue-200 shrink-0"
+                        className="text-muted-foreground shrink-0"
                       />
                     ) : (
                       <ChevronDown
                         size={16}
-                        className="text-blue-200 shrink-0"
+                        className="text-muted-foreground shrink-0"
                       />
                     )}
-                    <span className="text-xs font-mono bg-white/15 px-2 py-1 rounded font-semibold shrink-0">
+                    <span className="text-xs font-mono bg-blue-50 text-blue-700 px-2 py-1 rounded font-semibold shrink-0">
                       {group.programCode}.{group.kegiatanCode}
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold truncate">
                         {group.kegiatanName}
                       </p>
-                      <p className="text-xs text-blue-200">
+                      <p className="text-xs text-muted-foreground">
                         {group.plannings.length} proyek
                       </p>
                     </div>
@@ -516,32 +493,32 @@ export default function PlanningsPage() {
                           <p className="text-xs font-semibold tabular-nums">
                             {formatRupiahShort(group.rencanaByYear[year] || 0)}
                           </p>
-                          <p className="text-[11px] text-blue-200 tabular-nums">
+                          <p className="text-[11px] text-emerald-600 tabular-nums">
                             {formatRupiahShort(
                               group.realisasiByYear[year] || 0,
                             )}
                           </p>
                         </div>
                       ))}
-                      <div className="w-24 shrink-0 text-right border-l border-white/20 pl-3">
+                      <div className="w-24 shrink-0 text-right border-l pl-3">
                         <p className="text-sm font-bold tabular-nums">
                           {formatRupiahShort(group.grandTotalRencana)}
                         </p>
-                        <p className="text-[11px] text-blue-200 tabular-nums">
+                        <p className="text-[11px] text-emerald-600 tabular-nums">
                           {formatRupiahShort(group.grandTotalRealisasi)}
                         </p>
                       </div>
                     </div>
                     <div className="w-[76px] shrink-0" />
                   </div>
-                  <div className="px-5 pb-2.5 flex items-center gap-2">
-                    <div className="h-1 w-full max-w-[200px] rounded-full bg-white/25 overflow-hidden">
+                  <div className="px-5 pb-3 flex items-center gap-2">
+                    <div className="h-[5px] w-full max-w-[200px] rounded-full bg-muted overflow-hidden">
                       <div
                         className={`h-full rounded-full ${barColor}`}
                         style={{ width: `${Math.min(100, pct)}%` }}
                       />
                     </div>
-                    <span className="text-[10px] text-blue-100 tabular-nums w-8 text-right">
+                    <span className="text-[10px] text-muted-foreground tabular-nums w-8 text-right">
                       {pct}%
                     </span>
                   </div>
@@ -577,25 +554,28 @@ export default function PlanningsPage() {
                       return (
                         <div
                           key={p.id}
-                          className="px-5 py-3 hover:bg-accent/30 transition-colors"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setDetailData(p)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setDetailData(p);
+                            }
+                          }}
+                          className="group px-5 py-3 hover:bg-accent/30 transition-colors cursor-pointer outline-none focus-visible:bg-accent/40"
                         >
                           <div className="flex items-center gap-4">
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 mb-1">
-                                <span
-                                  className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ${cfg.className}`}
-                                >
-                                  {cfg.icon} {cfg.label}
-                                </span>
+                                <Badge variant="dot" dotColor={cfg.dotColor}>
+                                  {cfg.label}
+                                </Badge>
                                 <span className="text-[11px] font-mono font-medium text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded shrink-0 truncate">
                                   {getPlanningKode(p)}
                                 </span>
                               </div>
-                              <p
-                                className="text-sm font-medium cursor-pointer hover:text-primary transition-colors truncate mb-0.5"
-                                onDoubleClick={() => setDetailData(p)}
-                                title="Klik 2x untuk detail"
-                              >
+                              <p className="text-sm font-medium truncate mb-0.5 group-hover:text-primary transition-colors">
                                 {p.projectName}
                               </p>
                               <p className="text-[11px] text-muted-foreground truncate">
@@ -617,7 +597,17 @@ export default function PlanningsPage() {
                               </div>
                             </div>
 
-                            {renderActions(p)}
+                            {/* Afordansi visual pengganti tooltip "klik 2x": chevron
+                                muncul saat baris di-hover, menandakan seluruh baris
+                                bisa diklik untuk membuka detail. */}
+                            <ChevronRight
+                              size={16}
+                              className="hidden md:block shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                            />
+
+                            <div onClick={(e) => e.stopPropagation()}>
+                              {renderActions(p)}
+                            </div>
                           </div>
                         </div>
                       );
@@ -667,7 +657,7 @@ export default function PlanningsPage() {
       />
 
       {detailData && (
-        <PlanningDetailDialog
+        <PlanningDetailSheet
           open={!!detailData}
           planning={detailData}
           onClose={() => setDetailData(null)}

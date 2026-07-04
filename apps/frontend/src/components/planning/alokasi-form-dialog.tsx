@@ -11,12 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetBody,
+  SheetFooter,
+  SheetBreadcrumb,
+} from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -69,6 +70,14 @@ interface Props {
   onSuccess: () => void;
   planningId: string;
   editData?: AlokasiLike | null;
+  /** Nama proyek — dipakai di breadcrumb header. */
+  projectName?: string;
+  /**
+   * Klik segmen "Daftar Planning" di breadcrumb — menutup Sheet lapis-2 ini
+   * SEKALIGUS Sheet lapis-1 di baliknya (kembali ke daftar). Opsional: kalau
+   * tidak disediakan, segmen tersebut tidak clickable.
+   */
+  onNavigateToList?: () => void;
 }
 
 export function AlokasiFormDialog({
@@ -77,6 +86,8 @@ export function AlokasiFormDialog({
   onSuccess,
   planningId,
   editData,
+  projectName,
+  onNavigateToList,
 }: Props) {
   const [roList, setROList] = useState<RO[]>([]);
   const [loadingMaster, setLoadingMaster] = useState(false);
@@ -160,29 +171,42 @@ export function AlokasiFormDialog({
     }
   };
 
+  const tahunWatch = watch("tahun");
+  const currentPageLabel = isEdit
+    ? `Edit Alokasi ${tahunWatch || editData?.tahun || ""}`
+    : "Tambah Alokasi";
+
   return (
-    <Dialog
+    <Sheet
       open={open}
       onOpenChange={(v) => {
         if (!v) onClose();
       }}
     >
-      <DialogContent
-        className="!max-w-2xl !w-[88vw] max-h-[88vh] flex flex-col p-0 gap-0 overflow-hidden"
+      <SheetContent
+        layer="2"
+        className="!p-0"
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <DialogHeader className="px-7 pt-6 pb-4 border-b shrink-0">
-          <DialogTitle>
+        <SheetHeader className="gap-1.5">
+          <SheetBreadcrumb
+            items={[
+              { label: "Daftar Planning", onClick: onNavigateToList },
+              { label: projectName || "Proyek", onClick: onClose },
+              { label: currentPageLabel },
+            ]}
+          />
+          <h2 className="text-base font-semibold leading-snug">
             {isEdit ? "Edit Alokasi" : "Tambah Alokasi Baru"}
-          </DialogTitle>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          </h2>
+          <p className="text-xs text-muted-foreground">
             {isEdit
               ? "Perubahan akan tercatat di histori alokasi"
               : "Tambahkan alokasi anggaran untuk tahun tertentu"}
           </p>
-        </DialogHeader>
+        </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto px-7 py-6 space-y-5">
+        <SheetBody className="px-5 py-5 space-y-5">
           {loadingMaster ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="animate-spin text-muted-foreground" />
@@ -230,7 +254,7 @@ export function AlokasiFormDialog({
               </div>
 
               {/* Tahun + Status */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label>Tahun</Label>
                   <Input
@@ -241,7 +265,7 @@ export function AlokasiFormDialog({
                   />
                   {isEdit && (
                     <p className="text-xs text-muted-foreground">
-                      Tahun tidak dapat diubah
+                      Tidak dapat diubah
                     </p>
                   )}
                 </div>
@@ -262,24 +286,24 @@ export function AlokasiFormDialog({
                   </Select>
                   {isEdit && (
                     <p className="text-xs text-muted-foreground">
-                      Status tidak dapat diubah
+                      Tidak dapat diubah
                     </p>
                   )}
                 </div>
               </div>
 
-              {/* Sumber dana */}
+              {/* Sumber dana — 2 kolom, panel lapis-2 lebih sempit dari dialog lama */}
               <div className="space-y-2">
                 <Label>Sumber Dana (Rp)</Label>
-                <div className="grid grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   {(["rm", "rmp", "pln", "sbsn", "kpbu"] as const).map((f) => (
                     <div key={f} className="space-y-1.5">
-                      <p className="text-xs text-center text-muted-foreground uppercase font-medium">
+                      <p className="text-xs text-muted-foreground uppercase font-medium">
                         {f}
                       </p>
                       <Input
                         type="number"
-                        className="text-sm text-center h-10 px-2"
+                        className="text-sm h-10 px-2"
                         placeholder="0"
                         {...register(f, { valueAsNumber: true })}
                       />
@@ -288,8 +312,8 @@ export function AlokasiFormDialog({
                 </div>
               </div>
 
-              {/* Output & Outcome */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Output & Outcome — stacked karena panel sempit */}
+              <div className="space-y-4">
                 <div className="space-y-2">
                   <Label>Output Target</Label>
                   <div className="flex gap-2">
@@ -300,7 +324,7 @@ export function AlokasiFormDialog({
                       {...register("outputTarget", { valueAsNumber: true })}
                     />
                     <Input
-                      className="h-10 w-28 shrink-0"
+                      className="h-10 w-24 shrink-0"
                       placeholder="Satuan"
                       {...register("outputUnit")}
                     />
@@ -316,7 +340,7 @@ export function AlokasiFormDialog({
                       {...register("outcomeTarget", { valueAsNumber: true })}
                     />
                     <Input
-                      className="h-10 w-28 shrink-0"
+                      className="h-10 w-24 shrink-0"
                       placeholder="Satuan"
                       {...register("outcomeUnit")}
                     />
@@ -335,9 +359,9 @@ export function AlokasiFormDialog({
               </div>
             </>
           )}
-        </div>
+        </SheetBody>
 
-        <DialogFooter className="px-7 py-5 border-t shrink-0 bg-background">
+        <SheetFooter>
           <Button type="button" variant="outline" onClick={onClose}>
             Batal
           </Button>
@@ -348,8 +372,8 @@ export function AlokasiFormDialog({
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isEdit ? "Simpan Perubahan" : "Tambah Alokasi"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }

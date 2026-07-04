@@ -27,7 +27,7 @@ import {
 
 import api from "@/lib/api";
 import { Planning, PaginatedResponse } from "@/types";
-import { PlanningDetailDialog } from "@/components/planning/planning-detail-dialog";
+import { PlanningDetailSheet } from "@/components/planning/planning-detail-sheet";
 
 const statusConfig = {
   DRAFT: {
@@ -292,9 +292,9 @@ export default function ReviewPage() {
         </div>
       )}
 
-      {/* Detail Dialog */}
+      {/* Detail Sheet */}
       {detailData && (
-        <PlanningDetailDialog
+        <PlanningDetailSheet
           open={!!detailData}
           planning={detailData}
           onClose={() => setDetailData(null)}

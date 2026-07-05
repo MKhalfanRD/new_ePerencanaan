@@ -21,7 +21,7 @@ export default function DashboardLayout({
   }, []);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-slate-100">
       <Sidebar />
       <main className="ml-16 lg:ml-60 min-h-screen">
         <div className="p-6">{children}</div>

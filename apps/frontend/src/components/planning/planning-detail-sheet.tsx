@@ -70,7 +70,7 @@ import {
   exportPlanningDetailToPDF,
 } from "@/lib/export-utils";
 import { AlokasiFormDialog } from "./alokasi-form-dialog";
-import { AlokasiExpandPanel } from "./alokasi-expand-pannel";
+import { AlokasiExpandPanel } from "./alokasi-expand-panel";
 import {
   statusConfig,
   dokumenStatusConfig,
@@ -83,6 +83,38 @@ const formatRupiah = (val: string | number) =>
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(Number(val));
+
+// Format ringkas ala mockup drawer ("Rp 12,0 M" / "Rp 500 jt") — beda dari
+// formatRupiahShort di plannings/page.tsx (yang tanpa "Rp"/koma, mis.
+// "12.0M") karena drawer & list memang punya konvensi berbeda di mockup.
+const formatRupiahShort = (val: number) => {
+  if (val >= 1_000_000_000) {
+    const m = (val / 1_000_000_000).toLocaleString("id-ID", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    });
+    return `Rp ${m} M`;
+  }
+  if (val >= 1_000_000) {
+    const jt = (val / 1_000_000).toLocaleString("id-ID", {
+      maximumFractionDigits: 0,
+    });
+    return `Rp ${jt} jt`;
+  }
+  if (val === 0) return "-";
+  return formatRupiah(val);
+};
+
+// Kode identitas ringkas per proyek (mis. "BWS.07.7755") — logic sama
+// persis dengan `getPlanningKode` di plannings/page.tsx, supaya kode yang
+// tampil di baris list & di header drawer selalu konsisten.
+const getPlanningKode = (p: Planning) => {
+  const a = p.alokasi[0];
+  const balaiCode = p.balai.code || p.balai.shortName || "-";
+  const programCode = a?.ro?.kro?.kegiatan?.program?.code || "-";
+  const kegiatanCode = a?.ro?.kro?.kegiatan?.code || "-";
+  return `${balaiCode}.${programCode}.${kegiatanCode}`;
+};
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
@@ -254,89 +286,68 @@ export function PlanningDetailSheet({
               { label: planning.projectName },
             ]}
           />
-          <div className="flex items-center justify-between gap-3">
-            <Badge variant="dot" dotColor={cfg.dotColor} className="text-xs">
-              {cfg.label}
-            </Badge>
-            <div className="flex gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="outline">
-                    <FileDown size={13} className="mr-1.5" /> Export
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onClick={() => exportPlanningDetailToExcel(planning)}
-                  >
-                    <FileSpreadsheet size={14} className="mr-2" /> Export ke
-                    Excel
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => exportPlanningDetailToPDF(planning)}
-                  >
-                    <FileDown size={14} className="mr-2" /> Export ke PDF
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              {canEdit && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onEdit(planning)}
+          <div className="flex items-center justify-end gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <FileDown size={13} className="mr-1.5" /> Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => exportPlanningDetailToExcel(planning)}
                 >
-                  <Edit size={13} className="mr-1.5" /> Edit
-                </Button>
-              )}
-              {canSubmit && (
-                <Button size="sm" onClick={handleSubmit} disabled={submitting}>
-                  {submitting ? (
-                    <Loader2 size={13} className="mr-1.5 animate-spin" />
-                  ) : (
-                    <Send size={13} className="mr-1.5" />
-                  )}
-                  Ajukan
-                </Button>
-              )}
-            </div>
+                  <FileSpreadsheet size={14} className="mr-2" /> Export ke Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => exportPlanningDetailToPDF(planning)}
+                >
+                  <FileDown size={14} className="mr-2" /> Export ke PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {canEdit && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onEdit(planning)}
+              >
+                <Edit size={13} className="mr-1.5" /> Edit
+              </Button>
+            )}
+            {canSubmit && (
+              <Button size="sm" onClick={handleSubmit} disabled={submitting}>
+                {submitting ? (
+                  <Loader2 size={13} className="mr-1.5 animate-spin" />
+                ) : (
+                  <Send size={13} className="mr-1.5" />
+                )}
+                Ajukan
+              </Button>
+            )}
           </div>
 
           <h2 className="text-lg font-semibold leading-snug">
             {planning.projectName}
           </h2>
 
-          <div className="flex items-center gap-4">
+          {/* Meta line: balai · kode · status (dot inline) — sesuai
+              mockup, bukan badge kotak terpisah seperti sebelumnya. */}
+          <div className="flex items-center gap-3 flex-wrap">
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Building2 size={12} /> {planning.balai.name}
+              <Building2 size={12} />{" "}
+              {planning.balai.shortName ?? planning.balai.name}
             </span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {getPlanningKode(planning)}
+            </span>
+            <Badge variant="dot" dotColor={cfg.dotColor} className="text-xs">
+              {cfg.label}
+            </Badge>
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Calendar size={12} /> {planning.periode.label}
             </span>
           </div>
-
-          {totalRencana > 0 && (
-            <div className="flex items-center gap-4 mt-1 p-3 rounded-lg bg-muted/40 w-fit">
-              <div>
-                <p className="text-xs text-muted-foreground">Total Rencana</p>
-                <p className="text-sm font-semibold">
-                  {formatRupiah(totalRencana)}
-                </p>
-              </div>
-              {totalRealisasi > 0 && (
-                <>
-                  <ChevronRight size={14} className="text-muted-foreground" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">
-                      Total Realisasi
-                    </p>
-                    <p className="text-sm font-semibold">
-                      {formatRupiah(totalRealisasi)}
-                    </p>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
         </SheetHeader>
 
         <SheetBody className="px-6 py-6 space-y-6">
@@ -517,109 +528,147 @@ export function PlanningDetailSheet({
                 <div className="space-y-4">
                   {Object.entries(alokasiByTahun)
                     .sort(([a], [b]) => Number(a) - Number(b))
-                    .map(([tahun, alokasi]) => (
-                      <div key={tahun}>
-                        <p className="text-xs font-semibold text-muted-foreground mb-1.5">
-                          Tahun {tahun}
-                        </p>
-                        <div className="rounded-lg border overflow-hidden divide-y divide-border">
-                          {alokasi.map((a) => {
-                            const isExpanded = expandedAlokasi.has(a.id);
-                            const ac = alokasiStatusConfig[a.status];
-                            return (
-                              <div key={a.id}>
-                                <div
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={() => toggleAlokasi(a.id)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter" || e.key === " ") {
-                                      e.preventDefault();
-                                      toggleAlokasi(a.id);
-                                    }
-                                  }}
-                                  className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-accent/30 transition-colors outline-none focus-visible:bg-accent/40"
+                    .map(([tahun, alokasi]) => {
+                      const yearRencana = alokasi
+                        .filter((a) => a.status === "RENCANA")
+                        .reduce((s, a) => s + Number(a.total), 0);
+                      const yearRealisasi = alokasi
+                        .filter((a) => a.status === "REALISASI")
+                        .reduce((s, a) => s + Number(a.total), 0);
+                      return (
+                        <div
+                          key={tahun}
+                          className="rounded-lg border overflow-hidden"
+                        >
+                          {/* Year strip — ringkasan Rencana/Realisasi per
+                              tahun, sesuai `.year-strip` di mockup */}
+                          <div className="flex items-center gap-3 px-3.5 py-2.5 bg-muted/40 border-b">
+                            <span className="text-xs font-bold w-14 shrink-0">
+                              {tahun}
+                            </span>
+                            <div className="flex items-center gap-4 text-xs flex-1 flex-wrap">
+                              <span className="text-muted-foreground">
+                                Rencana{" "}
+                                <b className="text-foreground font-semibold">
+                                  {formatRupiah(yearRencana)}
+                                </b>
+                              </span>
+                              <span className="text-muted-foreground">
+                                Realisasi{" "}
+                                <b
+                                  className={
+                                    yearRealisasi > 0
+                                      ? "text-emerald-600 font-semibold"
+                                      : "text-foreground font-semibold"
+                                  }
                                 >
-                                  <ChevronDown
-                                    size={14}
-                                    className={`shrink-0 text-muted-foreground transition-transform ${isExpanded ? "" : "-rotate-90"}`}
-                                  />
-                                  <Badge
-                                    variant="dot"
-                                    dotColor={ac.dotColor}
-                                    className="shrink-0 text-xs"
+                                  {yearRealisasi > 0
+                                    ? formatRupiah(yearRealisasi)
+                                    : "-"}
+                                </b>
+                              </span>
+                            </div>
+                          </div>
+                          <div className="divide-y divide-border">
+                            {alokasi.map((a) => {
+                              const isExpanded = expandedAlokasi.has(a.id);
+                              const ac = alokasiStatusConfig[a.status];
+                              return (
+                                <div key={a.id}>
+                                  <div
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => toggleAlokasi(a.id)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        toggleAlokasi(a.id);
+                                      }
+                                    }}
+                                    className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-accent/30 transition-colors outline-none focus-visible:bg-accent/40"
                                   >
-                                    {ac.label}
-                                  </Badge>
-                                  <span className="text-xs text-muted-foreground truncate flex-1">
-                                    {a.ro.code}
-                                  </span>
-                                  <span className="text-xs font-semibold shrink-0">
-                                    {formatRupiah(a.total)}
-                                  </span>
-                                  {canManageAlokasi && (
-                                    <div
-                                      className="flex items-center gap-0.5 shrink-0"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <TooltipProvider delayDuration={300}>
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <Button
-                                              variant="ghost"
-                                              size="icon"
-                                              className="h-6 w-6"
-                                              onClick={() => {
-                                                setEditAlokasi(a);
-                                                setShowAlokasiForm(true);
-                                              }}
-                                            >
-                                              <Edit size={11} />
-                                            </Button>
-                                          </TooltipTrigger>
-                                          <TooltipContent>
-                                            Edit Alokasi
-                                          </TooltipContent>
-                                        </Tooltip>
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <Button
-                                              variant="ghost"
-                                              size="icon"
-                                              className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                              onClick={() =>
-                                                setDeleteAlokasiId(a.id)
-                                              }
-                                            >
-                                              <Trash2 size={11} />
-                                            </Button>
-                                          </TooltipTrigger>
-                                          <TooltipContent>
-                                            Hapus Alokasi
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      </TooltipProvider>
+                                    <ChevronDown
+                                      size={14}
+                                      className={`shrink-0 text-muted-foreground transition-transform ${isExpanded ? "" : "-rotate-90"}`}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-[10.5px] font-mono text-muted-foreground truncate">
+                                        {a.ro.code}
+                                      </p>
+                                      <p className="text-xs font-semibold truncate">
+                                        {a.ro.name} — {ac.label}
+                                      </p>
                                     </div>
+                                    <span className="text-xs text-muted-foreground shrink-0 w-16 text-right">
+                                      {a.lokasi.length} lokasi
+                                    </span>
+                                    <span className="text-xs font-bold shrink-0 w-28 text-right">
+                                      {formatRupiah(a.total)}
+                                    </span>
+                                    {canManageAlokasi && (
+                                      <div
+                                        className="flex items-center gap-0.5 shrink-0"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <TooltipProvider delayDuration={300}>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6"
+                                                onClick={() => {
+                                                  setEditAlokasi(a);
+                                                  setShowAlokasiForm(true);
+                                                }}
+                                              >
+                                                <Edit size={11} />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              Edit Alokasi
+                                            </TooltipContent>
+                                          </Tooltip>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                onClick={() =>
+                                                  setDeleteAlokasiId(a.id)
+                                                }
+                                              >
+                                                <Trash2 size={11} />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              Hapus Alokasi
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {isExpanded && (
+                                    <AlokasiExpandPanel
+                                      alokasiId={a.id}
+                                      onRefreshParent={onRefresh}
+                                      projectName={planning.projectName}
+                                      onNavigateToList={onClose}
+                                      onSubDrawerOpenChange={(isOpen) =>
+                                        handleSubDrawerOpenChange(a.id, isOpen)
+                                      }
+                                    />
                                   )}
                                 </div>
-
-                                {isExpanded && (
-                                  <AlokasiExpandPanel
-                                    alokasiId={a.id}
-                                    onRefreshParent={onRefresh}
-                                    projectName={planning.projectName}
-                                    onNavigateToList={onClose}
-                                    onSubDrawerOpenChange={(isOpen) =>
-                                      handleSubDrawerOpenChange(a.id, isOspen)
-                                    }
-                                  />
-                                )}
-                              </div>
-                            );
-                          })}
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                 </div>
               )}
             </div>

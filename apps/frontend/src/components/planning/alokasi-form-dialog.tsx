@@ -292,18 +292,19 @@ export function AlokasiFormDialog({
                 </div>
               </div>
 
-              {/* Sumber dana — 2 kolom, panel lapis-2 lebih sempit dari dialog lama */}
+              {/* Sumber dana — grid 5 kolom (RM/RMP/PLN/SBSN/KPBU sejajar),
+                  sesuai `.grid5` di mockup, bukan 2 kolom. */}
               <div className="space-y-2">
                 <Label>Sumber Dana (Rp)</Label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-5 gap-2">
                   {(["rm", "rmp", "pln", "sbsn", "kpbu"] as const).map((f) => (
-                    <div key={f} className="space-y-1.5">
-                      <p className="text-xs text-muted-foreground uppercase font-medium">
+                    <div key={f} className="space-y-1">
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">
                         {f}
                       </p>
                       <Input
                         type="number"
-                        className="text-sm h-10 px-2"
+                        className="text-xs h-9 px-1.5"
                         placeholder="0"
                         {...register(f, { valueAsNumber: true })}
                       />

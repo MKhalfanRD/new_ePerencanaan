@@ -474,7 +474,7 @@ export default function PlanningsPage() {
                         className="text-muted-foreground shrink-0"
                       />
                     )}
-                    <span className="text-xs font-mono bg-blue-50 text-blue-700 px-2 py-1 rounded font-semibold shrink-0">
+                    <span className="text-xs font-mono bg-slate-100 text-slate-700 px-2 py-1 rounded font-semibold shrink-0">
                       {group.programCode}.{group.kegiatanCode}
                     </span>
                     <div className="min-w-0 flex-1">
@@ -566,15 +566,18 @@ export default function PlanningsPage() {
                           className="group px-5 py-3 hover:bg-accent/30 transition-colors cursor-pointer outline-none focus-visible:bg-accent/40"
                         >
                           <div className="flex items-center gap-4">
+                            <Badge
+                              variant="dot"
+                              dotColor={cfg.dotColor}
+                              className="shrink-0"
+                            >
+                              {cfg.label}
+                            </Badge>
+
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <Badge variant="dot" dotColor={cfg.dotColor}>
-                                  {cfg.label}
-                                </Badge>
-                                <span className="text-[11px] font-mono font-medium text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded shrink-0 truncate">
-                                  {getPlanningKode(p)}
-                                </span>
-                              </div>
+                              <span className="inline-block text-[11px] font-mono font-medium text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded shrink-0 truncate mb-1">
+                                {getPlanningKode(p)}
+                              </span>
                               <p className="text-sm font-medium truncate mb-0.5 group-hover:text-primary transition-colors">
                                 {p.projectName}
                               </p>

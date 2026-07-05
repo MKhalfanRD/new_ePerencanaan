@@ -35,7 +35,18 @@ const dotColorClasses = {
   amber: "bg-amber-500",
   rose: "bg-rose-500",
   emerald: "bg-emerald-500",
-  blue: "bg-blue-500",
+  blue: "bg-blue-600",
+} as const;
+
+// Tint latar + warna teks per status untuk varian "dot" — meniru
+// `.badge.b-*` di mockup (pill dengan background tint tipis, bukan hanya
+// dot polos di atas transparan).
+const dotToneClasses = {
+  slate: "bg-slate-100 text-slate-600",
+  amber: "bg-amber-50 text-amber-700",
+  rose: "bg-rose-50 text-rose-700",
+  emerald: "bg-emerald-50 text-emerald-700",
+  blue: "bg-blue-50 text-blue-700",
 } as const;
 
 type DotColor = keyof typeof dotColorClasses;
@@ -59,7 +70,12 @@ function Badge({
     <Comp
       data-slot="badge"
       data-variant={variant}
-      className={cn(badgeVariants({ variant }), className)}
+      className={cn(
+        badgeVariants({ variant }),
+        variant === "dot" &&
+          "rounded-full px-2 py-0.5 " + dotToneClasses[dotColor ?? "slate"],
+        className,
+      )}
       {...props}
     >
       {variant === "dot" && (

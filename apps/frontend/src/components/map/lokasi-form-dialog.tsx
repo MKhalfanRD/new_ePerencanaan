@@ -9,12 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetBody,
+  SheetFooter,
+  SheetBreadcrumb,
+} from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import api from "@/lib/api";
 import { wilayahApi } from "@/lib/wilayah-api";
@@ -58,6 +59,10 @@ interface Props {
   onSuccess: () => void;
   alokasiId: string;
   editData?: LokasiData | null;
+  /** Nama proyek — dipakai di breadcrumb header (Sheet lapis-2, Fase 4). */
+  projectName?: string;
+  /** Klik "Daftar Planning" di breadcrumb — kembali ke daftar (tutup semua lapis). */
+  onNavigateToList?: () => void;
 }
 
 export function LokasiFormDialog({
@@ -66,6 +71,8 @@ export function LokasiFormDialog({
   onSuccess,
   alokasiId,
   editData,
+  projectName,
+  onNavigateToList,
 }: Props) {
   const [tipeKoordinat, setTipeKoordinat] = useState<TipeKoordinat>("TITIK");
   const [latitude, setLatitude] = useState<number | undefined>();
@@ -190,28 +197,38 @@ export function LokasiFormDialog({
     }
   };
 
+  const currentPageLabel = isEdit ? "Edit Lokasi" : "Tambah Lokasi";
+
   return (
-    <Dialog
+    <Sheet
       open={open}
       onOpenChange={(v) => {
         if (!v) onClose();
       }}
     >
-      <DialogContent
-        className="!max-w-3xl !w-[92vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden"
+      <SheetContent
+        layer="2"
+        className="!p-0"
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <DialogHeader className="px-7 pt-6 pb-4 border-b shrink-0">
-          <DialogTitle className="flex items-center gap-2">
-            <MapPin size={18} className="text-primary" />
+        <SheetHeader className="gap-1.5">
+          <SheetBreadcrumb
+            items={[
+              { label: "Daftar Planning", onClick: onNavigateToList },
+              { label: projectName || "Proyek", onClick: onClose },
+              { label: currentPageLabel },
+            ]}
+          />
+          <h2 className="text-base font-semibold leading-snug flex items-center gap-2">
+            <MapPin size={16} className="text-primary" />
             {isEdit ? "Edit Lokasi" : "Tambah Lokasi Baru"}
-          </DialogTitle>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          </h2>
+          <p className="text-xs text-muted-foreground">
             Tentukan lokasi di peta dan lengkapi informasi wilayah administratif
           </p>
-        </DialogHeader>
+        </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto px-7 py-6 space-y-5">
+        <SheetBody className="px-5 py-5 space-y-5">
           {tipeKoordinat === "TITIK" && (
             <LocationSearchBox onSelect={handleSearchSelect} />
           )}
@@ -225,10 +242,11 @@ export function LokasiFormDialog({
             onPointChange={handlePointChange}
             onShapeChange={setCoordinates}
             flyToTrigger={flyTo}
+            height="260px"
           />
 
           {tipeKoordinat === "TITIK" && latitude && longitude && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Latitude</Label>
                 <Input
@@ -262,9 +280,9 @@ export function LokasiFormDialog({
             </p>
             <CascadingWilayah value={wilayah} onChange={setWilayah} />
           </div>
-        </div>
+        </SheetBody>
 
-        <DialogFooter className="px-7 py-5 border-t shrink-0 bg-background">
+        <SheetFooter>
           <Button type="button" variant="outline" onClick={onClose}>
             Batal
           </Button>
@@ -272,8 +290,8 @@ export function LokasiFormDialog({
             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isEdit ? "Simpan Perubahan" : "Tambah Lokasi"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }

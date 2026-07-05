@@ -19,12 +19,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetBody,
+  SheetFooter,
+  SheetBreadcrumb,
+} from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -233,28 +234,37 @@ export function PlanningFormDialog({
   };
 
   return (
-    <Dialog
+    <Sheet
       open={open}
       onOpenChange={(isOpen) => {
         if (!isOpen) onClose();
       }}
     >
-      <DialogContent
-        className="!max-w-4xl !w-[92vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden"
+      <SheetContent
+        layer="1"
+        className="!p-0"
         onInteractOutside={(e) => e.preventDefault()}
       >
-        {/* Header */}
-        <DialogHeader className="px-8 pt-7 pb-5 border-b shrink-0">
-          <DialogTitle className="text-xl">
+        {/* Header — pola sama dengan planning-detail-sheet.tsx (breadcrumb
+            + judul), supaya alur lihat→edit terasa satu drawer yang
+            konsisten, bukan berpindah ke gaya modal yang berbeda. */}
+        <SheetHeader className="gap-2 pb-4">
+          <SheetBreadcrumb
+            items={[
+              { label: "Daftar Planning", onClick: onClose },
+              { label: isEdit ? editData!.projectName : "Buat Planning Baru" },
+            ]}
+          />
+          <h2 className="text-lg font-semibold leading-snug">
             {isEdit ? "Edit Planning" : "Buat Planning Baru"}
-          </DialogTitle>
-          <p className="text-sm text-muted-foreground mt-1">
+          </h2>
+          <p className="text-xs text-muted-foreground">
             Lengkapi informasi proyek perencanaan anggaran di bawah ini
           </p>
-        </DialogHeader>
+        </SheetHeader>
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-8 py-7 space-y-9">
+        <SheetBody className="px-6 py-6 space-y-9">
           {loadingMaster ? (
             <div className="flex items-center justify-center py-20">
               <Loader2
@@ -742,10 +752,10 @@ export function PlanningFormDialog({
               )}
             </>
           )}
-        </div>
+        </SheetBody>
 
         {/* Footer */}
-        <DialogFooter className="px-8 py-5 border-t shrink-0 bg-background">
+        <SheetFooter>
           <Button type="button" variant="outline" onClick={onClose}>
             Batal
           </Button>
@@ -756,8 +766,8 @@ export function PlanningFormDialog({
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isEdit ? "Simpan Perubahan" : "Buat Planning"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }

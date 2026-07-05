@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   MapPin,
   Plus,
+  Pencil,
   Loader2,
   ChevronRight,
   Clock,
@@ -15,12 +16,6 @@ import {
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,6 +36,28 @@ const formatRupiah = (val: number | string) =>
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(Number(val));
+
+// Format ringkas ala mockup drawer ("Rp 12,0 M" / "Rp 500 jt") — dipakai di
+// total & grid sumber dana supaya angka besar tetap gampang dipindai,
+// bukan string panjang penuh (mis. "Rp8.000.000.000").
+const formatRupiahShort = (val: number | string) => {
+  const num = Number(val);
+  if (num >= 1_000_000_000) {
+    const m = (num / 1_000_000_000).toLocaleString("id-ID", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    });
+    return `Rp ${m} M`;
+  }
+  if (num >= 1_000_000) {
+    const jt = (num / 1_000_000).toLocaleString("id-ID", {
+      maximumFractionDigits: 0,
+    });
+    return `Rp ${jt} jt`;
+  }
+  if (num === 0) return "-";
+  return formatRupiah(num);
+};
 
 interface AlokasiDetail {
   id: string;
@@ -102,6 +119,9 @@ interface Props {
   /** Lapor ke parent (PlanningDetailSheet) saat Sheet lapis-2 di panel ini
    * buka/tutup, supaya Sheet lapis-1 tahu kapan pakai efek "pushed" (§Fase 3). */
   onSubDrawerOpenChange?: (isOpen: boolean) => void;
+  /** Buka form Edit Alokasi (Sheet lapis-2) — dipanggil dari tombol "Edit"
+   * di footer panel ini, bukan lagi dari ikon di baris ter-collapse. */
+  onEdit?: () => void;
 }
 
 /**
@@ -109,9 +129,11 @@ interface Props {
  * (`alokasi-detail-dialog.tsx`), sekarang dirender inline di bawah baris
  * alokasi yang di-expand, di dalam Sheet lapis-1 (Fase 2).
  *
- * Catatan cakupan: Edit Alokasi & Hapus Alokasi TIDAK ada di sini — dua aksi
- * itu sudah dipindah ke toolbar baris alokasi di `planning-detail-sheet.tsx`
- * (Fase 3), supaya tidak terduplikasi.
+ * Catatan cakupan: tombol Edit & Hapus Alokasi TIDAK lagi ada sebagai ikon
+ * di baris ter-collapse — Edit sekarang ada di footer panel ini (tombol
+ * "Edit"/"+ Lokasi"/"Riwayat" sejajar, sesuai mockup), Hapus tetap di baris
+ * (aksi destruktif yang jarang dipakai, sengaja tidak dicampur ke tombol
+ * primer).
  */
 export function AlokasiExpandPanel({
   alokasiId,
@@ -119,10 +141,12 @@ export function AlokasiExpandPanel({
   projectName,
   onNavigateToList,
   onSubDrawerOpenChange,
+  onEdit,
 }: Props) {
   const { user } = useAuthStore();
   const [data, setData] = useState<AlokasiDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showRiwayat, setShowRiwayat] = useState(false);
 
   const [showLokasiForm, setShowLokasiForm] = useState(false);
   const [editLokasiData, setEditLokasiData] = useState<any>(null);
@@ -221,7 +245,7 @@ export function AlokasiExpandPanel({
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             Sumber Dana
           </p>
-          <p className="text-sm font-bold">{formatRupiah(data.total)}</p>
+          <p className="text-sm font-bold">{formatRupiahShort(data.total)}</p>
         </div>
         <div className="grid grid-cols-5 gap-2">
           {sumberDana.map((s) => (
@@ -233,7 +257,7 @@ export function AlokasiExpandPanel({
                 {s.label}
               </p>
               <p className="text-[11.5px] font-bold truncate">
-                {s.value > 0 ? formatRupiah(s.value) : "-"}
+                {s.value > 0 ? formatRupiahShort(s.value) : "-"}
               </p>
             </div>
           ))}
@@ -297,26 +321,11 @@ export function AlokasiExpandPanel({
 
       {/* Lokasi */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <MapPin size={14} className="text-muted-foreground" />
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              Lokasi ({data.lokasi.length})
-            </p>
-          </div>
-          {canManage && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs"
-              onClick={() => {
-                setEditLokasiData(null);
-                setShowLokasiForm(true);
-              }}
-            >
-              <Plus size={12} className="mr-1.5" /> Tambah Lokasi
-            </Button>
-          )}
+        <div className="flex items-center gap-2">
+          <MapPin size={14} className="text-muted-foreground" />
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Lokasi ({data.lokasi.length})
+          </p>
         </div>
 
         {data.lokasi.length === 0 ? (
@@ -377,70 +386,97 @@ export function AlokasiExpandPanel({
         )}
       </div>
 
-      {/* Riwayat — accordion collapsible di panel yang sama (bukan drawer baru) */}
-      {data.historiAlokasi.length > 0 && (
-        <Accordion type="single" collapsible>
-          <AccordionItem
-            value="riwayat"
-            className="border rounded-lg bg-background px-3"
+      {/* Footer aksi — Edit / + Lokasi / Riwayat sejajar, persis mockup.
+          Edit Alokasi & Hapus dulu ada sebagai ikon di baris ter-collapse;
+          sekarang Edit pindah ke sini (Hapus tetap di baris, lihat catatan
+          di komentar Props di atas). */}
+      <div className="flex items-center gap-2 pt-1">
+        {canManage && onEdit && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            onClick={onEdit}
           >
-            <AccordionTrigger className="hover:no-underline">
-              <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                <History size={13} /> Riwayat Perubahan
-              </span>
-            </AccordionTrigger>
-            <AccordionContent>
-              <div className="relative pl-6 space-y-5 pt-1 pb-2">
-                <div className="absolute left-[5px] top-1 bottom-1 w-px bg-border" />
-                {data.historiAlokasi.map((h, i) => {
-                  const prevTotal = data.historiAlokasi[i + 1]?.total;
-                  const diff = prevTotal
-                    ? Number(h.total) - Number(prevTotal)
-                    : 0;
-                  return (
-                    <div key={h.id} className="relative">
-                      <div className="absolute -left-6 top-1 w-3 h-3 rounded-full bg-primary border-2 border-background" />
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-xs font-medium">{h.changedBy}</p>
-                        <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Clock size={10} />{" "}
-                          {new Date(h.changedAt).toLocaleString("id-ID", {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          })}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="font-semibold">
-                          {formatRupiah(h.total)}
-                        </span>
-                        {diff !== 0 && (
-                          <span
-                            className={`flex items-center gap-0.5 text-xs ${
-                              diff > 0 ? "text-green-600" : "text-red-600"
-                            }`}
-                          >
-                            {diff > 0 ? (
-                              <TrendingUp size={11} />
-                            ) : (
-                              <TrendingDown size={11} />
-                            )}
-                            {formatRupiah(Math.abs(diff))}
-                          </span>
+            <Pencil size={12} className="mr-1.5" /> Edit
+          </Button>
+        )}
+        {canManage && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            onClick={() => {
+              setEditLokasiData(null);
+              setShowLokasiForm(true);
+            }}
+          >
+            <Plus size={12} className="mr-1.5" /> Lokasi
+          </Button>
+        )}
+        {data.historiAlokasi.length > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            onClick={() => setShowRiwayat((v) => !v)}
+          >
+            <History size={12} className="mr-1.5" /> Riwayat
+          </Button>
+        )}
+      </div>
+
+      {/* Riwayat — konten collapsible, dipicu tombol "Riwayat" di footer
+          (bukan lagi Accordion dengan trigger sendiri). */}
+      {showRiwayat && data.historiAlokasi.length > 0 && (
+        <div className="border rounded-lg bg-background px-3 py-3">
+          <div className="relative pl-6 space-y-5">
+            <div className="absolute left-[5px] top-1 bottom-1 w-px bg-border" />
+            {data.historiAlokasi.map((h, i) => {
+              const prevTotal = data.historiAlokasi[i + 1]?.total;
+              const diff = prevTotal ? Number(h.total) - Number(prevTotal) : 0;
+              return (
+                <div key={h.id} className="relative">
+                  <div className="absolute -left-6 top-1 w-3 h-3 rounded-full bg-primary border-2 border-background" />
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-medium">{h.changedBy}</p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Clock size={10} />{" "}
+                      {new Date(h.changedAt).toLocaleString("id-ID", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-semibold">
+                      {formatRupiah(h.total)}
+                    </span>
+                    {diff !== 0 && (
+                      <span
+                        className={`flex items-center gap-0.5 text-xs ${
+                          diff > 0 ? "text-green-600" : "text-red-600"
+                        }`}
+                      >
+                        {diff > 0 ? (
+                          <TrendingUp size={11} />
+                        ) : (
+                          <TrendingDown size={11} />
                         )}
-                      </div>
-                      {h.catatan && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {h.catatan}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
+                        {formatRupiah(Math.abs(diff))}
+                      </span>
+                    )}
+                  </div>
+                  {h.catatan && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {h.catatan}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {/* Form Tambah/Edit Lokasi — Sheet lapis-2 (Fase 4). Klik chip lokasi

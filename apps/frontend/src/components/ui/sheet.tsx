@@ -175,6 +175,12 @@ function SheetDescription({
  * Segmen terakhir non-clickable (halaman saat ini), segmen lain clickable.
  *
  * items: array segmen. Segmen dengan `onClick` akan dirender sebagai tombol.
+ *
+ * Sengaja SATU BARIS (tidak wrap) — di Sheet lapis-2 yang sempit (440px),
+ * breadcrumb 3 segmen + nama proyek panjang dulu pernah bikin "›" nyangkut
+ * sendirian di baris terpisah. Sekarang segmen tengah/terakhir yang panjang
+ * di-truncate (ellipsis), segmen pertama ("Daftar Planning") selalu utuh
+ * karena itu jangkarnya.
  */
 function SheetBreadcrumb({
   items,
@@ -188,25 +194,38 @@ function SheetBreadcrumb({
       data-slot="sheet-breadcrumb"
       aria-label="breadcrumb"
       className={cn(
-        "flex flex-wrap items-center gap-1 text-xs text-muted-foreground",
+        "flex items-center gap-1 text-xs text-muted-foreground",
         className,
       )}
     >
       {items.map((item, idx) => {
+        const isFirst = idx === 0;
         const isLast = idx === items.length - 1;
         return (
           <React.Fragment key={idx}>
-            {idx > 0 && <span className="text-muted-foreground/50">›</span>}
+            {idx > 0 && (
+              <span className="text-muted-foreground/50 shrink-0">›</span>
+            )}
             {item.onClick && !isLast ? (
               <button
                 type="button"
+                title={item.label}
                 onClick={item.onClick}
-                className="rounded-sm text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+                className={cn(
+                  "truncate rounded-sm text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50",
+                  isFirst ? "shrink-0" : "min-w-0",
+                )}
               >
                 {item.label}
               </button>
             ) : (
-              <span className={cn(isLast && "font-medium text-foreground")}>
+              <span
+                title={item.label}
+                className={cn(
+                  "truncate",
+                  isLast ? "min-w-0 font-medium text-foreground" : "shrink-0",
+                )}
+              >
                 {item.label}
               </span>
             )}

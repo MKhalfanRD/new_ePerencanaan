@@ -11,7 +11,6 @@ import {
   Calendar,
   Building2,
   FileText,
-  ChevronRight,
   ChevronDown,
   AlertTriangle,
   FileDown,
@@ -116,14 +115,23 @@ const getPlanningKode = (p: Planning) => {
   return `${balaiCode}.${programCode}.${kegiatanCode}`;
 };
 
-function InfoRow({ label, value }: { label: string; value?: string | null }) {
-  if (!value) return null;
+function InfoStat({
+  label,
+  value,
+  valueClassName,
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+}) {
   return (
-    <div className="flex items-start gap-3 py-2">
-      <span className="text-xs text-muted-foreground w-40 shrink-0 mt-0.5">
+    <div>
+      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
         {label}
-      </span>
-      <span className="text-sm font-medium flex-1">{value}</span>
+      </p>
+      <p className={`text-sm font-semibold mt-0.5 ${valueClassName ?? ""}`}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -269,12 +277,25 @@ export function PlanningDetailSheet({
     return acc;
   }, {});
 
-  const totalRencana = planning.alokasi
-    .filter((a) => a.status === "RENCANA")
-    .reduce((s, a) => s + Number(a.total), 0);
-  const totalRealisasi = planning.alokasi
-    .filter((a) => a.status === "REALISASI")
-    .reduce((s, a) => s + Number(a.total), 0);
+  // Data turunan utk kartu "Info Proyek" ringkas (6-item, sesuai mockup).
+  // RO ditentukan dari alokasi pertama karena Planning sendiri tidak
+  // langsung menyimpan Program/Kegiatan/KRO/RO (itu melekat di tiap
+  // alokasi) — sama seperti logic `getPlanningKode`.
+  const firstRo = planning.alokasi[0]?.ro;
+  const isPrioritasNasional =
+    planning.prioritas.some((p) => p.proyekPrioritas) ||
+    planning.majorProjects.length > 0;
+  const majorProjectName = planning.majorProjects[0]?.majorProject.name;
+  // Mockup menampilkan 2 kriteria dokumen kunci (DED & AMDAL). Data
+  // sebenarnya tidak punya jenis literal "AMDAL" — yang paling dekat
+  // adalah "Dokumen Lingkungan" (AMDAL termasuk di dalamnya), jadi
+  // dipetakan ke situ, bukan dipaksakan jadi label "AMDAL".
+  const dedKriteria = planning.kriteriaDokumen.find((k) =>
+    k.jenis.toUpperCase().includes("DED"),
+  );
+  const lingkunganKriteria = planning.kriteriaDokumen.find((k) =>
+    k.jenis.toLowerCase().includes("lingkungan"),
+  );
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
@@ -391,112 +412,78 @@ export function PlanningDetailSheet({
             </div>
           )}
 
-          {/* Info Proyek + Kriteria Dokumen */}
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-            <div className="space-y-2">
-              <SectionHeader title="Informasi Proyek" icon={FileText} />
-              <div className="rounded-lg border divide-y divide-border overflow-hidden">
-                <InfoRow
-                  label="Masa Pelaksanaan"
-                  value={
-                    planning.masaPelaksanaan === "SINGLE_YEAR"
-                      ? "Single Year"
-                      : "Multi Year"
-                  }
-                />
-                <InfoRow label="Kewenangan" value={planning.kewenangan} />
-                <InfoRow
-                  label="Wilayah Sungai"
-                  value={planning.wilayahSungai?.name}
-                />
-                <InfoRow
-                  label="Kebutuhan Tanah"
-                  value={planning.kebutuhanTanah ? "Ada" : "Tidak Ada"}
-                />
-                <InfoRow label="Sesuai RTRW" value={planning.sesuaiRTRW} />
-                <InfoRow
-                  label="No. Perda RTRW"
-                  value={planning.nomorPerdaRTRW}
-                />
-                <InfoRow
-                  label="Sesuai Pola SDA"
-                  value={planning.sesuaiPolaSDA}
-                />
-                <InfoRow
-                  label="No. Kepmen PUPR"
-                  value={planning.nomorKepmenPUPR}
-                />
-                <InfoRow
-                  label="Dibuat oleh"
-                  value={`${planning.createdBy.name} (${planning.createdBy.role.name})`}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <SectionHeader title="Kriteria Dokumen" icon={FileText} />
-              {planning.kriteriaDokumen.length > 0 ? (
-                <div className="rounded-lg border divide-y divide-border overflow-hidden">
-                  {planning.kriteriaDokumen.map((k) => {
-                    const dc = dokumenStatusConfig[k.status];
-                    return (
-                      <div
-                        key={k.id}
-                        className="flex items-center justify-between px-4 py-2.5"
-                      >
-                        <span className="text-xs text-muted-foreground">
-                          {k.jenis}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {k.tahun && (
-                            <span className="text-xs text-muted-foreground">
-                              {k.tahun}
-                            </span>
-                          )}
-                          <Badge variant="dot" dotColor={dc.dotColor}>
-                            {dc.label}
-                          </Badge>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground py-4 text-center border rounded-lg">
-                  Tidak ada data
-                </p>
-              )}
-
-              {planning.prioritas.length > 0 && (
-                <div className="pt-2">
-                  <SectionHeader title="Prioritas" />
-                  <div className="rounded-lg border divide-y divide-border overflow-hidden mt-2">
-                    {planning.prioritas.map((p) => {
-                      const aktif = [
-                        p.proyekPrioritas && "Proyek Prioritas",
-                        p.proyekRPIW && "RPIW",
-                        p.kegiatanBaru && "Kegiatan Baru",
-                        p.kegiatanWajib && "Kegiatan Wajib",
-                        p.proyekKonregFKS && "Konreg FKS",
-                        p.proyekMusrengbangnas && "Musrengbangnas",
-                      ].filter(Boolean);
-                      return (
-                        <div
-                          key={p.id}
-                          className="flex items-center justify-between px-4 py-2.5"
-                        >
-                          <span className="text-xs text-muted-foreground">
-                            Tahun {p.tahun}
-                          </span>
-                          <span className="text-xs font-medium text-right max-w-[60%]">
-                            {aktif.length > 0 ? aktif.join(", ") : "—"}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+          {/* Info Proyek — kartu ringkas 6-item, persis mockup (bukan lagi
+              2 kartu terpisah dengan daftar field panjang). Field selain
+              6 ini (Kewenangan, RTRW, Pola SDA, Kepmen PUPR, breakdown
+              Prioritas per tahun, daftar lengkap semua Kriteria Dokumen)
+              sengaja dibuang sesuai keputusan menyamakan persis ke mockup. */}
+          <div className="space-y-2">
+            <SectionHeader title="Info Proyek" icon={FileText} />
+            <div className="rounded-lg border p-4 grid grid-cols-2 gap-x-4 gap-y-4">
+              <InfoStat
+                label="Program / Kegiatan"
+                value={
+                  firstRo
+                    ? `${firstRo.kro.kegiatan.program.code} ${firstRo.kro.kegiatan.program.name} · ${firstRo.kro.kegiatan.code}`
+                    : "—"
+                }
+              />
+              <InfoStat
+                label="KRO / RO"
+                value={firstRo ? `${firstRo.kro.name} · ${firstRo.name}` : "—"}
+              />
+              <InfoStat
+                label="Prioritas Nasional"
+                value={
+                  isPrioritasNasional
+                    ? majorProjectName
+                      ? `Ya — ${majorProjectName}`
+                      : "Ya"
+                    : "Tidak"
+                }
+              />
+              <InfoStat
+                label="Diajukan oleh"
+                value={`${planning.createdBy.name} (${planning.createdBy.role.name})`}
+              />
+              <InfoStat
+                label="Kriteria Dokumen"
+                value={
+                  dedKriteria
+                    ? `DED — ${dokumenStatusConfig[dedKriteria.status].label}`
+                    : "—"
+                }
+                valueClassName={
+                  dedKriteria
+                    ? dokumenStatusConfig[dedKriteria.status].dotColor ===
+                      "emerald"
+                      ? "text-emerald-600"
+                      : dokumenStatusConfig[dedKriteria.status].dotColor ===
+                          "rose"
+                        ? "text-rose-600"
+                        : undefined
+                    : undefined
+                }
+              />
+              <InfoStat
+                label="Dokumen Lingkungan"
+                value={
+                  lingkunganKriteria
+                    ? dokumenStatusConfig[lingkunganKriteria.status].label
+                    : "—"
+                }
+                valueClassName={
+                  lingkunganKriteria
+                    ? dokumenStatusConfig[lingkunganKriteria.status]
+                        .dotColor === "emerald"
+                      ? "text-emerald-600"
+                      : dokumenStatusConfig[lingkunganKriteria.status]
+                            .dotColor === "rose"
+                        ? "text-rose-600"
+                        : undefined
+                    : undefined
+                }
+              />
             </div>
           </div>
 
@@ -504,7 +491,7 @@ export function PlanningDetailSheet({
           {(Object.keys(alokasiByTahun).length > 0 || canManageAlokasi) && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <SectionHeader title="Alokasi Anggaran" icon={Calendar} />
+                <SectionHeader title="Alokasi per Tahun" icon={Calendar} />
                 {canManageAlokasi && (
                   <Button
                     size="sm"
@@ -515,7 +502,7 @@ export function PlanningDetailSheet({
                       setShowAlokasiForm(true);
                     }}
                   >
-                    <Plus size={13} className="mr-1.5" /> Tambah Alokasi
+                    <Plus size={13} className="mr-1.5" /> Alokasi
                   </Button>
                 )}
               </div>
@@ -550,7 +537,7 @@ export function PlanningDetailSheet({
                               <span className="text-muted-foreground">
                                 Rencana{" "}
                                 <b className="text-foreground font-semibold">
-                                  {formatRupiah(yearRencana)}
+                                  {formatRupiahShort(yearRencana)}
                                 </b>
                               </span>
                               <span className="text-muted-foreground">
@@ -563,108 +550,113 @@ export function PlanningDetailSheet({
                                   }
                                 >
                                   {yearRealisasi > 0
-                                    ? formatRupiah(yearRealisasi)
+                                    ? formatRupiahShort(yearRealisasi)
                                     : "-"}
                                 </b>
+                                {yearRealisasi > 0 && (
+                                  <span className="text-emerald-600"> ✓</span>
+                                )}
                               </span>
                             </div>
                           </div>
                           <div className="divide-y divide-border">
-                            {alokasi.map((a) => {
-                              const isExpanded = expandedAlokasi.has(a.id);
-                              const ac = alokasiStatusConfig[a.status];
-                              return (
-                                <div key={a.id}>
-                                  <div
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={() => toggleAlokasi(a.id)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter" || e.key === " ") {
-                                        e.preventDefault();
-                                        toggleAlokasi(a.id);
-                                      }
-                                    }}
-                                    className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-accent/30 transition-colors outline-none focus-visible:bg-accent/40"
-                                  >
-                                    <ChevronDown
-                                      size={14}
-                                      className={`shrink-0 text-muted-foreground transition-transform ${isExpanded ? "" : "-rotate-90"}`}
-                                    />
-                                    <div className="min-w-0 flex-1">
-                                      <p className="text-[10.5px] font-mono text-muted-foreground truncate">
-                                        {a.ro.code}
-                                      </p>
-                                      <p className="text-xs font-semibold truncate">
-                                        {a.ro.name} — {ac.label}
-                                      </p>
-                                    </div>
-                                    <span className="text-xs text-muted-foreground shrink-0 w-16 text-right">
-                                      {a.lokasi.length} lokasi
-                                    </span>
-                                    <span className="text-xs font-bold shrink-0 w-28 text-right">
-                                      {formatRupiah(a.total)}
-                                    </span>
-                                    {canManageAlokasi && (
-                                      <div
-                                        className="flex items-center gap-0.5 shrink-0"
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        <TooltipProvider delayDuration={300}>
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-6 w-6"
-                                                onClick={() => {
-                                                  setEditAlokasi(a);
-                                                  setShowAlokasiForm(true);
-                                                }}
-                                              >
-                                                <Edit size={11} />
-                                              </Button>
-                                            </TooltipTrigger>
-                                            <TooltipContent>
-                                              Edit Alokasi
-                                            </TooltipContent>
-                                          </Tooltip>
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                                onClick={() =>
-                                                  setDeleteAlokasiId(a.id)
-                                                }
-                                              >
-                                                <Trash2 size={11} />
-                                              </Button>
-                                            </TooltipTrigger>
-                                            <TooltipContent>
-                                              Hapus Alokasi
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </TooltipProvider>
+                            {alokasi
+                              .filter(
+                                (a) =>
+                                  canManageAlokasi ||
+                                  !(
+                                    a.status === "REALISASI" &&
+                                    Number(a.total) === 0 &&
+                                    a.lokasi.length === 0
+                                  ),
+                              )
+                              .map((a) => {
+                                const isExpanded = expandedAlokasi.has(a.id);
+                                const ac = alokasiStatusConfig[a.status];
+                                return (
+                                  <div key={a.id}>
+                                    <div
+                                      role="button"
+                                      tabIndex={0}
+                                      onClick={() => toggleAlokasi(a.id)}
+                                      onKeyDown={(e) => {
+                                        if (
+                                          e.key === "Enter" ||
+                                          e.key === " "
+                                        ) {
+                                          e.preventDefault();
+                                          toggleAlokasi(a.id);
+                                        }
+                                      }}
+                                      className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-accent/30 transition-colors outline-none focus-visible:bg-accent/40"
+                                    >
+                                      <ChevronDown
+                                        size={14}
+                                        className={`shrink-0 text-muted-foreground transition-transform ${isExpanded ? "" : "-rotate-90"}`}
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-[10.5px] font-mono text-muted-foreground truncate">
+                                          {a.ro.code}
+                                        </p>
+                                        <p className="text-xs font-semibold truncate">
+                                          {a.ro.name} — {ac.label}
+                                        </p>
                                       </div>
+                                      <span className="text-xs text-muted-foreground shrink-0 w-16 text-right">
+                                        {a.lokasi.length} lokasi
+                                      </span>
+                                      <span className="text-xs font-bold shrink-0 w-28 text-right">
+                                        {formatRupiahShort(Number(a.total))}
+                                      </span>
+                                      {canManageAlokasi && (
+                                        <div
+                                          className="flex items-center gap-0.5 shrink-0"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          <TooltipProvider delayDuration={300}>
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <Button
+                                                  variant="ghost"
+                                                  size="icon"
+                                                  className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                  onClick={() =>
+                                                    setDeleteAlokasiId(a.id)
+                                                  }
+                                                >
+                                                  <Trash2 size={11} />
+                                                </Button>
+                                              </TooltipTrigger>
+                                              <TooltipContent>
+                                                Hapus Alokasi
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </TooltipProvider>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {isExpanded && (
+                                      <AlokasiExpandPanel
+                                        alokasiId={a.id}
+                                        onRefreshParent={onRefresh}
+                                        projectName={planning.projectName}
+                                        onNavigateToList={onClose}
+                                        onSubDrawerOpenChange={(isOpen) =>
+                                          handleSubDrawerOpenChange(
+                                            a.id,
+                                            isOpen,
+                                          )
+                                        }
+                                        onEdit={() => {
+                                          setEditAlokasi(a);
+                                          setShowAlokasiForm(true);
+                                        }}
+                                      />
                                     )}
                                   </div>
-
-                                  {isExpanded && (
-                                    <AlokasiExpandPanel
-                                      alokasiId={a.id}
-                                      onRefreshParent={onRefresh}
-                                      projectName={planning.projectName}
-                                      onNavigateToList={onClose}
-                                      onSubDrawerOpenChange={(isOpen) =>
-                                        handleSubDrawerOpenChange(a.id, isOpen)
-                                      }
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })}
+                                );
+                              })}
                           </div>
                         </div>
                       );

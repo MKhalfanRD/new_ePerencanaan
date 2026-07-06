@@ -170,6 +170,13 @@ export class MasterController {
     return this.masterService.deleteKegiatan(id);
   }
 
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('kegiatan/bulk-delete')
+  bulkDeleteKegiatan(@Body('ids') ids: string[]) {
+    return this.masterService.bulkDeleteKegiatan(ids);
+  }
+
   // ========== CRUD KRO ==========
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRATOR')
@@ -192,6 +199,13 @@ export class MasterController {
     return this.masterService.deleteKRO(id);
   }
 
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('kro/bulk-delete')
+  bulkDeleteKRO(@Body('ids') ids: string[]) {
+    return this.masterService.bulkDeleteKRO(ids);
+  }
+
   // ========== CRUD RO ==========
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRATOR')
@@ -212,6 +226,13 @@ export class MasterController {
   @Delete('ro/:id')
   deleteRO(@Param('id') id: string) {
     return this.masterService.deleteRO(id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('ro/bulk-delete')
+  bulkDeleteRO(@Body('ids') ids: string[]) {
+    return this.masterService.bulkDeleteRO(ids);
   }
 
   // ========== CRUD MAJOR PROJECT ==========

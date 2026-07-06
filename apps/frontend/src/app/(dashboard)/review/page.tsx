@@ -10,6 +10,8 @@ import {
   AlertCircle,
   XCircle,
   CheckCircle2,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -274,6 +276,15 @@ export default function ReviewPage() {
             variant="outline"
             size="sm"
             disabled={page === 1}
+            onClick={() => setPage(1)}
+            title="Halaman pertama"
+          >
+            <ChevronsLeft size={14} />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page === 1}
             onClick={() => setPage((p) => p - 1)}
           >
             Sebelumnya
@@ -288,6 +299,15 @@ export default function ReviewPage() {
             onClick={() => setPage((p) => p + 1)}
           >
             Berikutnya
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page === totalPages}
+            onClick={() => setPage(totalPages)}
+            title="Halaman terakhir"
+          >
+            <ChevronsRight size={14} />
           </Button>
         </div>
       )}

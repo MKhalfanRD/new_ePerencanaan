@@ -174,7 +174,7 @@ model Kegiatan {
 }
 
 model KRO {
-  id         String   @id @db.VarChar(10)
+  id         String   @id @db.VarChar(20)
   kegiatanId String   @db.VarChar(10)
   kegiatan   Kegiatan @relation(fields: [kegiatanId], references: [id])
   name       String   @db.VarChar(255)
@@ -189,8 +189,8 @@ model KRO {
 }
 
 model RO {
-  id    String @id @db.VarChar(10)
-  kroId String @db.VarChar(10)
+  id    String @id @db.VarChar(20)
+  kroId String @db.VarChar(20)
   kro   KRO    @relation(fields: [kroId], references: [id])
   name  String @db.VarChar(255)
   code  String @db.VarChar(10)
@@ -206,7 +206,7 @@ model RO {
 
 model IndikatorRO {
   id     String @id @default(cuid())
-  roId   String @db.VarChar(10)
+  roId   String @db.VarChar(20)
   ro     RO     @relation(fields: [roId], references: [id])
   nama   String @db.VarChar(255)
   satuan String @db.VarChar(50)
@@ -417,7 +417,7 @@ model Alokasi {
   planningId String
   planning   Planning @relation(fields: [planningId], references: [id], onDelete: Cascade)
 
-  roId String @db.VarChar(10)
+  roId String @db.VarChar(20)
   ro   RO     @relation(fields: [roId], references: [id])
 
   tahun  Int            @db.SmallInt

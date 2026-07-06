@@ -96,6 +96,15 @@ export class MasterService {
     await this.prisma.kegiatan.delete({ where: { id } });
     return { message: 'Kegiatan berhasil dihapus' };
   }
+  async bulkDeleteKegiatan(ids: string[]) {
+    const result = await this.prisma.kegiatan.deleteMany({
+      where: { id: { in: ids } },
+    });
+    return {
+      message: `${result.count} Kegiatan berhasil dihapus`,
+      count: result.count,
+    };
+  }
 
   // ========== KRO ==========
   createKRO(dto: any) {
@@ -108,6 +117,15 @@ export class MasterService {
     await this.prisma.kRO.delete({ where: { id } });
     return { message: 'KRO berhasil dihapus' };
   }
+  async bulkDeleteKRO(ids: string[]) {
+    const result = await this.prisma.kRO.deleteMany({
+      where: { id: { in: ids } },
+    });
+    return {
+      message: `${result.count} KRO berhasil dihapus`,
+      count: result.count,
+    };
+  }
 
   // ========== RO ==========
   createRO(dto: any) {
@@ -119,6 +137,15 @@ export class MasterService {
   async deleteRO(id: string) {
     await this.prisma.rO.delete({ where: { id } });
     return { message: 'RO berhasil dihapus' };
+  }
+  async bulkDeleteRO(ids: string[]) {
+    const result = await this.prisma.rO.deleteMany({
+      where: { id: { in: ids } },
+    });
+    return {
+      message: `${result.count} RO berhasil dihapus`,
+      count: result.count,
+    };
   }
 
   // ========== MAJOR PROJECT ==========

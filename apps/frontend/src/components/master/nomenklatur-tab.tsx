@@ -115,6 +115,18 @@ export function NomenklaturTab() {
     }
   };
 
+  const onBulkDelete = async (ids: (string | number)[]) => {
+    try {
+      const res = await api.post(`${getEndpoint()}/bulk-delete`, { ids });
+      toast.success(res.data?.message || `${ids.length} data berhasil dihapus`);
+      fetchAll();
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.message || "Gagal menghapus data terpilih",
+      );
+    }
+  };
+
   const getCurrentData = () => {
     if (activeSubTab === "Program") return programs;
     if (activeSubTab === "Kegiatan") return kegiatan;
@@ -195,6 +207,13 @@ export function NomenklaturTab() {
         onAdd={openAdd}
         onEdit={openEdit}
         onDelete={onDelete}
+        onBulkDelete={
+          activeSubTab === "Kegiatan" ||
+          activeSubTab === "KRO" ||
+          activeSubTab === "RO"
+            ? onBulkDelete
+            : undefined
+        }
         searchKeys={["name", "code"]}
       />
 

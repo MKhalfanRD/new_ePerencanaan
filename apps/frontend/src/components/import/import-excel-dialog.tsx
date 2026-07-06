@@ -17,6 +17,8 @@ import {
   RefreshCw,
   SkipForward,
   Search,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
@@ -195,6 +197,16 @@ function ErrorTable({
           <Button
             size="sm"
             variant="ghost"
+            className="h-7 text-xs px-2"
+            disabled={page === 1}
+            onClick={() => setPage(1)}
+            title="Halaman pertama"
+          >
+            <ChevronsLeft size={13} />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
             className="h-7 text-xs"
             disabled={page === 1}
             onClick={() => setPage((p) => p - 1)}
@@ -212,6 +224,16 @@ function ErrorTable({
             onClick={() => setPage((p) => p + 1)}
           >
             Berikutnya
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs px-2"
+            disabled={page === totalPages}
+            onClick={() => setPage(totalPages)}
+            title="Halaman terakhir"
+          >
+            <ChevronsRight size={13} />
           </Button>
         </div>
       )}

@@ -12,6 +12,8 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronLeft,
+  ChevronsLeft,
+  ChevronsRight,
   Maximize2,
   Minimize2,
   CheckCircle2,
@@ -632,6 +634,15 @@ export default function PlanningsPage() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setPage(1)}
+              disabled={page <= 1}
+              title="Halaman pertama"
+            >
+              <ChevronsLeft size={14} />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
             >
@@ -644,6 +655,15 @@ export default function PlanningsPage() {
               disabled={page >= totalPages}
             >
               Berikutnya <ChevronRight size={14} className="ml-1" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(totalPages)}
+              disabled={page >= totalPages}
+              title="Halaman terakhir"
+            >
+              <ChevronsRight size={14} />
             </Button>
           </div>
         </div>

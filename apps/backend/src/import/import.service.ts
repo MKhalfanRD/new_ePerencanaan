@@ -112,10 +112,11 @@ export class ImportService {
 
     for (const row of rows) {
       const status = row.ta <= currentYear ? 'REALISASI' : 'RENCANA';
-      seenKeys.add(`${row.kdRO}|${row.ta}|${status}`);
+      const qualifiedRoId = `${row.kdgiat}.${row.kdKRO}.${row.kdRO}`;
+      seenKeys.add(`${qualifiedRoId}|${row.ta}|${status}`);
 
       result.push({
-        roId: row.kdRO,
+        roId: qualifiedRoId,
         tahun: row.ta,
         status,
         rm: row.jumlah,
@@ -133,12 +134,13 @@ export class ImportService {
     // Tambahkan pasangan kosong untuk RO+tahun yang cuma punya satu status
     for (const row of rows) {
       const pairedStatus = row.ta <= currentYear ? 'RENCANA' : 'REALISASI';
-      const pairedKey = `${row.kdRO}|${row.ta}|${pairedStatus}`;
+      const qualifiedRoId = `${row.kdgiat}.${row.kdKRO}.${row.kdRO}`;
+      const pairedKey = `${qualifiedRoId}|${row.ta}|${pairedStatus}`;
 
       if (!seenKeys.has(pairedKey)) {
         seenKeys.add(pairedKey);
         result.push({
-          roId: row.kdRO,
+          roId: qualifiedRoId,
           tahun: row.ta,
           status: pairedStatus,
           rm: 0,
@@ -435,31 +437,41 @@ export class ImportService {
         });
         kegiatanCache.set(row.kdgiat, true);
       }
-      if (row.kdKRO && !kroCache.has(row.kdKRO)) {
+      // Qualifikasi id dengan prefix kegiatan supaya kode singkat yang
+      // berulang lintas kegiatan (mis. KRO "RBS" atau RO "001" muncul di
+      // 7691, 7692, 7694, dst) tidak saling menimpa satu sama lain.
+      const kroId = `${row.kdgiat}.${row.kdKRO}`;
+      const roId = `${row.kdgiat}.${row.kdKRO}.${row.kdRO}`;
+
+      if (row.kdKRO && !kroCache.has(kroId)) {
         await this.prisma.kRO.upsert({
-          where: { id: row.kdKRO },
+          where: { id: kroId },
           update: {},
           create: {
-            id: row.kdKRO,
+            id: kroId,
             kegiatanId: row.kdgiat,
             code: row.kdKRO,
+            // Placeholder ini HANYA dipakai kalau kode belum ada di master
+            // nomenklatur. Idealnya master (Program/Kegiatan/KRO/RO) sudah
+            // di-seed dari referensi resmi (KRO/RO SBSN) sebelum import,
+            // supaya baris ini tidak pernah tereksekusi untuk kode yang valid.
             name: `KRO ${row.kdKRO}`,
           },
         });
-        kroCache.set(row.kdKRO, true);
+        kroCache.set(kroId, true);
       }
-      if (row.kdRO && row.kdKRO && !roCache.has(row.kdRO)) {
+      if (row.kdRO && row.kdKRO && !roCache.has(roId)) {
         await this.prisma.rO.upsert({
-          where: { id: row.kdRO },
+          where: { id: roId },
           update: {},
           create: {
-            id: row.kdRO,
-            kroId: row.kdKRO,
+            id: roId,
+            kroId: kroId,
             code: row.kdRO,
             name: `RO ${row.kdRO}`,
           },
         });
-        roCache.set(row.kdRO, true);
+        roCache.set(roId, true);
       }
     }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,6 +36,7 @@ interface Props<T extends { id: string | number }> {
   onAdd: () => void;
   onEdit: (item: T) => void;
   onDelete: (id: string | number) => Promise<void>;
+  onBulkDelete?: (ids: (string | number)[]) => Promise<void>;
   searchable?: boolean;
   searchKeys?: (keyof T)[];
 }
@@ -48,12 +49,16 @@ export function MasterTable<T extends { id: string | number }>({
   onAdd,
   onEdit,
   onDelete,
+  onBulkDelete,
   searchable = true,
   searchKeys = [],
 }: Props<T>) {
   const [search, setSearch] = useState("");
   const [deleteId, setDeleteId] = useState<string | number | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [selected, setSelected] = useState<Set<string | number>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const filtered =
     search && searchKeys.length > 0
@@ -63,6 +68,43 @@ export function MasterTable<T extends { id: string | number }>({
           ),
         )
       : data;
+
+  // Reset seleksi kalau data/filter berubah (mis. setelah hapus/pindah tab)
+  useEffect(() => {
+    setSelected(new Set());
+  }, [data, search]);
+
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((item) => selected.has(item.id));
+
+  const toggleSelectAll = () => {
+    setSelected((prev) => {
+      if (allFilteredSelected) return new Set();
+      const next = new Set(prev);
+      filtered.forEach((item) => next.add(item.id));
+      return next;
+    });
+  };
+
+  const [lastClicked, setLastClicked] = useState<number | null>(null);
+
+  const toggleSelectOne = (
+    id: string | number,
+    index: number,
+    shiftKey: boolean,
+  ) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (shiftKey && lastClicked !== null) {
+        const [start, end] = [lastClicked, index].sort((a, b) => a - b);
+        for (let i = start; i <= end; i++) next.add(filtered[i].id);
+      } else {
+        next.has(id) ? next.delete(id) : next.add(id);
+      }
+      return next;
+    });
+    setLastClicked(index);
+  };
 
   const handleDelete = async () => {
     if (!deleteId) return;
@@ -75,10 +117,25 @@ export function MasterTable<T extends { id: string | number }>({
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (!onBulkDelete || selected.size === 0) return;
+    setBulkDeleting(true);
+    try {
+      await onBulkDelete(Array.from(selected));
+      setSelected(new Set());
+      setBulkDeleteOpen(false);
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{data.length} data</p>
+        <p className="text-sm text-muted-foreground">
+          {data.length} data
+          {selected.size > 0 && ` · ${selected.size} dipilih`}
+        </p>
         <div className="flex items-center gap-2">
           {searchable && (
             <div className="relative">
@@ -93,6 +150,16 @@ export function MasterTable<T extends { id: string | number }>({
                 className="pl-8 h-8 w-48 text-sm"
               />
             </div>
+          )}
+          {onBulkDelete && selected.size > 0 && (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Trash2 size={14} className="mr-1.5" />
+              Hapus ({selected.size})
+            </Button>
           )}
           <Button size="sm" onClick={onAdd}>
             <Plus size={14} className="mr-1.5" /> Tambah
@@ -119,6 +186,16 @@ export function MasterTable<T extends { id: string | number }>({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/40">
+                    {onBulkDelete && (
+                      <th className="px-4 py-2.5 w-10">
+                        <input
+                          type="checkbox"
+                          checked={allFilteredSelected}
+                          onChange={toggleSelectAll}
+                          className="h-4 w-4 rounded border-muted-foreground/40"
+                        />
+                      </th>
+                    )}
                     {columns.map((col) => (
                       <th
                         key={col.key}
@@ -131,11 +208,23 @@ export function MasterTable<T extends { id: string | number }>({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filtered.map((item) => (
+                  {filtered.map((item, i) => (
                     <tr
                       key={item.id}
                       className="hover:bg-accent/30 transition-colors"
                     >
+                      {onBulkDelete && (
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(item.id)}
+                            onClick={(e) =>
+                              toggleSelectOne(item.id, i, e.shiftKey)
+                            }
+                            className="h-4 w-4 rounded border-muted-foreground/40"
+                          />
+                        </td>
+                      )}
                       {columns.map((col) => (
                         <td key={col.key} className="px-4 py-3 text-sm">
                           {col.render
@@ -200,6 +289,30 @@ export function MasterTable<T extends { id: string | number }>({
               className="bg-destructive hover:bg-destructive/90"
             >
               {deleting ? "Menghapus..." : "Hapus"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Hapus {selected.size} data {title}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {selected.size} data yang dipilih akan dihapus permanen dan tidak
+              dapat dikembalikan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {bulkDeleting ? "Menghapus..." : `Hapus ${selected.size} data`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

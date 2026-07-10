@@ -276,10 +276,7 @@ export class PlanningsService {
   async update(id: string, dto: UpdatePlanningDto, user: any) {
     const planning = await this.prisma.planning.findUnique({ where: { id } });
     if (!planning) throw new NotFoundException('Planning tidak ditemukan');
-    if (
-      planning.createdById !== 'ADMINISTRATOR' &&
-      planning.createdById !== user.userId
-    )
+    if (user.role !== 'ADMINISTRATOR' && planning.createdById !== user.userId)
       throw new ForbiddenException('Bukan planning milik anda');
     if (planning.status !== 'DRAFT' && planning.status !== 'REVISION') {
       throw new BadRequestException(

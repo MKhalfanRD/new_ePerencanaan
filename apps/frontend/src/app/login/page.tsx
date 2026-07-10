@@ -145,6 +145,7 @@ export default function LoginPage() {
                 />
                 <button
                   type="button"
+                  data-testid="toggle-password-visibility"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                 >

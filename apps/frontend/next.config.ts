@@ -1,8 +1,6 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  /* config options here */
-  allowedDevOrigins: ["10.103.14.151"],
+const nextConfig = {
+  basePath: "/eperencanaan",
+  assetPrefix: "/eperencanaan",
 };
 
 export default nextConfig;

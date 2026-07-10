@@ -50,41 +50,37 @@ const schema = z.object({
   periodeId: z.number({ error: "Periode wajib dipilih" }),
   projectName: z.string().min(1, "Nama proyek wajib diisi"),
   masaPelaksanaan: z.enum(["SINGLE_YEAR", "MULTI_YEAR"]),
-  kewenangan: z.enum(["PUSAT", "DAERAH"]).default("PUSAT"),
-  kebutuhanTanah: z.boolean().default(false),
+  kewenangan: z.enum(["PUSAT", "DAERAH"]),
+  kebutuhanTanah: z.boolean(),
   sesuaiRTRW: z.string().optional(),
   nomorPerdaRTRW: z.string().optional(),
   sesuaiPolaSDA: z.string().optional(),
   nomorKepmenPUPR: z.string().optional(),
   sesuaiMasterplan: z.string().optional(),
-  kriteriaDokumen: z
-    .array(
-      z.object({
-        jenis: z.string(),
-        status: z.enum(["TIDAK_PERLU", "BELUM_ADA", "SUDAH_ADA"]),
-        tahun: z.number().optional(),
-      }),
-    )
-    .default([]),
-  alokasi: z
-    .array(
-      z.object({
-        roId: z.string().min(1, "RO wajib dipilih"),
-        tahun: z.number().min(2020),
-        status: z.enum(["RENCANA", "REALISASI"]),
-        rm: z.number().default(0),
-        rmp: z.number().default(0),
-        pln: z.number().default(0),
-        sbsn: z.number().default(0),
-        kpbu: z.number().default(0),
-        outputTarget: z.number().optional(),
-        outputUnit: z.string().optional(),
-        outcomeTarget: z.number().optional(),
-        outcomeUnit: z.string().optional(),
-        catatan: z.string().optional(),
-      }),
-    )
-    .default([]),
+  kriteriaDokumen: z.array(
+    z.object({
+      jenis: z.string(),
+      status: z.enum(["TIDAK_PERLU", "BELUM_ADA", "SUDAH_ADA"]),
+      tahun: z.number().optional(),
+    }),
+  ),
+  alokasi: z.array(
+    z.object({
+      roId: z.string().min(1, "RO wajib dipilih"),
+      tahun: z.number().min(2020),
+      status: z.enum(["RENCANA", "REALISASI"]),
+      rm: z.number().default(0),
+      rmp: z.number().default(0),
+      pln: z.number().default(0),
+      sbsn: z.number().default(0),
+      kpbu: z.number().default(0),
+      outputTarget: z.number().optional(),
+      outputUnit: z.string().optional(),
+      outcomeTarget: z.number().optional(),
+      outcomeUnit: z.string().optional(),
+      catatan: z.string().optional(),
+    }),
+  ),
 });
 
 type FormData = z.infer<typeof schema>;

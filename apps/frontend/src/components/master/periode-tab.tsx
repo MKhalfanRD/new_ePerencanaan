@@ -32,7 +32,7 @@ const schema = z.object({
   startYear: z.number().min(2000),
   endYear: z.number().min(2000),
   label: z.string().min(1),
-  isActive: z.boolean().default(false),
+  isActive: z.boolean(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -50,7 +50,10 @@ export function PeriodeTab() {
     watch,
     setValue,
     formState: { errors, isSubmitting },
-  } = useForm<FormData>({ resolver: zodResolver(schema) });
+  } = useForm<FormData>({
+    resolver: zodResolver(schema),
+    defaultValues: { isActive: false },
+  });
 
   const fetch = async () => {
     setLoading(true);

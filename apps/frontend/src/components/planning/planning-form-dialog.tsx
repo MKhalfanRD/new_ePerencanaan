@@ -46,8 +46,8 @@ const KRITERIA_JENIS = [
 ];
 
 const schema = z.object({
-  balaiId: z.number({ required_error: "Balai wajib dipilih" }),
-  periodeId: z.number({ required_error: "Periode wajib dipilih" }),
+  balaiId: z.number({ error: "Balai wajib dipilih" }),
+  periodeId: z.number({ error: "Periode wajib dipilih" }),
   projectName: z.string().min(1, "Nama proyek wajib diisi"),
   masaPelaksanaan: z.enum(["SINGLE_YEAR", "MULTI_YEAR"]),
   kewenangan: z.enum(["PUSAT", "DAERAH"]).default("PUSAT"),

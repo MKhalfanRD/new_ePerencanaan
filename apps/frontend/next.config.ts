@@ -1,6 +1,3 @@
-const nextConfig = {
-  basePath: "/eperencanaan",
-  assetPrefix: "/eperencanaan",
-};
+const nextConfig = {};
 
 export default nextConfig;

@@ -69,25 +69,33 @@ describe('PlanningsService', () => {
           balaiId: 1,
           periodeId: 1,
           projectName: 'Proyek A',
-          alokasi: [
+          paket: [
             {
+              name: 'Paket I',
               roId: 'ro_1',
-              tahun: 2025,
-              status: 'RENCANA',
-              rm: 1000,
-              rmp: 500,
+              jenis: 'FISIK',
+              masaPelaksanaan: 'SINGLE_YEAR',
+              alokasi: [
+                { tahun: 2025, status: 'RENCANA', rm: 1000, rmp: 500 },
+              ],
             },
-            // sengaja tidak isi rm/rmp sama sekali di baris kedua
-            { roId: 'ro_2', tahun: 2025, status: 'RENCANA', pln: 200 },
+            {
+              name: 'Paket II',
+              roId: 'ro_2',
+              jenis: 'FISIK',
+              masaPelaksanaan: 'SINGLE_YEAR',
+              // sengaja tidak isi rm/rmp sama sekali
+              alokasi: [{ tahun: 2025, status: 'RENCANA', pln: 200 }],
+            },
           ],
         } as any,
         'user_1',
       );
 
       const callArg = prisma.planning.create.mock.calls[0][0];
-      const alokasiCreated = callArg.data.alokasi.create;
-      expect(alokasiCreated[0].total).toBe(1500); // 1000 + 500
-      expect(alokasiCreated[1].total).toBe(200); // hanya pln, sisanya 0
+      const paketCreated = callArg.data.paket.create;
+      expect(paketCreated[0].alokasi.create[0].total).toBe(1500); // 1000 + 500
+      expect(paketCreated[1].alokasi.create[0].total).toBe(200); // hanya pln, sisanya 0
     });
 
     it('setelah create, cache list "plannings:list:" di-invalidasi', async () => {
@@ -223,159 +231,65 @@ describe('PlanningsService', () => {
     });
   });
 
-  describe('submit', () => {
-    it('status DRAFT → sukses jadi SUBMITTED', async () => {
+  describe('approve', () => {
+    it('status DRAFT → sukses jadi APPROVED', async () => {
       prisma.planning.findUnique.mockResolvedValue(
         buildPlanning({ status: 'DRAFT' }) as any,
       );
       prisma.planning.update.mockResolvedValue(
-        buildPlanning({ status: 'SUBMITTED' }) as any,
+        buildPlanning({ status: 'APPROVED' }) as any,
       );
 
-      const result = await service.submit('planning_1', satkerUser);
-      expect(result.status).toBe('SUBMITTED');
+      const result = await service.approve('planning_1');
+      expect(result.status).toBe('APPROVED');
     });
 
-    it('status REVISION → sukses jadi SUBMITTED juga', async () => {
-      prisma.planning.findUnique.mockResolvedValue(
-        buildPlanning({ status: 'REVISION' }) as any,
-      );
-      prisma.planning.update.mockResolvedValue(
-        buildPlanning({ status: 'SUBMITTED' }) as any,
-      );
-
-      const result = await service.submit('planning_1', satkerUser);
-      expect(result.status).toBe('SUBMITTED');
-    });
-
-    it('status selain DRAFT/REVISION (mis. APPROVED) → BadRequestException', async () => {
+    it('status selain DRAFT → BadRequestException', async () => {
       prisma.planning.findUnique.mockResolvedValue(
         buildPlanning({ status: 'APPROVED' }) as any,
       );
 
-      await expect(service.submit('planning_1', satkerUser)).rejects.toThrow(
+      await expect(service.approve('planning_1')).rejects.toThrow(
         BadRequestException,
       );
     });
 
-    it('bukan pemilik planning → ForbiddenException', async () => {
-      prisma.planning.findUnique.mockResolvedValue(
-        buildPlanning({ createdById: 'user_1', status: 'DRAFT' }) as any,
-      );
-
-      await expect(
-        service.submit('planning_1', otherSatkerUser),
-      ).rejects.toThrow(ForbiddenException);
-    });
-
-    it('setelah submit, cache di-invalidasi (detail & list)', async () => {
+    it('setelah approve, cache di-invalidasi (detail & list)', async () => {
       prisma.planning.findUnique.mockResolvedValue(
         buildPlanning({ status: 'DRAFT' }) as any,
       );
       prisma.planning.update.mockResolvedValue(
-        buildPlanning({ status: 'SUBMITTED' }) as any,
+        buildPlanning({ status: 'APPROVED' }) as any,
       );
 
-      await service.submit('planning_1', satkerUser);
+      await service.approve('planning_1');
 
       expect(redis.del).toHaveBeenCalledWith('planning:planning_1');
       expect(redis.delByPrefix).toHaveBeenCalledWith('plannings:list:');
     });
   });
 
-  describe('review', () => {
-    it('hanya bisa review planning berstatus SUBMITTED', async () => {
+  describe('unapprove', () => {
+    it('status APPROVED → sukses jadi DRAFT', async () => {
+      prisma.planning.findUnique.mockResolvedValue(
+        buildPlanning({ status: 'APPROVED' }) as any,
+      );
+      prisma.planning.update.mockResolvedValue(
+        buildPlanning({ status: 'DRAFT' }) as any,
+      );
+
+      const result = await service.unapprove('planning_1');
+      expect(result.status).toBe('DRAFT');
+    });
+
+    it('status selain APPROVED → BadRequestException', async () => {
       prisma.planning.findUnique.mockResolvedValue(
         buildPlanning({ status: 'DRAFT' }) as any,
       );
 
-      await expect(
-        service.review('planning_1', 'approve', undefined, verificatorUser),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('action "approve" → status jadi APPROVED', async () => {
-      prisma.planning.findUnique.mockResolvedValue(
-        buildPlanning({ status: 'SUBMITTED' }) as any,
+      await expect(service.unapprove('planning_1')).rejects.toThrow(
+        BadRequestException,
       );
-      prisma.planning.update.mockResolvedValue(
-        buildPlanning({ status: 'APPROVED' }) as any,
-      );
-
-      const result = await service.review(
-        'planning_1',
-        'approve',
-        'Sudah sesuai',
-        verificatorUser,
-      );
-      expect(result.status).toBe('APPROVED');
-    });
-
-    it('action "revision" → status jadi REVISION', async () => {
-      prisma.planning.findUnique.mockResolvedValue(
-        buildPlanning({ status: 'SUBMITTED' }) as any,
-      );
-      prisma.planning.update.mockResolvedValue(
-        buildPlanning({ status: 'REVISION' }) as any,
-      );
-
-      const result = await service.review(
-        'planning_1',
-        'revision',
-        'Perbaiki dokumen',
-        verificatorUser,
-      );
-      expect(result.status).toBe('REVISION');
-    });
-
-    it('action "reject" → status jadi REJECTED', async () => {
-      prisma.planning.findUnique.mockResolvedValue(
-        buildPlanning({ status: 'SUBMITTED' }) as any,
-      );
-      prisma.planning.update.mockResolvedValue(
-        buildPlanning({ status: 'REJECTED' }) as any,
-      );
-
-      const result = await service.review(
-        'planning_1',
-        'reject',
-        'Tidak sesuai kriteria',
-        verificatorUser,
-      );
-      expect(result.status).toBe('REJECTED');
-    });
-
-    it('action tidak valid (bukan approve/revision/reject) → BadRequestException', async () => {
-      prisma.planning.findUnique.mockResolvedValue(
-        buildPlanning({ status: 'SUBMITTED' }) as any,
-      );
-
-      await expect(
-        service.review('planning_1', 'setuju_dong', undefined, verificatorUser),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('record PlanningReview tercipta dengan reviewerId & action yang benar', async () => {
-      prisma.planning.findUnique.mockResolvedValue(
-        buildPlanning({ status: 'SUBMITTED' }) as any,
-      );
-      prisma.planning.update.mockResolvedValue(
-        buildPlanning({ status: 'APPROVED' }) as any,
-      );
-
-      await service.review(
-        'planning_1',
-        'approve',
-        'Catatan verifikator',
-        verificatorUser,
-      );
-
-      const callArg = prisma.planning.update.mock.calls[0][0];
-      expect(callArg.data.reviews.create).toEqual({
-        reviewerId: 'verif_1',
-        action: 'approve',
-        catatan: 'Catatan verifikator',
-      });
     });
   });
 
@@ -440,9 +354,9 @@ describe('PlanningsService', () => {
       expect(result.projectName).toBe('Sudah Diedit');
     });
 
-    it('status bukan DRAFT/REVISION (mis. SUBMITTED) → BadRequestException', async () => {
+    it('status bukan DRAFT (mis. APPROVED) → BadRequestException', async () => {
       prisma.planning.findUnique.mockResolvedValue(
-        buildPlanning({ createdById: 'user_1', status: 'SUBMITTED' }) as any,
+        buildPlanning({ createdById: 'user_1', status: 'APPROVED' }) as any,
       );
 
       await expect(
@@ -466,7 +380,7 @@ describe('PlanningsService', () => {
   describe('remove', () => {
     it('hanya status DRAFT yang bisa dihapus', async () => {
       prisma.planning.findUnique.mockResolvedValue(
-        buildPlanning({ createdById: 'user_1', status: 'SUBMITTED' }) as any,
+        buildPlanning({ createdById: 'user_1', status: 'APPROVED' }) as any,
       );
 
       await expect(service.remove('planning_1', satkerUser)).rejects.toThrow(

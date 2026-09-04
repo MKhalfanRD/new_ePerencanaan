@@ -40,6 +40,14 @@ export function MapPicker({
   const mapRef = useRef<any>(null);
   const layerRef = useRef<any>(null);
   const drawnItemsRef = useRef<any>(null);
+  const leafletRef = useRef<any>(null);
+  // Handler leaflet-draw yang sedang aktif (mode "sedang menggambar"). Perlu
+  // dilacak supaya bisa di-disable() secara eksplisit — leaflet-draw taruh
+  // vertex/garis bantu SELAMA menggambar langsung di peta, DI LUAR
+  // drawnItemsRef, jadi drawnItems.clearLayers() tidak menyentuhnya. Tanpa
+  // ini, pindah tab Garis->Poligon di tengah gambar menyisakan garis bantu
+  // lama ikut nempel ke gambar baru.
+  const drawHandlerRef = useRef<any>(null);
   const [isReady, setIsReady] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
 
@@ -92,6 +100,7 @@ export function MapPicker({
       const drawnItems = new L.FeatureGroup();
       map.addLayer(drawnItems);
       drawnItemsRef.current = drawnItems;
+      leafletRef.current = L;
       mapRef.current = map;
 
       // Render existing data
@@ -125,42 +134,10 @@ export function MapPicker({
         map.fitBounds(layer.getBounds());
       }
 
-      // Klik di peta untuk tipe TITIK (mode edit)
-      if (!readOnly && tipeKoordinat === "TITIK") {
-        map.on("click", (e: any) => {
-          const { lat, lng } = e.latlng;
-          drawnItems.clearLayers();
-          const marker = L.marker([lat, lng], { draggable: true });
-          marker.addTo(drawnItems);
-          layerRef.current = marker;
-          marker.on("dragend", (ev: any) => {
-            const pos = ev.target.getLatLng();
-            onPointChange?.(pos.lat, pos.lng);
-          });
-          onPointChange?.(lat, lng);
-        });
-      }
-
-      // Leaflet Draw controls untuk GARIS/POLIGON (mode edit)
-      if (
-        !readOnly &&
-        (tipeKoordinat === "GARIS" || tipeKoordinat === "POLIGON")
-      ) {
-        map.on((L as any).Draw.Event.CREATED, (e: any) => {
-          drawnItems.clearLayers();
-          const layer = e.layer;
-          layer.addTo(drawnItems);
-          layerRef.current = layer;
-
-          const latlngs =
-            tipeKoordinat === "POLIGON"
-              ? layer.getLatLngs()[0]
-              : layer.getLatLngs();
-          const coords = latlngs.map((p: any) => [p.lat, p.lng]);
-          onShapeChange?.(coords);
-        });
-      }
-
+      // Binding klik-untuk-TITIK / Draw.Event.CREATED dipindah ke effect
+      // terpisah di bawah (keyed on tipeKoordinat) — supaya kalau user
+      // ganti tab Titik/Garis/Poligon SETELAH peta ini mount, handler-nya
+      // ikut diganti, bukan nyangkut permanen di tipe awal saat mount.
       setIsReady(true);
     })();
 
@@ -172,6 +149,77 @@ export function MapPicker({
       }
     };
   }, []);
+
+  // Bind ulang interaksi peta tiap kali tab Titik/Garis/Poligon berganti.
+  // Sebelumnya binding ini ada di effect init (jalan sekali saat mount) —
+  // akibatnya kalau user ganti tab SETELAH peta terbuka, handler klik lama
+  // (mis. klik-untuk-titik) tetap aktif bersamaan dengan leaflet-draw,
+  // saling menimpa (drawnItems.clearLayers() dari handler lama menghapus
+  // vertex yang baru digambar leaflet-draw di klik berikutnya) — makanya
+  // menggambar garis/poligon kelihatan tidak pernah "jadi", dan tombol
+  // Hapus/Tambah Lokasi kelihatan tidak berubah karena datanya memang
+  // sudah kosong duluan.
+  useEffect(() => {
+    const map = mapRef.current;
+    const L = leafletRef.current;
+    const drawnItems = drawnItemsRef.current;
+    if (!isReady || !map || !L || !drawnItems || readOnly) return;
+
+    map.off("click");
+    map.off(L.Draw.Event.CREATED);
+
+    if (tipeKoordinat === "TITIK") {
+      map.on("click", (e: any) => {
+        const { lat, lng } = e.latlng;
+        drawnItems.clearLayers();
+        const marker = L.marker([lat, lng], { draggable: true });
+        marker.addTo(drawnItems);
+        layerRef.current = marker;
+        marker.on("dragend", (ev: any) => {
+          const pos = ev.target.getLatLng();
+          onPointChange?.(pos.lat, pos.lng);
+        });
+        onPointChange?.(lat, lng);
+      });
+    } else {
+      map.on(L.Draw.Event.CREATED, (e: any) => {
+        drawnItems.clearLayers();
+        const layer = e.layer;
+        layer.addTo(drawnItems);
+        layerRef.current = layer;
+        // Handler leaflet-draw men-disable dirinya sendiri begitu satu
+        // bentuk selesai (repeatMode: false, default) — samakan ref-nya.
+        drawHandlerRef.current = null;
+
+        const latlngs =
+          tipeKoordinat === "POLIGON"
+            ? layer.getLatLngs()[0]
+            : layer.getLatLngs();
+        const coords = latlngs.map((p: any) => [p.lat, p.lng]);
+        onShapeChange?.(coords);
+      });
+
+      // Langsung aktifkan mode gambar begitu tab Garis/Poligon dipilih — tidak
+      // ada lagi tombol "Gambar Garis/Poligon" terpisah, tinggal klik di peta.
+      // Hanya untuk lokasi BARU (drawnItems masih kosong) — kalau lagi edit
+      // lokasi yang sudah punya bentuk, jangan langsung masuk mode gambar,
+      // supaya klik di peta tidak tanpa sengaja menimpa data lama.
+      if (drawnItems.getLayers().length === 0) {
+        armDrawing(tipeKoordinat);
+      }
+    }
+
+    return () => {
+      map.off("click");
+      map.off(L.Draw.Event.CREATED);
+      // Matikan handler gambar yang masih aktif SEBELUM tab berganti lagi —
+      // ini yang menghapus vertex/garis bantu setengah-jadi supaya tidak
+      // ikut nempel ke gambar tipe berikutnya.
+      drawHandlerRef.current?.disable();
+      drawHandlerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, tipeKoordinat, readOnly]);
 
   useEffect(() => {
     if (!isReady || !mapRef.current || !flyToTrigger || readOnly) return;
@@ -210,37 +258,42 @@ export function MapPicker({
     );
   };
 
-  const handleClearDrawing = async () => {
+  // Aktifkan mode gambar leaflet-draw untuk GARIS/POLIGON. Selalu disable()
+  // handler lama dulu — kalau ada gambar setengah-jadi, ini yang membuang
+  // vertex/garis bantunya sebelum handler baru mulai.
+  const armDrawing = (type: "GARIS" | "POLIGON") => {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    if (!L || !map) return;
+    drawHandlerRef.current?.disable();
+    const DrawHandler =
+      type === "GARIS"
+        ? new L.Draw.Polyline(map, { shapeOptions: { color: "#2563eb", weight: 3 } })
+        : new L.Draw.Polygon(map, {
+            shapeOptions: { color: "#2563eb", weight: 2, fillOpacity: 0.2 },
+          });
+    DrawHandler.enable();
+    drawHandlerRef.current = DrawHandler;
+  };
+
+  const handleClearDrawing = () => {
     if (drawnItemsRef.current) {
       drawnItemsRef.current.clearLayers();
       layerRef.current = null;
       onShapeChange?.([]);
     }
-  };
-
-  // Start drawing mode untuk GARIS/POLIGON
-  const startDrawing = async () => {
-    if (!mapRef.current) return;
-    const L = (await import("leaflet")).default;
-
-    handleClearDrawing();
-
-    const DrawHandler =
-      tipeKoordinat === "GARIS"
-        ? new (L as any).Draw.Polyline(mapRef.current, {
-            shapeOptions: { color: "#2563eb", weight: 3 },
-          })
-        : new (L as any).Draw.Polygon(mapRef.current, {
-            shapeOptions: { color: "#2563eb", weight: 2, fillOpacity: 0.2 },
-          });
-
-    DrawHandler.enable();
+    // Tidak ada lagi tombol "Gambar Garis/Poligon" — Hapus sekaligus
+    // mengaktifkan ulang mode gambar supaya user langsung bisa menggambar
+    // lagi tanpa tombol tambahan.
+    if (tipeKoordinat === "GARIS" || tipeKoordinat === "POLIGON") {
+      armDrawing(tipeKoordinat);
+    }
   };
 
   return (
     <div className="space-y-3">
       {!readOnly && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex gap-1.5 p-1 bg-muted/60 rounded-lg w-fit">
             {[
               { value: "TITIK" as const, label: "Titik", icon: MapPin },
@@ -262,22 +315,10 @@ export function MapPicker({
             ))}
           </div>
 
-          <div className="flex gap-2">
-            {(tipeKoordinat === "GARIS" || tipeKoordinat === "POLIGON") && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 text-xs"
-                onClick={startDrawing}
-              >
-                {tipeKoordinat === "GARIS" ? (
-                  <Spline size={13} className="mr-1.5" />
-                ) : (
-                  <Pentagon size={13} className="mr-1.5" />
-                )}
-                Gambar {tipeKoordinat === "GARIS" ? "Garis" : "Poligon"}
-              </Button>
-            )}
+          <div className="flex flex-wrap gap-2">
+            {/* Tombol "Gambar Garis/Poligon" dibuang — mode gambar otomatis
+                aktif begitu tab Garis/Poligon dipilih (lihat effect di atas),
+                dan "Hapus" sudah mengaktifkan ulang mode gambar juga. */}
             <Button
               size="sm"
               variant="outline"
@@ -315,10 +356,9 @@ export function MapPicker({
       {!readOnly &&
         (tipeKoordinat === "GARIS" || tipeKoordinat === "POLIGON") && (
           <p className="text-xs text-muted-foreground">
-            💡 Klik &quot;Gambar{" "}
-            {tipeKoordinat === "GARIS" ? "Garis" : "Poligon"}&quot; lalu klik
-            beberapa titik di peta untuk membentuk{" "}
-            {tipeKoordinat === "GARIS" ? "garis" : "area"}.
+            💡 Klik beberapa titik di peta untuk membentuk{" "}
+            {tipeKoordinat === "GARIS" ? "garis" : "area"}, lalu klik titik
+            pertama lagi (atau dobel-klik) untuk menutupnya.
           </p>
         )}
     </div>

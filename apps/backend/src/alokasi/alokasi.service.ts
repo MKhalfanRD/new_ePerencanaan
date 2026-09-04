@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import {
   CreateAlokasiDto,
   UpdateAlokasiDto,
@@ -12,7 +13,10 @@ import {
 
 @Injectable()
 export class AlokasiService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private redis: RedisService,
+  ) {}
 
   private calcTotal(dto: any) {
     return (
@@ -24,25 +28,49 @@ export class AlokasiService {
     );
   }
 
+  // Planning list/detail di-cache di Redis (plannings.service.ts). Semua
+  // mutasi di sini menembus paket->planning, tapi service ini sebelumnya
+  // TIDAK PERNAH invalidasi cache itu — jadi setelah tambah/edit alokasi
+  // atau lokasi, popup sukses muncul & DB benar berubah, tapi tabel/detail
+  // proyek masih menampilkan data lama sampai TTL cache habis (60 detik
+  // untuk list, 300 detik untuk detail). Ini akar dari beberapa keluhan
+  // yang kelihatannya beda-beda: "alokasi baru tidak muncul", "nilai yang
+  // sudah diedit tidak berubah", "harus tunggu beberapa detik".
+  private async invalidatePlanning(planningId: string) {
+    await this.redis.del(`planning:${planningId}`);
+    await this.redis.delByPrefix('plannings:list:');
+  }
+
   async create(dto: CreateAlokasiDto) {
-    const planning = await this.prisma.planning.findUnique({
-      where: { id: dto.planningId },
+    const paket = await this.prisma.paket.findUnique({
+      where: { id: dto.paketId },
+      include: { planning: true },
     });
-    if (!planning) throw new NotFoundException('Planning tidak ditemukan');
-    if (planning.status !== 'DRAFT' && planning.status !== 'REVISION') {
+    if (!paket) throw new NotFoundException('Paket tidak ditemukan');
+
+    const duplicate = await this.prisma.alokasi.findUnique({
+      where: {
+        paketId_tahun_status: {
+          paketId: dto.paketId,
+          tahun: dto.tahun,
+          status: dto.status as any,
+        },
+      },
+    });
+    if (duplicate) {
+      const statusLabel = dto.status === 'RENCANA' ? 'Rencana' : 'Realisasi';
       throw new BadRequestException(
-        'Alokasi hanya bisa ditambah saat planning DRAFT atau REVISION',
+        `Alokasi ${statusLabel} untuk tahun ${dto.tahun} sudah ada di paket ini — silakan edit yang sudah ada, bukan tambah baru.`,
       );
     }
 
     const pairedStatus = dto.status === 'RENCANA' ? 'REALISASI' : 'RENCANA';
 
-    // Cek apakah pasangannya (status sebaliknya) sudah ada untuk RO+tahun yang sama
+    // Cek apakah pasangannya (status sebaliknya) sudah ada untuk tahun yang sama
     const existingPair = await this.prisma.alokasi.findUnique({
       where: {
-        planningId_roId_tahun_status: {
-          planningId: dto.planningId,
-          roId: dto.roId,
+        paketId_tahun_status: {
+          paketId: dto.paketId,
           tahun: dto.tahun,
           status: pairedStatus as any,
         },
@@ -51,8 +79,7 @@ export class AlokasiService {
 
     const created = await this.prisma.alokasi.create({
       data: {
-        planningId: dto.planningId,
-        roId: dto.roId,
+        paketId: dto.paketId,
         tahun: dto.tahun,
         status: dto.status as any,
         rm: dto.rm ?? 0,
@@ -67,15 +94,14 @@ export class AlokasiService {
         outcomeUnit: dto.outcomeUnit,
         catatan: dto.catatan,
       },
-      include: { ro: { include: { kro: true } }, lokasi: true },
+      include: { paket: { include: { ro: { include: { kro: true } } } }, lokasi: true },
     });
 
     // Auto-buat pasangan dengan nilai 0 kalau belum ada, supaya tabel selalu lengkap Rencana+Realisasi
     if (!existingPair) {
       await this.prisma.alokasi.create({
         data: {
-          planningId: dto.planningId,
-          roId: dto.roId,
+          paketId: dto.paketId,
           tahun: dto.tahun,
           status: pairedStatus as any,
           rm: 0,
@@ -91,6 +117,7 @@ export class AlokasiService {
       });
     }
 
+    await this.invalidatePlanning(paket.planningId);
     return created;
   }
 
@@ -98,11 +125,16 @@ export class AlokasiService {
     const alokasi = await this.prisma.alokasi.findUnique({
       where: { id },
       include: {
-        planning: { select: { id: true, projectName: true } },
-        ro: {
+        paket: {
           include: {
-            indikatorRO: true,
-            kro: { include: { kegiatan: { include: { program: true } } } },
+            planning: { select: { id: true, projectName: true } },
+            ro: {
+              include: {
+                indikatorRO: true,
+                kro: { include: { kegiatan: { include: { program: true } } } },
+              },
+            },
+            komponen: true,
           },
         },
         lokasi: { orderBy: { createdAt: 'desc' } },
@@ -116,7 +148,7 @@ export class AlokasiService {
   async update(id: string, dto: UpdateAlokasiDto, user: any) {
     const alokasi = await this.prisma.alokasi.findUnique({
       where: { id },
-      include: { planning: true },
+      include: { paket: { select: { planningId: true } } },
     });
     if (!alokasi) throw new NotFoundException('Alokasi tidak ditemukan');
 
@@ -143,7 +175,7 @@ export class AlokasiService {
     const newSbsn = dto.sbsn ?? Number(alokasi.sbsn);
     const newKpbu = dto.kpbu ?? Number(alokasi.kpbu);
 
-    return this.prisma.alokasi.update({
+    const updated = await this.prisma.alokasi.update({
       where: { id },
       data: {
         rm: newRm,
@@ -159,31 +191,43 @@ export class AlokasiService {
         catatan: dto.catatan,
       },
       include: {
-        ro: {
+        paket: {
           include: {
-            kro: { include: { kegiatan: { include: { program: true } } } },
+            ro: {
+              include: {
+                kro: { include: { kegiatan: { include: { program: true } } } },
+              },
+            },
           },
         },
         lokasi: true,
         historiAlokasi: { orderBy: { changedAt: 'desc' } },
       },
     });
+
+    await this.invalidatePlanning(alokasi.paket.planningId);
+    return updated;
   }
 
   async remove(id: string) {
-    const alokasi = await this.prisma.alokasi.findUnique({ where: { id } });
+    const alokasi = await this.prisma.alokasi.findUnique({
+      where: { id },
+      include: { paket: { select: { planningId: true } } },
+    });
     if (!alokasi) throw new NotFoundException('Alokasi tidak ditemukan');
     await this.prisma.alokasi.delete({ where: { id } });
+    await this.invalidatePlanning(alokasi.paket.planningId);
     return { message: 'Alokasi berhasil dihapus' };
   }
 
   async addLokasi(alokasiId: string, dto: CreateLokasiDto) {
     const alokasi = await this.prisma.alokasi.findUnique({
       where: { id: alokasiId },
+      include: { paket: { select: { planningId: true } } },
     });
     if (!alokasi) throw new NotFoundException('Alokasi tidak ditemukan');
 
-    return this.prisma.lokasiAlokasi.create({
+    const created = await this.prisma.lokasiAlokasi.create({
       data: {
         alokasiId,
         name: dto.name,
@@ -198,20 +242,27 @@ export class AlokasiService {
         villageName: dto.villageName,
         latitude: dto.latitude,
         longitude: dto.longitude,
-        coordinates: dto.coordinates
-          ? JSON.stringify(dto.coordinates)
-          : undefined,
+        // `coordinates` sudah bertipe Json di schema — Prisma yang
+        // menyimpan array-nya langsung, JANGAN di-JSON.stringify manual di
+        // sini (dulu begitu, hasilnya array tersimpan sebagai STRING berisi
+        // teks JSON, lalu waktu di-edit-lalu-simpan-ulang jadi ter-encode
+        // dua kali/rusak).
+        coordinates: dto.coordinates ?? undefined,
       },
     });
+
+    await this.invalidatePlanning(alokasi.paket.planningId);
+    return created;
   }
 
   async updateLokasi(lokasiId: string, dto: CreateLokasiDto) {
     const lokasi = await this.prisma.lokasiAlokasi.findUnique({
       where: { id: lokasiId },
+      include: { alokasi: { include: { paket: { select: { planningId: true } } } } },
     });
     if (!lokasi) throw new NotFoundException('Lokasi tidak ditemukan');
 
-    return this.prisma.lokasiAlokasi.update({
+    const updated = await this.prisma.lokasiAlokasi.update({
       where: { id: lokasiId },
       data: {
         name: dto.name,
@@ -226,15 +277,27 @@ export class AlokasiService {
         villageName: dto.villageName,
         latitude: dto.latitude,
         longitude: dto.longitude,
-        coordinates: dto.coordinates
-          ? JSON.stringify(dto.coordinates)
-          : undefined,
+        // `coordinates` sudah bertipe Json di schema — Prisma yang
+        // menyimpan array-nya langsung, JANGAN di-JSON.stringify manual di
+        // sini (dulu begitu, hasilnya array tersimpan sebagai STRING berisi
+        // teks JSON, lalu waktu di-edit-lalu-simpan-ulang jadi ter-encode
+        // dua kali/rusak).
+        coordinates: dto.coordinates ?? undefined,
       },
     });
+
+    await this.invalidatePlanning(lokasi.alokasi.paket.planningId);
+    return updated;
   }
 
   async removeLokasi(lokasiId: string) {
+    const lokasi = await this.prisma.lokasiAlokasi.findUnique({
+      where: { id: lokasiId },
+      include: { alokasi: { include: { paket: { select: { planningId: true } } } } },
+    });
+    if (!lokasi) throw new NotFoundException('Lokasi tidak ditemukan');
     await this.prisma.lokasiAlokasi.delete({ where: { id: lokasiId } });
+    await this.invalidatePlanning(lokasi.alokasi.paket.planningId);
     return { message: 'Lokasi berhasil dihapus' };
   }
 

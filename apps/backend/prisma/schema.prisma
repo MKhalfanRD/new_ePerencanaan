@@ -22,9 +22,6 @@ enum UserStatus {
 
 enum PlanningStatus {
   DRAFT
-  SUBMITTED
-  REVISION
-  REJECTED
   APPROVED
 }
 
@@ -38,12 +35,6 @@ enum Kewenangan {
   DAERAH
 }
 
-enum StatusDokumen {
-  TIDAK_PERLU
-  BELUM_ADA
-  SUDAH_ADA
-}
-
 enum AllokasiStatus {
   RENCANA
   REALISASI
@@ -53,6 +44,19 @@ enum TipeKoordinat {
   TITIK
   GARIS
   POLIGON
+}
+
+enum JenisPaket {
+  FISIK
+  NON_FISIK
+}
+
+enum SumberUsulanProyek {
+  PEMERINTAH_DAERAH
+  KEMENTERIAN_LEMBAGA
+  MASYARAKAT
+  TINDAK_LANJUT_RENAKSI
+  LAINNYA
 }
 
 // =============================================
@@ -95,8 +99,7 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  plannings         Planning[]
-  reviewedPlannings PlanningReview[]
+  plannings Planning[]
 
   @@map("users")
 }
@@ -150,7 +153,8 @@ model Program {
   name String @db.VarChar(255)
   code String @db.VarChar(10)
 
-  kegiatan Kegiatan[]
+  kegiatan       Kegiatan[]
+  sasaranProgram SasaranProgram[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -165,7 +169,8 @@ model Kegiatan {
   name      String  @db.VarChar(255)
   code      String  @db.VarChar(10)
 
-  kroList KRO[]
+  kroList         KRO[]
+  sasaranKegiatan SasaranKegiatan[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -189,19 +194,44 @@ model KRO {
 }
 
 model RO {
-  id    String @id @db.VarChar(20)
-  kroId String @db.VarChar(20)
-  kro   KRO    @relation(fields: [kroId], references: [id])
-  name  String @db.VarChar(255)
-  code  String @db.VarChar(10)
+  id     String  @id @db.VarChar(20)
+  kroId  String  @db.VarChar(20)
+  kro    KRO     @relation(fields: [kroId], references: [id])
+  name   String  @db.VarChar(255)
+  code   String  @db.VarChar(10)
+  // Satuan resmi RO (kolom "Satuan RO" di referensi 1.xlsx, mis. "Unit",
+  // "Km", "Dokumen") — dipakai untuk mengunci field Satuan Output Target
+  // pada Alokasi, bukan input teks bebas.
+  satuan String? @db.VarChar(50)
 
   indikatorRO IndikatorRO[]
-  alokasi     Alokasi[]
+  paket       Paket[]
+  komponen    Komponen[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("ro")
+}
+
+// =============================================
+// MASTER: Komponen (anak dari RO)
+// =============================================
+
+model Komponen {
+  id   String @id @default(cuid())
+  roId String @db.VarChar(20)
+  ro   RO     @relation(fields: [roId], references: [id])
+  code String @db.VarChar(10)
+  name String @db.VarChar(255)
+
+  paket Paket[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([roId])
+  @@map("komponen")
 }
 
 model IndikatorRO {
@@ -211,33 +241,125 @@ model IndikatorRO {
   nama   String @db.VarChar(255)
   satuan String @db.VarChar(50)
 
+  paket Paket[]
+
   @@map("indikator_ro")
 }
 
 // =============================================
-// MASTER: Major Project
+// MASTER: Prioritas Nasional (RPJMN) — PN > PP > KP
 // =============================================
 
-model MajorProject {
+model PrioritasNasional {
   id   String @id @default(cuid())
+  code String @unique @db.VarChar(10)
   name String @db.Text
 
-  planningMajorProjects PlanningMajorProject[]
+  programPrioritas ProgramPrioritas[]
 
-  @@map("major_projects")
+  @@map("prioritas_nasional")
+}
+
+model ProgramPrioritas {
+  id                  String            @id @default(cuid())
+  prioritasNasionalId String
+  prioritasNasional   PrioritasNasional @relation(fields: [prioritasNasionalId], references: [id])
+  code                String            @unique @db.VarChar(10)
+  name                String            @db.VarChar(255)
+
+  kegiatanPrioritas KegiatanPrioritas[]
+
+  @@index([prioritasNasionalId])
+  @@map("program_prioritas")
+}
+
+model KegiatanPrioritas {
+  id                 String           @id @default(cuid())
+  programPrioritasId String
+  programPrioritas   ProgramPrioritas @relation(fields: [programPrioritasId], references: [id])
+  code               String           @unique @db.VarChar(15)
+  name               String           @db.VarChar(255)
+
+  paket Paket[]
+
+  @@index([programPrioritasId])
+  @@map("kegiatan_prioritas")
 }
 
 // =============================================
-// MASTER: Tindak Lanjut
+// MASTER: PKPN & Tematik RENJA (daftar flat, berubah tiap siklus RENJA)
 // =============================================
 
-model TindakLanjut {
+model Pkpn {
   id   String @id @default(cuid())
-  name String @db.Text
+  name String @unique @db.VarChar(255)
 
-  planningTindakLanjut PlanningTindakLanjut[]
+  paket Paket[]
 
-  @@map("tindak_lanjut")
+  @@map("pkpn")
+}
+
+model TematikRenja {
+  id   String @id @default(cuid())
+  name String @unique @db.VarChar(100)
+
+  paket Paket[]
+
+  @@map("tematik_renja")
+}
+
+// =============================================
+// MASTER: Sasaran Program/Kegiatan — SP/ISP (anak Program), SK/ISK (anak Kegiatan)
+// =============================================
+
+model SasaranProgram {
+  id        String  @id @default(cuid())
+  programId String  @db.VarChar(10)
+  program   Program @relation(fields: [programId], references: [id])
+  name      String  @db.Text
+
+  indikator IndikatorSasaranProgram[]
+
+  @@index([programId])
+  @@map("sasaran_program")
+}
+
+model IndikatorSasaranProgram {
+  id               String         @id @default(cuid())
+  sasaranProgramId String
+  sasaranProgram   SasaranProgram @relation(fields: [sasaranProgramId], references: [id])
+  name             String         @db.Text
+  satuan           String?        @db.VarChar(50)
+
+  paket Paket[]
+
+  @@index([sasaranProgramId])
+  @@map("indikator_sasaran_program")
+}
+
+model SasaranKegiatan {
+  id         String   @id @default(cuid())
+  kegiatanId String   @db.VarChar(10)
+  kegiatan   Kegiatan @relation(fields: [kegiatanId], references: [id])
+  name       String   @db.Text
+
+  indikator IndikatorSasaranKegiatan[]
+
+  @@index([kegiatanId])
+  @@map("sasaran_kegiatan")
+}
+
+model IndikatorSasaranKegiatan {
+  id                String          @id @default(cuid())
+  sasaranKegiatanId String
+  sasaranKegiatan   SasaranKegiatan @relation(fields: [sasaranKegiatanId], references: [id])
+  name              String          @db.Text
+  satuan            String?         @db.VarChar(50)
+
+  paket Paket[]
+
+  @@index([sasaranKegiatanId])
+  @@map("indikator_sasaran_kegiatan")
 }
 
 // =============================================
@@ -245,10 +367,12 @@ model TindakLanjut {
 // =============================================
 
 model WilayahSungai {
-  id   String @id @default(cuid())
-  name String @db.VarChar(255)
+  id   String  @id @default(cuid())
+  name String  @db.VarChar(255)
+  // Kode WS resmi (kolom "Kd_WS" di referensi master, mis. "01.01.A3").
+  code String? @unique @db.VarChar(20)
 
-  plannings Planning[]
+  paket Paket[]
 
   @@map("wilayah_sungai")
 }
@@ -268,6 +392,11 @@ model WilayahSungai {
 model WilayahProvince {
   id   String @id @db.VarChar(10)
   name String @db.VarChar(150)
+  // Kode di file referensi master Kementerian (BEDA skema dari kode
+  // Kemendagri/emsifa di atas — jangan disamakan). Cuma dipakai sebagai
+  // kunci pencocokan kalau file referensi ini disinkronkan ulang di masa
+  // depan, TIDAK dipakai oleh reverse-geocode/dropdown wilayah.
+  kodeReferensi String? @unique @db.VarChar(10)
 
   regencies WilayahRegency[]
 
@@ -278,6 +407,8 @@ model WilayahRegency {
   id         String @id @db.VarChar(10)
   name       String @db.VarChar(150)
   provinceId String @db.VarChar(10)
+  // lihat komentar kodeReferensi di WilayahProvince
+  kodeReferensi String? @unique @db.VarChar(10)
 
   province  WilayahProvince   @relation(fields: [provinceId], references: [id], onDelete: Cascade)
   districts WilayahDistrict[]
@@ -287,9 +418,11 @@ model WilayahRegency {
 }
 
 model WilayahDistrict {
-  id       String @id @db.VarChar(10)
-  name     String @db.VarChar(150)
+  id        String @id @db.VarChar(10)
+  name      String @db.VarChar(150)
   regencyId String @db.VarChar(10)
+  // lihat komentar kodeReferensi di WilayahProvince
+  kodeReferensi String? @unique @db.VarChar(10)
 
   regency  WilayahRegency   @relation(fields: [regencyId], references: [id], onDelete: Cascade)
   villages WilayahVillage[]
@@ -322,23 +455,32 @@ model Planning {
   periodeId Int
   periode   Periode @relation(fields: [periodeId], references: [id])
 
-  projectName     String          @db.Text
-  masaPelaksanaan MasaPelaksanaan
-  kewenangan      Kewenangan      @default(PUSAT)
+  kodeProyek  String?    @unique @db.VarChar(50)
+  projectName String     @db.Text
+  kewenangan  Kewenangan @default(PUSAT)
 
   provinceId String? @db.VarChar(10)
   cityId     String? @db.VarChar(10)
   latitude   Float?
   longitude  Float?
 
-  wilayahSungaiId  String?
-  wilayahSungai    WilayahSungai? @relation(fields: [wilayahSungaiId], references: [id])
-  kebutuhanTanah   Boolean        @default(false)
-  sesuaiRTRW       String?        @db.VarChar(50)
-  nomorPerdaRTRW   String?        @db.VarChar(100)
-  sesuaiPolaSDA    String?        @db.VarChar(50)
-  nomorKepmenPUPR  String?        @db.VarChar(100)
-  sesuaiMasterplan String?        @db.VarChar(255)
+  kebutuhanTanah   Boolean @default(false)
+  sesuaiRTRW       String? @db.VarChar(50)
+  nomorPerdaRTRW   String? @db.VarChar(100)
+  sesuaiPolaSDA    String? @db.VarChar(50)
+  nomorKepmenPUPR  String? @db.VarChar(100)
+  sesuaiMasterplan String? @db.VarChar(255)
+  polaRencana      String? @db.VarChar(100)
+
+  // StudiLayak/DED/LARAP di DB.xlsx cuma angka tahun polos, tanpa status
+  // terpisah — jadi field langsung, bukan lewat KriteriaDokumen generic
+  // (dibuang, lihat docs-planning/audit-restrukturisasi-db-xlsx.md §3.3).
+  tahunStudiLayak Int? @db.SmallInt
+  tahunDed        Int? @db.SmallInt
+  tahunLarap      Int? @db.SmallInt
+
+  sumberUsulanProyek  SumberUsulanProyek?
+  sumberUsulanLainnya String?             @db.Text
 
   status  PlanningStatus @default(DRAFT)
   catatan String?        @db.Text
@@ -350,12 +492,7 @@ model Planning {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  kriteriaDokumen KriteriaDokumen[]
-  majorProjects   PlanningMajorProject[]
-  tindakLanjut    PlanningTindakLanjut[]
-  alokasi         Alokasi[]
-  prioritas       Prioritas[]
-  reviews         PlanningReview[]
+  paket Paket[]
 
   @@index([balaiId])
   @@index([status])
@@ -365,47 +502,72 @@ model Planning {
 }
 
 // =============================================
-// KRITERIA DOKUMEN
+// PAKET
 // =============================================
 
-model KriteriaDokumen {
+model Paket {
   id         String   @id @default(cuid())
   planningId String
   planning   Planning @relation(fields: [planningId], references: [id], onDelete: Cascade)
 
-  jenis  String        @db.VarChar(100)
-  status StatusDokumen @default(TIDAK_PERLU)
-  tahun  Int?          @db.SmallInt
+  kodePaket String? @unique @db.VarChar(50)
+  name      String  @db.VarChar(255)
 
-  @@unique([planningId, jenis])
-  @@map("kriteria_dokumen")
-}
+  roId String @db.VarChar(20)
+  ro   RO     @relation(fields: [roId], references: [id])
 
-// =============================================
-// MANY-TO-MANY
-// =============================================
+  komponenId String?
+  komponen   Komponen? @relation(fields: [komponenId], references: [id])
 
-model PlanningMajorProject {
-  id             String       @id @default(cuid())
-  planningId     String
-  planning       Planning     @relation(fields: [planningId], references: [id], onDelete: Cascade)
-  majorProjectId String
-  majorProject   MajorProject @relation(fields: [majorProjectId], references: [id])
-  detail         String?      @db.VarChar(255)
+  jenis           JenisPaket
+  masaPelaksanaan MasaPelaksanaan
 
-  @@unique([planningId, majorProjectId])
-  @@map("planning_major_projects")
-}
+  wilayahSungaiId String?
+  wilayahSungai   WilayahSungai? @relation(fields: [wilayahSungaiId], references: [id])
 
-model PlanningTindakLanjut {
-  id             String       @id @default(cuid())
-  planningId     String
-  planning       Planning     @relation(fields: [planningId], references: [id], onDelete: Cascade)
-  tindakLanjutId String
-  tindakLanjut   TindakLanjut @relation(fields: [tindakLanjutId], references: [id])
+  dokLingStatus String? @db.VarChar(50)
 
-  @@unique([planningId, tindakLanjutId])
-  @@map("planning_tindak_lanjut")
+  catatanPembina String? @db.Text
+  catatanSspsda  String? @db.Text
+
+  // Indikator RENJA — dikonfirmasi lewat referensi 1.xlsx (lihat
+  // docs-planning/fitur-paket/04-rekonsiliasi-referensi.md): PN/PP/KP,
+  // SP/ISP, SK/ISK adalah hierarki master data, bukan teks bebas.
+  kegiatanPrioritasId String?
+  kegiatanPrioritas   KegiatanPrioritas? @relation(fields: [kegiatanPrioritasId], references: [id])
+
+  pkpnId String?
+  pkpn   Pkpn?   @relation(fields: [pkpnId], references: [id])
+
+  indikatorSasaranProgramId String?
+  indikatorSasaranProgram   IndikatorSasaranProgram? @relation(fields: [indikatorSasaranProgramId], references: [id])
+
+  indikatorSasaranKegiatanId String?
+  indikatorSasaranKegiatan   IndikatorSasaranKegiatan? @relation(fields: [indikatorSasaranKegiatanId], references: [id])
+
+  indikatorRoId String?
+  indikatorRo   IndikatorRO? @relation(fields: [indikatorRoId], references: [id])
+
+  tematikRenjaId String?
+  tematikRenja   TematikRenja? @relation(fields: [tematikRenjaId], references: [id])
+
+  fkb Boolean @default(false)
+  fkw Boolean @default(false)
+  mpa Boolean @default(false)
+
+  // Untuk ranking prioritas antar paket — algoritma penilaian menyusul,
+  // sengaja nullable & tidak diisi lewat form dulu.
+  score Decimal? @db.Decimal(10, 2)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  alokasi Alokasi[]
+
+  @@index([planningId])
+  @@index([roId])
+  @@map("paket")
 }
 
 // =============================================
@@ -413,21 +575,18 @@ model PlanningTindakLanjut {
 // =============================================
 
 model Alokasi {
-  id         String   @id @default(cuid())
-  planningId String
-  planning   Planning @relation(fields: [planningId], references: [id], onDelete: Cascade)
-
-  roId String @db.VarChar(20)
-  ro   RO     @relation(fields: [roId], references: [id])
+  id      String @id @default(cuid())
+  paketId String
+  paket   Paket  @relation(fields: [paketId], references: [id], onDelete: Cascade)
 
   tahun  Int            @db.SmallInt
   status AllokasiStatus
 
-  rm   Decimal @default(0) @db.Decimal(16, 0)
-  rmp  Decimal @default(0) @db.Decimal(16, 0)
-  pln  Decimal @default(0) @db.Decimal(16, 0)
-  sbsn Decimal @default(0) @db.Decimal(16, 0)
-  kpbu Decimal @default(0) @db.Decimal(16, 0)
+  rm    Decimal @default(0) @db.Decimal(16, 0)
+  rmp   Decimal @default(0) @db.Decimal(16, 0)
+  pln   Decimal @default(0) @db.Decimal(16, 0)
+  sbsn  Decimal @default(0) @db.Decimal(16, 0)
+  kpbu  Decimal @default(0) @db.Decimal(16, 0)
   total Decimal @default(0) @db.Decimal(16, 0)
 
   outputTarget  Decimal? @db.Decimal(10, 4)
@@ -443,7 +602,7 @@ model Alokasi {
   lokasi         LokasiAlokasi[]
   historiAlokasi HistoriAlokasi[]
 
-  @@unique([planningId, roId, tahun, status])
+  @@unique([paketId, tahun, status])
   @@index([tahun])
   @@map("alokasi")
 }
@@ -453,23 +612,23 @@ model LokasiAlokasi {
   alokasiId String
   alokasi   Alokasi @relation(fields: [alokasiId], references: [id], onDelete: Cascade)
 
-  name          String?        @db.VarChar(255)
-  tipeKoordinat TipeKoordinat  @default(TITIK)
+  name          String?       @db.VarChar(255)
+  tipeKoordinat TipeKoordinat @default(TITIK)
 
   // Wilayah administratif
-  provinceId String? @db.VarChar(10)
+  provinceId   String? @db.VarChar(10)
   provinceName String? @db.VarChar(100)
-  cityId     String? @db.VarChar(10)
-  cityName   String? @db.VarChar(100)
-  districtId String? @db.VarChar(10)
+  cityId       String? @db.VarChar(10)
+  cityName     String? @db.VarChar(100)
+  districtId   String? @db.VarChar(10)
   districtName String? @db.VarChar(100)
-  villageId  String? @db.VarChar(10)
-  villageName String? @db.VarChar(100)
+  villageId    String? @db.VarChar(10)
+  villageName  String? @db.VarChar(100)
 
   // Koordinat: untuk TITIK pakai latitude/longitude, untuk GARIS/POLIGON pakai coordinates (JSON array of [lat,lng])
   latitude    Float?
   longitude   Float?
-  coordinates Json?   // [[lat, lng], [lat, lng], ...] untuk garis/poligon
+  coordinates Json? // [[lat, lng], [lat, lng], ...] untuk garis/poligon
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -496,45 +655,4 @@ model HistoriAlokasi {
   changedBy String   @db.VarChar(150)
 
   @@map("histori_alokasi")
-}
-
-// =============================================
-// PRIORITAS
-// =============================================
-
-model Prioritas {
-  id         String   @id @default(cuid())
-  planningId String
-  planning   Planning @relation(fields: [planningId], references: [id], onDelete: Cascade)
-
-  tahun                Int     @db.SmallInt
-  proyekPrioritas      Boolean @default(false)
-  proyekRPIW           Boolean @default(false)
-  kegiatanBaru         Boolean @default(false)
-  kegiatanWajib        Boolean @default(false)
-  proyekKonregFKS      Boolean @default(false)
-  proyekMusrengbangnas Boolean @default(false)
-
-  @@unique([planningId, tahun])
-  @@map("prioritas")
-}
-
-// =============================================
-// REVIEW / WORKFLOW
-// =============================================
-
-model PlanningReview {
-  id         String   @id @default(cuid())
-  planningId String
-  planning   Planning @relation(fields: [planningId], references: [id], onDelete: Cascade)
-
-  reviewerId String
-  reviewer   User   @relation(fields: [reviewerId], references: [id])
-
-  action  String  @db.VarChar(20)
-  catatan String? @db.Text
-
-  createdAt DateTime @default(now())
-
-  @@map("planning_reviews")
 }

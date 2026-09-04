@@ -25,11 +25,13 @@ import {
   SheetBody,
   SheetFooter,
   SheetBreadcrumb,
+  SheetTitle,
 } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSearchBox,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -37,36 +39,50 @@ import { Badge } from "@/components/ui/badge";
 import api from "@/lib/api";
 import { Balai, Periode, RO, Planning } from "@/types";
 
-const KRITERIA_JENIS = [
-  "Dokumen Lingkungan",
-  "Studi Kelayakan",
-  "Detail Enginering Design (DED)",
-  "Kesiapan Lahan (LARAP)",
-  "Persetujuan Multi Year Contract",
-];
+// Dipakai lewat setValueAs pada input number opsional: input kosong via
+// valueAsNumber jadi NaN, bukan undefined — z.number().optional() menolak
+// NaN, dan gagalnya senyap (tidak ada FormMessage untuk field ini) sehingga
+// tombol submit terkesan "tidak ada respon".
+const toOptionalNumber = (v: string) => (v === "" ? undefined : Number(v));
+
+// Sentinel untuk opsi "tidak dipilih" pada Select opsional — Radix Select
+// tidak mengizinkan value="".
+const NONE = "__NONE__";
 
 const schema = z.object({
   balaiId: z.number({ error: "Balai wajib dipilih" }),
   periodeId: z.number({ error: "Periode wajib dipilih" }),
   projectName: z.string().min(1, "Nama proyek wajib diisi"),
-  masaPelaksanaan: z.enum(["SINGLE_YEAR", "MULTI_YEAR"]),
   kewenangan: z.enum(["PUSAT", "DAERAH"]),
+  sumberUsulanProyek: z
+    .enum([
+      "PEMERINTAH_DAERAH",
+      "KEMENTERIAN_LEMBAGA",
+      "MASYARAKAT",
+      "TINDAK_LANJUT_RENAKSI",
+      "LAINNYA",
+    ])
+    .optional(),
+  sumberUsulanLainnya: z.string().optional(),
   kebutuhanTanah: z.boolean(),
   sesuaiRTRW: z.string().optional(),
   nomorPerdaRTRW: z.string().optional(),
   sesuaiPolaSDA: z.string().optional(),
   nomorKepmenPUPR: z.string().optional(),
   sesuaiMasterplan: z.string().optional(),
-  kriteriaDokumen: z.array(
+  // StudiLayak/DED/LARAP — angka tahun polos sesuai DB.xlsx, bukan status
+  tahunStudiLayak: z.number().optional(),
+  tahunDed: z.number().optional(),
+  tahunLarap: z.number().optional(),
+  // 1 proyek bisa punya banyak Paket — RO/jenis/masa pelaksanaan sekarang
+  // menempel di Paket, bukan di Planning (lihat docs-planning/fitur-paket).
+  // Form dasar ini: 1 baris = 1 paket dengan 1 alokasi tahun berjalan.
+  paket: z.array(
     z.object({
-      jenis: z.string(),
-      status: z.enum(["TIDAK_PERLU", "BELUM_ADA", "SUDAH_ADA"]),
-      tahun: z.number().optional(),
-    }),
-  ),
-  alokasi: z.array(
-    z.object({
+      name: z.string().min(1, "Nama paket wajib diisi"),
       roId: z.string().min(1, "RO wajib dipilih"),
+      jenis: z.enum(["FISIK", "NON_FISIK"]),
+      masaPelaksanaan: z.enum(["SINGLE_YEAR", "MULTI_YEAR"]),
       tahun: z.number().min(2020),
       status: z.enum(["RENCANA", "REALISASI"]),
       rm: z.number(),
@@ -124,8 +140,10 @@ export function PlanningFormDialog({
   editData,
 }: Props) {
   const [balaiList, setBalaiList] = useState<Balai[]>([]);
+  const [balaiSearch, setBalaiSearch] = useState("");
   const [periodeList, setPeriodeList] = useState<Periode[]>([]);
   const [roList, setROList] = useState<RO[]>([]);
+  const [roSearch, setRoSearch] = useState("");
   const [loadingMaster, setLoadingMaster] = useState(false);
   const isEdit = !!editData;
 
@@ -140,22 +158,17 @@ export function PlanningFormDialog({
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      masaPelaksanaan: "SINGLE_YEAR",
       kewenangan: "PUSAT",
       kebutuhanTanah: false,
-      kriteriaDokumen: KRITERIA_JENIS.map((jenis) => ({
-        jenis,
-        status: "TIDAK_PERLU",
-      })),
-      alokasi: [],
+      paket: [],
     },
   });
 
   const {
-    fields: alokasiFields,
-    append: appendAlokasi,
-    remove: removeAlokasi,
-  } = useFieldArray({ control, name: "alokasi" });
+    fields: paketFields,
+    append: appendPaket,
+    remove: removePaket,
+  } = useFieldArray({ control, name: "paket" });
 
   useEffect(() => {
     if (!open) return;
@@ -179,37 +192,25 @@ export function PlanningFormDialog({
         balaiId: editData.balai.id,
         periodeId: editData.periode.id,
         projectName: editData.projectName,
-        masaPelaksanaan: editData.masaPelaksanaan,
         kewenangan: editData.kewenangan,
+        sumberUsulanProyek: editData.sumberUsulanProyek,
+        sumberUsulanLainnya: editData.sumberUsulanLainnya || "",
         kebutuhanTanah: editData.kebutuhanTanah,
         sesuaiRTRW: editData.sesuaiRTRW || "",
         nomorPerdaRTRW: editData.nomorPerdaRTRW || "",
         sesuaiPolaSDA: editData.sesuaiPolaSDA || "",
         nomorKepmenPUPR: editData.nomorKepmenPUPR || "",
         sesuaiMasterplan: editData.sesuaiMasterplan || "",
-        kriteriaDokumen:
-          editData.kriteriaDokumen.length > 0
-            ? editData.kriteriaDokumen.map((k) => ({
-                jenis: k.jenis,
-                status: k.status,
-                tahun: k.tahun,
-              }))
-            : KRITERIA_JENIS.map((jenis) => ({
-                jenis,
-                status: "TIDAK_PERLU" as const,
-              })),
-        alokasi: [],
+        tahunStudiLayak: editData.tahunStudiLayak,
+        tahunDed: editData.tahunDed,
+        tahunLarap: editData.tahunLarap,
+        paket: [],
       });
     } else {
       reset({
-        masaPelaksanaan: "SINGLE_YEAR",
         kewenangan: "PUSAT",
         kebutuhanTanah: false,
-        kriteriaDokumen: KRITERIA_JENIS.map((jenis) => ({
-          jenis,
-          status: "TIDAK_PERLU",
-        })),
-        alokasi: [],
+        paket: [],
       });
     }
   }, [editData, open]);
@@ -217,11 +218,39 @@ export function PlanningFormDialog({
   const onSubmit = async (data: FormData) => {
     try {
       if (isEdit) {
-        await api.patch(`/plannings/${editData!.id}`, data);
-        toast.success("Planning berhasil diperbarui");
+        // Paket dikelola terpisah dari drawer detail, bukan lewat form ini.
+        const { paket, ...rest } = data;
+        await api.patch(`/plannings/${editData!.id}`, rest);
+        toast.success("Proyek berhasil diperbarui");
       } else {
-        await api.post("/plannings", data);
-        toast.success("Planning berhasil dibuat");
+        // 1 baris form = 1 Paket dengan 1 Alokasi tahun berjalan.
+        const payload = {
+          ...data,
+          paket: data.paket.map((p) => ({
+            name: p.name,
+            roId: p.roId,
+            jenis: p.jenis,
+            masaPelaksanaan: p.masaPelaksanaan,
+            alokasi: [
+              {
+                tahun: p.tahun,
+                status: p.status,
+                rm: p.rm,
+                rmp: p.rmp,
+                pln: p.pln,
+                sbsn: p.sbsn,
+                kpbu: p.kpbu,
+                outputTarget: p.outputTarget,
+                outputUnit: p.outputUnit,
+                outcomeTarget: p.outcomeTarget,
+                outcomeUnit: p.outcomeUnit,
+                catatan: p.catatan,
+              },
+            ],
+          })),
+        };
+        await api.post("/plannings", payload);
+        toast.success("Proyek berhasil dibuat");
       }
       onSuccess();
     } catch (err: any) {
@@ -247,13 +276,13 @@ export function PlanningFormDialog({
         <SheetHeader className="gap-2 pb-4">
           <SheetBreadcrumb
             items={[
-              { label: "Daftar Planning", onClick: onClose },
-              { label: isEdit ? editData!.projectName : "Buat Planning Baru" },
+              { label: "Daftar Proyek", onClick: onClose },
+              { label: isEdit ? editData!.projectName : "Buat Proyek Baru" },
             ]}
           />
-          <h2 className="text-lg font-semibold leading-snug">
-            {isEdit ? "Edit Planning" : "Buat Planning Baru"}
-          </h2>
+          <SheetTitle className="text-lg leading-snug">
+            {isEdit ? "Edit Proyek" : "Buat Proyek Baru"}
+          </SheetTitle>
           <p className="text-xs text-muted-foreground">
             Lengkapi informasi proyek perencanaan anggaran di bawah ini
           </p>
@@ -289,19 +318,37 @@ export function PlanningFormDialog({
                     <Select
                       value={watch("balaiId")?.toString()}
                       onValueChange={(v) => setValue("balaiId", Number(v))}
+                      onOpenChange={(o) => o && setBalaiSearch("")}
                     >
                       <SelectTrigger className="w-full h-10">
                         <SelectValue placeholder="Pilih balai pelaksana" />
                       </SelectTrigger>
                       <SelectContent>
-                        {balaiList.map((b) => (
-                          <SelectItem key={b.id} value={b.id.toString()}>
-                            <span className="font-medium">{b.shortName}</span>
-                            <span className="text-muted-foreground ml-2">
-                              — {b.name}
-                            </span>
-                          </SelectItem>
-                        ))}
+                        {balaiList.length > 20 && (
+                          <SelectSearchBox
+                            value={balaiSearch}
+                            onChange={setBalaiSearch}
+                            placeholder="Cari balai..."
+                          />
+                        )}
+                        {balaiList
+                          .filter(
+                            (b) =>
+                              !balaiSearch ||
+                              `${b.shortName ?? ""} ${b.name}`
+                                .toLowerCase()
+                                .includes(balaiSearch.toLowerCase()),
+                          )
+                          .map((b) => (
+                            <SelectItem key={b.id} value={b.id.toString()}>
+                              <span className="font-medium">
+                                {b.shortName}
+                              </span>
+                              <span className="text-muted-foreground ml-2">
+                                — {b.name}
+                              </span>
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                     {errors.balaiId && (
@@ -362,26 +409,6 @@ export function PlanningFormDialog({
                   </div>
 
                   <div className="space-y-2">
-                    <Label>
-                      Masa Pelaksanaan{" "}
-                      <span className="text-destructive">*</span>
-                    </Label>
-                    <Select
-                      value={watch("masaPelaksanaan")}
-                      onValueChange={(v) =>
-                        setValue("masaPelaksanaan", v as any)
-                      }
-                    >
-                      <SelectTrigger className="h-10">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="SINGLE_YEAR">Single Year</SelectItem>
-                        <SelectItem value="MULTI_YEAR">Multi Year</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
                     <Label>Kewenangan</Label>
                     <Select
                       value={watch("kewenangan")}
@@ -396,6 +423,67 @@ export function PlanningFormDialog({
                       </SelectContent>
                     </Select>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label>Sumber Usulan Proyek</Label>
+                    <Select
+                      value={watch("sumberUsulanProyek") || NONE}
+                      onValueChange={(v) =>
+                        setValue(
+                          "sumberUsulanProyek",
+                          v === NONE ? undefined : (v as any),
+                        )
+                      }
+                    >
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Pilih sumber usulan" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>—</SelectItem>
+                        <SelectItem value="PEMERINTAH_DAERAH">
+                          Pemerintah Daerah
+                        </SelectItem>
+                        <SelectItem value="KEMENTERIAN_LEMBAGA">
+                          Kementerian/Lembaga
+                        </SelectItem>
+                        <SelectItem value="MASYARAKAT">Masyarakat</SelectItem>
+                        <SelectItem value="TINDAK_LANJUT_RENAKSI">
+                          Tindak Lanjut Renaksi
+                        </SelectItem>
+                        <SelectItem value="LAINNYA">Lainnya</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Pemda & K/L perlu disebutkan yang mana, bukan berhenti
+                      di kategori saja — pakai field yang sama dengan
+                      "Lainnya", cuma label & placeholder menyesuaikan. */}
+                  {(watch("sumberUsulanProyek") === "PEMERINTAH_DAERAH" ||
+                    watch("sumberUsulanProyek") === "KEMENTERIAN_LEMBAGA" ||
+                    watch("sumberUsulanProyek") === "LAINNYA") && (
+                    <div className="col-span-2 space-y-2">
+                      <Label>
+                        {watch("sumberUsulanProyek") === "PEMERINTAH_DAERAH"
+                          ? "Pemerintah Daerah yang Mengusulkan"
+                          : watch("sumberUsulanProyek") ===
+                              "KEMENTERIAN_LEMBAGA"
+                            ? "Kementerian/Lembaga yang Mengusulkan"
+                            : "Sumber Usulan Lainnya"}
+                      </Label>
+                      <Input
+                        className="h-10"
+                        placeholder={
+                          watch("sumberUsulanProyek") === "PEMERINTAH_DAERAH"
+                            ? "Contoh: Pemerintah Provinsi Kalimantan Tengah"
+                            : watch("sumberUsulanProyek") ===
+                                "KEMENTERIAN_LEMBAGA"
+                              ? "Contoh: Kementerian Pertanian"
+                              : "Sebutkan sumber usulan"
+                        }
+                        {...register("sumberUsulanLainnya")}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -494,71 +582,69 @@ export function PlanningFormDialog({
                 </div>
               </div>
 
-              {/* === KRITERIA DOKUMEN === */}
+              {/* === TAHAPAN DOKUMEN === */}
               <div className="space-y-5">
                 <SectionHeader
                   icon={ScrollText}
-                  title="Kriteria Dokumen"
-                  description="Status kelengkapan dokumen pendukung proyek"
+                  title="Tahapan Dokumen"
+                  description="Tahun penyelesaian studi kelayakan, DED, dan LARAP (kosongkan kalau belum ada)"
                 />
 
-                <div className="pl-12 space-y-2.5">
-                  {KRITERIA_JENIS.map((jenis, i) => {
-                    const status = watch(`kriteriaDokumen.${i}.status`);
-                    return (
-                      <div
-                        key={jenis}
-                        className="flex items-center gap-4 px-4 py-3 rounded-xl border bg-card hover:bg-accent/30 transition-colors"
-                      >
-                        <span className="text-sm flex-1 min-w-0">{jenis}</span>
-                        <Select
-                          value={status}
-                          onValueChange={(v) =>
-                            setValue(`kriteriaDokumen.${i}.status`, v as any)
-                          }
-                        >
-                          <SelectTrigger className="w-36 h-9 text-xs shrink-0">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="TIDAK_PERLU">
-                              Tidak Perlu
-                            </SelectItem>
-                            <SelectItem value="BELUM_ADA">Belum Ada</SelectItem>
-                            <SelectItem value="SUDAH_ADA">Sudah Ada</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        {status !== "TIDAK_PERLU" && (
-                          <Input
-                            type="number"
-                            placeholder="Tahun"
-                            className="w-24 h-9 text-xs shrink-0"
-                            {...register(`kriteriaDokumen.${i}.tahun`, {
-                              valueAsNumber: true,
-                            })}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="grid grid-cols-3 gap-5 pl-12">
+                  <div className="space-y-2">
+                    <Label className="text-xs">Studi Kelayakan</Label>
+                    <Input
+                      type="number"
+                      placeholder="Tahun"
+                      className="h-9 text-xs"
+                      {...register("tahunStudiLayak", {
+                        setValueAs: toOptionalNumber,
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">DED</Label>
+                    <Input
+                      type="number"
+                      placeholder="Tahun"
+                      className="h-9 text-xs"
+                      {...register("tahunDed", {
+                        setValueAs: toOptionalNumber,
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">LARAP</Label>
+                    <Input
+                      type="number"
+                      placeholder="Tahun"
+                      className="h-9 text-xs"
+                      {...register("tahunLarap", {
+                        setValueAs: toOptionalNumber,
+                      })}
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* === ALOKASI === */}
+              {/* === PAKET & ALOKASI === */}
               {!isEdit && (
                 <div className="space-y-5">
                   <div className="flex items-center justify-between">
                     <SectionHeader
                       icon={Wallet}
-                      title="Alokasi Anggaran"
-                      description="Rincian anggaran per tahun dan sumber dana"
+                      title="Paket & Alokasi"
+                      description="Paket pekerjaan di bawah proyek ini, beserta alokasi anggaran tahun berjalan"
                     />
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() =>
-                        appendAlokasi({
+                        appendPaket({
+                          name: "",
                           roId: "",
+                          jenis: "FISIK",
+                          masaPelaksanaan: "SINGLE_YEAR",
                           tahun: new Date().getFullYear(),
                           status: "RENCANA",
                           rm: 0,
@@ -569,23 +655,23 @@ export function PlanningFormDialog({
                         })
                       }
                     >
-                      <Plus size={15} className="mr-1.5" /> Tambah Alokasi
+                      <Plus size={15} className="mr-1.5" /> Tambah Paket
                     </Button>
                   </div>
 
                   <div className="pl-12">
-                    {alokasiFields.length === 0 ? (
+                    {paketFields.length === 0 ? (
                       <div className="rounded-xl border-2 border-dashed p-10 text-center text-muted-foreground text-sm">
-                        Belum ada alokasi anggaran ditambahkan.
+                        Belum ada paket ditambahkan.
                         <br />
                         <span className="text-xs">
-                          Klik &quot;Tambah Alokasi&quot; untuk mulai mengisi
-                          rincian anggaran.
+                          Klik &quot;Tambah Paket&quot; untuk mulai mengisi
+                          paket & rincian anggarannya.
                         </span>
                       </div>
                     ) : (
                       <div className="space-y-4">
-                        {alokasiFields.map((field, i) => (
+                        {paketFields.map((field, i) => (
                           <div
                             key={field.id}
                             className="rounded-xl border bg-card p-5 space-y-4"
@@ -593,17 +679,30 @@ export function PlanningFormDialog({
                             {/* Header */}
                             <div className="flex items-center justify-between">
                               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                                Alokasi #{i + 1}
+                                Paket #{i + 1}
                               </span>
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="sm"
                                 className="h-7 text-muted-foreground hover:text-destructive"
-                                onClick={() => removeAlokasi(i)}
+                                onClick={() => removePaket(i)}
                               >
                                 <Trash2 size={13} className="mr-1.5" /> Hapus
                               </Button>
+                            </div>
+
+                            {/* Nama Paket */}
+                            <div className="space-y-2">
+                              <Label className="text-xs">
+                                Nama Paket{" "}
+                                <span className="text-destructive">*</span>
+                              </Label>
+                              <Input
+                                className="h-9 text-xs"
+                                placeholder="Contoh: Pembangunan Bendungan A Paket I"
+                                {...register(`paket.${i}.name`)}
+                              />
                             </div>
 
                             {/* RO */}
@@ -613,16 +712,39 @@ export function PlanningFormDialog({
                                 <span className="text-destructive">*</span>
                               </Label>
                               <Select
-                                value={watch(`alokasi.${i}.roId`)}
-                                onValueChange={(v) =>
-                                  setValue(`alokasi.${i}.roId`, v)
-                                }
+                                value={watch(`paket.${i}.roId`)}
+                                onValueChange={(v) => {
+                                  setValue(`paket.${i}.roId`, v);
+                                  // Satuan Output ikut RO yang dipilih
+                                  // (referensi 1.xlsx), bukan input bebas.
+                                  const ro = roList.find((r) => r.id === v);
+                                  setValue(
+                                    `paket.${i}.outputUnit`,
+                                    ro?.satuan || "",
+                                  );
+                                }}
+                                onOpenChange={(o) => o && setRoSearch("")}
                               >
                                 <SelectTrigger className="w-full h-9 text-xs">
                                   <SelectValue placeholder="Pilih RO" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {roList.map((r) => (
+                                  {roList.length > 20 && (
+                                    <SelectSearchBox
+                                      value={roSearch}
+                                      onChange={setRoSearch}
+                                      placeholder="Cari RO..."
+                                    />
+                                  )}
+                                  {roList
+                                    .filter(
+                                      (r) =>
+                                        !roSearch ||
+                                        `${r.code} ${r.name}`
+                                          .toLowerCase()
+                                          .includes(roSearch.toLowerCase()),
+                                    )
+                                    .map((r) => (
                                     <SelectItem key={r.id} value={r.id}>
                                       <span className="font-medium">
                                         {r.kro.kegiatan.program.code} ·{" "}
@@ -637,6 +759,55 @@ export function PlanningFormDialog({
                               </Select>
                             </div>
 
+                            {/* Jenis Paket + Masa Pelaksanaan */}
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label className="text-xs">Jenis Paket</Label>
+                                <Select
+                                  value={watch(`paket.${i}.jenis`)}
+                                  onValueChange={(v) =>
+                                    setValue(`paket.${i}.jenis`, v as any)
+                                  }
+                                >
+                                  <SelectTrigger className="h-9 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="FISIK">Fisik</SelectItem>
+                                    <SelectItem value="NON_FISIK">
+                                      Non-Fisik
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-2">
+                                <Label className="text-xs">
+                                  Masa Pelaksanaan
+                                </Label>
+                                <Select
+                                  value={watch(`paket.${i}.masaPelaksanaan`)}
+                                  onValueChange={(v) =>
+                                    setValue(
+                                      `paket.${i}.masaPelaksanaan`,
+                                      v as any,
+                                    )
+                                  }
+                                >
+                                  <SelectTrigger className="h-9 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="SINGLE_YEAR">
+                                      Single Year
+                                    </SelectItem>
+                                    <SelectItem value="MULTI_YEAR">
+                                      Multi Year
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+
                             {/* Tahun + Status */}
                             <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-2">
@@ -644,7 +815,7 @@ export function PlanningFormDialog({
                                 <Input
                                   type="number"
                                   className="h-9 text-xs"
-                                  {...register(`alokasi.${i}.tahun`, {
+                                  {...register(`paket.${i}.tahun`, {
                                     valueAsNumber: true,
                                   })}
                                 />
@@ -652,9 +823,9 @@ export function PlanningFormDialog({
                               <div className="space-y-2">
                                 <Label className="text-xs">Status</Label>
                                 <Select
-                                  value={watch(`alokasi.${i}.status`)}
+                                  value={watch(`paket.${i}.status`)}
                                   onValueChange={(v) =>
-                                    setValue(`alokasi.${i}.status`, v as any)
+                                    setValue(`paket.${i}.status`, v as any)
                                   }
                                 >
                                   <SelectTrigger className="h-9 text-xs">
@@ -689,7 +860,7 @@ export function PlanningFormDialog({
                                       type="number"
                                       className="text-xs text-center h-9 px-2"
                                       placeholder="0"
-                                      {...register(`alokasi.${i}.${f}`, {
+                                      {...register(`paket.${i}.${f}`, {
                                         valueAsNumber: true,
                                       })}
                                     />
@@ -707,14 +878,20 @@ export function PlanningFormDialog({
                                     type="number"
                                     className="h-9 text-xs"
                                     placeholder="0"
-                                    {...register(`alokasi.${i}.outputTarget`, {
-                                      valueAsNumber: true,
+                                    {...register(`paket.${i}.outputTarget`, {
+                                      setValueAs: toOptionalNumber,
                                     })}
                                   />
                                   <Input
-                                    className="h-9 text-xs w-24 shrink-0"
+                                    className={`h-9 text-xs w-24 shrink-0 ${
+                                      watch(`paket.${i}.outputUnit`)
+                                        ? "bg-muted"
+                                        : ""
+                                    }`}
                                     placeholder="Satuan"
-                                    {...register(`alokasi.${i}.outputUnit`)}
+                                    readOnly={!!watch(`paket.${i}.outputUnit`)}
+                                    title="Satuan mengikuti RO"
+                                    {...register(`paket.${i}.outputUnit`)}
                                   />
                                 </div>
                               </div>
@@ -727,14 +904,14 @@ export function PlanningFormDialog({
                                     type="number"
                                     className="h-9 text-xs"
                                     placeholder="0"
-                                    {...register(`alokasi.${i}.outcomeTarget`, {
-                                      valueAsNumber: true,
+                                    {...register(`paket.${i}.outcomeTarget`, {
+                                      setValueAs: toOptionalNumber,
                                     })}
                                   />
                                   <Input
                                     className="h-9 text-xs w-24 shrink-0"
                                     placeholder="Satuan"
-                                    {...register(`alokasi.${i}.outcomeUnit`)}
+                                    {...register(`paket.${i}.outcomeUnit`)}
                                   />
                                 </div>
                               </div>
@@ -756,11 +933,12 @@ export function PlanningFormDialog({
             Batal
           </Button>
           <Button
+            type="button"
             onClick={handleSubmit(onSubmit)}
             disabled={isSubmitting || loadingMaster}
           >
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEdit ? "Simpan Perubahan" : "Buat Planning"}
+            {isEdit ? "Simpan Perubahan" : "Buat Proyek"}
           </Button>
         </SheetFooter>
       </SheetContent>

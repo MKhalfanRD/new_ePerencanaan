@@ -4,11 +4,10 @@ import { useEffect, useState, useMemo } from "react";
 import {
   Plus,
   Search,
-  Filter,
   FileText,
   Eye,
   Trash2,
-  Send,
+  CheckCheck,
   ChevronDown,
   ChevronRight,
   ChevronLeft,
@@ -17,21 +16,19 @@ import {
   Maximize2,
   Minimize2,
   CheckCircle2,
+  MapPin,
+  StickyNote,
+  FileSpreadsheet,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { exportPlanningsToExcel } from "@/lib/export-plannings-excel";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Upload } from "lucide-react";
 import { ImportExcelDialog } from "@/components/import/import-excel-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,8 +50,6 @@ import { useAuthStore } from "@/store/auth";
 import { Planning, PaginatedResponse } from "@/types";
 import { PlanningFormDialog } from "@/components/planning/planning-form-dialog";
 import { PlanningDetailSheet } from "@/components/planning/planning-detail-sheet";
-import { Badge } from "@/components/ui/badge";
-import { statusConfig } from "@/components/shared/status-config";
 
 const formatRupiah = (val: string | number) =>
   new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(
@@ -68,17 +63,47 @@ const formatRupiahShort = (val: number) => {
   return formatRupiah(val);
 };
 
+// `paket` selalu array dari backend, tapi dijaga di sini juga karena dipakai
+// berulang lintas fungsi di file ini.
+const paketOf = (p: Planning) => p.paket ?? [];
+const alokasiOf = (p: Planning) => paketOf(p).flatMap((pk) => pk.alokasi);
+
+// Penanda cepat di luar tabel: proyek ini sudah punya titik lokasi di peta
+// atau belum, tanpa perlu buka detail.
+const hasLokasi = (p: Planning) =>
+  alokasiOf(p).some((a) => a.lokasi.length > 0);
+
+// Rekap Rencana/Realisasi per tahun dari satu daftar alokasi — dipakai baik
+// di level Proyek (semua paket) maupun di level Paket (satu paket saja).
+const byYearOf = (alokasi: { tahun: number; status: string; total: string }[]) => {
+  const byYear: Record<number, { rencana: number; realisasi: number }> = {};
+  for (const a of alokasi) {
+    if (!byYear[a.tahun]) byYear[a.tahun] = { rencana: 0, realisasi: 0 };
+    if (a.status === "RENCANA") byYear[a.tahun].rencana += Number(a.total);
+    else byYear[a.tahun].realisasi += Number(a.total);
+  }
+  return byYear;
+};
+
 export default function PlanningsPage() {
   const { user } = useAuthStore();
   const [plannings, setPlannings] = useState<Planning[]>([]);
   const [showImport, setShowImport] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  // Cuma 2 tampilan: "proyek" (default, status APPROVED) & "draft" (punya sendiri)
+  const [view, setView] = useState<"proyek" | "draft">("proyek");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
+  // Drill-down 4 level: Balai > Kegiatan > Proyek > Paket. Default semuanya
+  // tertutup — yang tampil pertama cuma Balai, sisanya baru muncul saat
+  // di-expand berurutan.
+  const [expandedBalai, setExpandedBalai] = useState<Set<number>>(new Set());
+  const [expandedKegiatan, setExpandedKegiatan] = useState<Set<string>>(
+    new Set(),
+  );
+  const [expandedProyek, setExpandedProyek] = useState<Set<string>>(
     new Set(),
   );
 
@@ -87,6 +112,16 @@ export default function PlanningsPage() {
   const [detailData, setDetailData] = useState<Planning | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  // Filter Program/Kegiatan/KRO/RO/Balai — cascading, opsi diambil dari data
+  // yang sudah ter-load (bukan fetch master terpisah, selalu sinkron dengan
+  // apa yang benar-benar tampil).
+  const [filterBalai, setFilterBalai] = useState("");
+  const [filterProgram, setFilterProgram] = useState("");
+  const [filterKegiatan, setFilterKegiatan] = useState("");
+  const [filterKro, setFilterKro] = useState("");
+  const [filterRo, setFilterRo] = useState("");
 
   const fetchPlannings = async () => {
     setLoading(true);
@@ -94,8 +129,8 @@ export default function PlanningsPage() {
       const params = new URLSearchParams({
         page: String(page),
         limit: "100",
+        status: view === "draft" ? "DRAFT" : "APPROVED",
         ...(search && { search }),
-        ...(statusFilter !== "ALL" && { status: statusFilter }),
       });
       const res = await api.get<PaginatedResponse<Planning>>(
         `/plannings?${params}`,
@@ -103,8 +138,16 @@ export default function PlanningsPage() {
       setPlannings(res.data.data);
       setTotalPages(res.data.meta.totalPages);
       setTotal(res.data.meta.total);
+      // detailData adalah snapshot terpisah (dipilih saat Sheet dibuka) —
+      // kalau tidak disegarkan juga di sini, perubahan (tambah/edit alokasi,
+      // paket, dst) baru kelihatan setelah Sheet ditutup lalu dibuka lagi.
+      setDetailData((prev) =>
+        prev
+          ? (res.data.data.find((p) => p.id === prev.id) ?? prev)
+          : prev,
+      );
     } catch {
-      toast.error("Gagal memuat data planning");
+      toast.error("Gagal memuat data proyek");
     } finally {
       setLoading(false);
     }
@@ -112,7 +155,7 @@ export default function PlanningsPage() {
 
   useEffect(() => {
     fetchPlannings();
-  }, [page, statusFilter]);
+  }, [page, view]);
   useEffect(() => {
     const timeout = setTimeout(() => {
       setPage(1);
@@ -126,60 +169,188 @@ export default function PlanningsPage() {
     setDeleting(true);
     try {
       await api.delete(`/plannings/${deleteId}`);
-      toast.success("Planning berhasil dihapus");
+      toast.success("Proyek berhasil dihapus");
       setDeleteId(null);
       fetchPlannings();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Gagal menghapus planning");
+      toast.error(err.response?.data?.message || "Gagal menghapus proyek");
     } finally {
       setDeleting(false);
     }
   };
 
-  const handleSubmit = async (id: string) => {
+  // Export selalu ambil SEMUA proyek pada tampilan aktif (Proyek/Draft),
+  // bukan cuma halaman/hasil filter yang sedang tampil di layar.
+  const handleExportExcel = async () => {
+    setExporting(true);
     try {
-      await api.patch(`/plannings/${id}/submit`);
-      toast.success("Planning berhasil diajukan");
-      fetchPlannings();
+      // Backend membatasi limit maks 100/request — tarik semua halaman.
+      const status = view === "draft" ? "DRAFT" : "APPROVED";
+      const all: Planning[] = [];
+      let page = 1;
+      let totalPages = 1;
+      do {
+        const res = await api.get<PaginatedResponse<Planning>>("/plannings", {
+          params: { page, limit: 100, status },
+        });
+        all.push(...res.data.data);
+        totalPages = res.data.meta.totalPages;
+        page++;
+      } while (page <= totalPages);
+      await exportPlanningsToExcel(all);
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Gagal mengajukan planning");
+      toast.error(err.response?.data?.message || "Gagal mengexport ke Excel");
+    } finally {
+      setExporting(false);
     }
   };
 
-  const canSubmit = (p: Planning) =>
-    user?.role === "SATKER" &&
-    (p.status === "DRAFT" || p.status === "REVISION");
+  const handleApprove = async (id: string) => {
+    try {
+      await api.patch(`/plannings/${id}/approve`);
+      toast.success("Proyek disetujui");
+      fetchPlannings();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal menyetujui proyek");
+    }
+  };
+
+  const canApprove = () => view === "draft" && user?.role === "ADMINISTRATOR";
 
   const canDelete = (p: Planning) =>
-    p.status === "DRAFT" &&
-    (user?.role === "ADMINISTRATOR" || p.createdBy.id === user?.id);
+    user?.role === "ADMINISTRATOR" || p.createdBy.id === user?.id;
 
-  const groups = useMemo(() => {
-    const map = new Map<
+  // Opsi filter, dicascade dari data yang sudah termuat: Balai independen;
+  // Program > Kegiatan > KRO > RO mengikuti pilihan level di atasnya.
+  const filterOptions = useMemo(() => {
+    const balaiMap = new Map<number, string>();
+    const programMap = new Map<string, string>();
+    const kegiatanMap = new Map<string, { name: string; programId: string }>();
+    const kroMap = new Map<string, { name: string; kegiatanId: string }>();
+    const roMap = new Map<
       string,
-      {
-        kegiatanCode: string;
-        kegiatanName: string;
-        programCode: string;
-        plannings: Planning[];
-        rencanaByYear: Record<number, number>;
-        realisasiByYear: Record<number, number>;
-        grandTotalRencana: number;
-        grandTotalRealisasi: number;
-      }
+      { code: string; name: string; kroId: string }
     >();
 
+    for (const p of plannings) {
+      balaiMap.set(p.balai.id, p.balai.name);
+      for (const pk of paketOf(p)) {
+        const ro = pk.ro;
+        if (!ro) continue;
+        const kro = ro.kro;
+        const keg = kro.kegiatan;
+        const prog = keg.program;
+        programMap.set(prog.id, `${prog.code} — ${prog.name}`);
+        kegiatanMap.set(keg.id, {
+          name: `${keg.code} — ${keg.name}`,
+          programId: prog.id,
+        });
+        kroMap.set(kro.id, { name: `${kro.code} — ${kro.name}`, kegiatanId: keg.id });
+        roMap.set(ro.id, { code: ro.code, name: ro.name, kroId: kro.id });
+      }
+    }
+
+    return {
+      balai: [...balaiMap.entries()].sort((a, b) => a[1].localeCompare(b[1])),
+      program: [...programMap.entries()].sort((a, b) =>
+        a[1].localeCompare(b[1]),
+      ),
+      kegiatan: [...kegiatanMap.entries()]
+        .filter(([, v]) => !filterProgram || v.programId === filterProgram)
+        .sort((a, b) => a[1].name.localeCompare(b[1].name)),
+      kro: [...kroMap.entries()]
+        .filter(([, v]) => !filterKegiatan || v.kegiatanId === filterKegiatan)
+        .sort((a, b) => a[1].name.localeCompare(b[1].name)),
+      ro: [...roMap.entries()]
+        .filter(([, v]) => !filterKro || v.kroId === filterKro)
+        .sort((a, b) => a[1].name.localeCompare(b[1].name)),
+    };
+  }, [plannings, filterProgram, filterKegiatan, filterKro]);
+
+  // Proyek lolos filter kalau salah satu paketnya cocok dengan pilihan
+  // Program/Kegiatan/KRO/RO (bukan cuma paket pertama) — Balai difilter di
+  // level proyek langsung.
+  const filteredPlannings = useMemo(() => {
+    return plannings.filter((p) => {
+      if (filterBalai && String(p.balai.id) !== filterBalai) return false;
+      if (!filterProgram && !filterKegiatan && !filterKro && !filterRo)
+        return true;
+      return paketOf(p).some((pk) => {
+        const ro = pk.ro;
+        if (!ro) return false;
+        if (filterRo) return ro.id === filterRo;
+        if (filterKro) return ro.kro.id === filterKro;
+        if (filterKegiatan) return ro.kro.kegiatan.id === filterKegiatan;
+        if (filterProgram) return ro.kro.kegiatan.program.id === filterProgram;
+        return true;
+      });
+    });
+  }, [plannings, filterBalai, filterProgram, filterKegiatan, filterKro, filterRo]);
+
+  type KegiatanGroup = {
+    kegiatanCode: string;
+    kegiatanName: string;
+    programCode: string;
+    plannings: Planning[];
+    rencanaByYear: Record<number, number>;
+    realisasiByYear: Record<number, number>;
+    grandTotalRencana: number;
+    grandTotalRealisasi: number;
+  };
+  type BalaiGroup = {
+    balai: Planning["balai"];
+    kegiatanGroups: KegiatanGroup[];
+    rencanaByYear: Record<number, number>;
+    realisasiByYear: Record<number, number>;
+    grandTotalRencana: number;
+    grandTotalRealisasi: number;
+  };
+
+  const groups = useMemo(() => {
+    const balaiMap = new Map<
+      number,
+      Omit<BalaiGroup, "kegiatanGroups"> & { kegiatanMap: Map<string, KegiatanGroup> }
+    >();
     const years = new Set<number>();
 
-    for (const p of plannings) {
-      const firstAlokasi = p.alokasi[0];
-      const kegiatanCode = firstAlokasi?.ro?.kro?.kegiatan?.code || "LAINNYA";
-      const kegiatanName =
-        firstAlokasi?.ro?.kro?.kegiatan?.name || "Belum ada alokasi";
-      const programCode = firstAlokasi?.ro?.kro?.kegiatan?.program?.code || "-";
+    const addAlokasi = (
+      target: { rencanaByYear: Record<number, number>; realisasiByYear: Record<number, number>; grandTotalRencana: number; grandTotalRealisasi: number },
+      a: { tahun: number; status: string; total: string },
+    ) => {
+      const value = Number(a.total);
+      if (a.status === "RENCANA") {
+        target.rencanaByYear[a.tahun] = (target.rencanaByYear[a.tahun] || 0) + value;
+        target.grandTotalRencana += value;
+      } else {
+        target.realisasiByYear[a.tahun] = (target.realisasiByYear[a.tahun] || 0) + value;
+        target.grandTotalRealisasi += value;
+      }
+    };
 
-      if (!map.has(kegiatanCode)) {
-        map.set(kegiatanCode, {
+    for (const p of filteredPlannings) {
+      // Kolom tahun mengikuti rentang periode proyek, bukan cuma tahun yang
+      // kebetulan sudah punya alokasi — tahun kosong tetap ditampilkan.
+      for (let y = p.periode.startYear; y <= p.periode.endYear; y++) years.add(y);
+
+      const firstRo = paketOf(p)[0]?.ro;
+      const kegiatanCode = firstRo?.kro?.kegiatan?.code || "LAINNYA";
+      const kegiatanName = firstRo?.kro?.kegiatan?.name || "Belum ada paket";
+      const programCode = firstRo?.kro?.kegiatan?.program?.code || "-";
+
+      if (!balaiMap.has(p.balai.id)) {
+        balaiMap.set(p.balai.id, {
+          balai: p.balai,
+          kegiatanMap: new Map(),
+          rencanaByYear: {},
+          realisasiByYear: {},
+          grandTotalRencana: 0,
+          grandTotalRealisasi: 0,
+        });
+      }
+      const balaiGroup = balaiMap.get(p.balai.id)!;
+
+      if (!balaiGroup.kegiatanMap.has(kegiatanCode)) {
+        balaiGroup.kegiatanMap.set(kegiatanCode, {
           kegiatanCode,
           kegiatanName,
           programCode,
@@ -190,51 +361,63 @@ export default function PlanningsPage() {
           grandTotalRealisasi: 0,
         });
       }
+      const kegGroup = balaiGroup.kegiatanMap.get(kegiatanCode)!;
+      kegGroup.plannings.push(p);
 
-      const group = map.get(kegiatanCode)!;
-      group.plannings.push(p);
-
-      for (const a of p.alokasi) {
-        years.add(a.tahun);
-        const value = Number(a.total);
-        if (a.status === "RENCANA") {
-          group.rencanaByYear[a.tahun] =
-            (group.rencanaByYear[a.tahun] || 0) + value;
-          group.grandTotalRencana += value;
-        } else {
-          group.realisasiByYear[a.tahun] =
-            (group.realisasiByYear[a.tahun] || 0) + value;
-          group.grandTotalRealisasi += value;
-        }
+      for (const a of alokasiOf(p)) {
+        addAlokasi(kegGroup, a);
+        addAlokasi(balaiGroup, a);
       }
     }
 
     const sortedYears = [...years].sort((a, b) => a - b);
-    return {
-      groups: [...map.values()].sort((a, b) =>
-        a.kegiatanCode.localeCompare(b.kegiatanCode),
-      ),
-      years: sortedYears,
-    };
-  }, [plannings]);
+    const balaiGroups: BalaiGroup[] = [...balaiMap.values()]
+      .map((bg) => ({
+        ...bg,
+        kegiatanGroups: [...bg.kegiatanMap.values()].sort((a, b) =>
+          a.kegiatanCode.localeCompare(b.kegiatanCode),
+        ),
+      }))
+      .sort((a, b) => a.balai.name.localeCompare(b.balai.name));
+
+    return { balaiGroups, years: sortedYears };
+  }, [filteredPlannings]);
 
   const allCollapsed =
-    groups.groups.length > 0 && collapsedGroups.size === groups.groups.length;
+    groups.balaiGroups.length > 0 && expandedBalai.size === 0;
 
-  const toggleGroup = (code: string) => {
-    setCollapsedGroups((prev) => {
+  const toggleSet = <T,>(
+    setState: React.Dispatch<React.SetStateAction<Set<T>>>,
+    key: T,
+  ) => {
+    setState((prev) => {
       const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   };
 
+  const toggleBalai = (id: number) => toggleSet(setExpandedBalai, id);
+  const toggleKegiatan = (key: string) => toggleSet(setExpandedKegiatan, key);
+  const toggleProyek = (id: string) => toggleSet(setExpandedProyek, id);
+
   const toggleAllGroups = () => {
     if (allCollapsed) {
-      setCollapsedGroups(new Set());
+      // Buka Semua: expand seluruh Balai + Kegiatan + Proyek sekaligus.
+      setExpandedBalai(new Set(groups.balaiGroups.map((g) => g.balai.id)));
+      setExpandedKegiatan(
+        new Set(
+          groups.balaiGroups.flatMap((bg) =>
+            bg.kegiatanGroups.map((kg) => `${bg.balai.id}:${kg.kegiatanCode}`),
+          ),
+        ),
+      );
+      setExpandedProyek(new Set(filteredPlannings.map((p) => p.id)));
     } else {
-      setCollapsedGroups(new Set(groups.groups.map((g) => g.kegiatanCode)));
+      setExpandedBalai(new Set());
+      setExpandedKegiatan(new Set());
+      setExpandedProyek(new Set());
     }
   };
 
@@ -242,27 +425,23 @@ export default function PlanningsPage() {
   // Program.Kegiatan pada alokasi pertamanya. Ditampilkan langsung di baris
   // list supaya user tidak perlu buka detail hanya untuk mengenali proyek.
   const getPlanningKode = (p: Planning) => {
-    const a = p.alokasi[0];
+    const ro = paketOf(p)[0]?.ro;
     const balaiCode = p.balai.code || p.balai.shortName || "-";
-    const programCode = a?.ro?.kro?.kegiatan?.program?.code || "-";
-    const kegiatanCode = a?.ro?.kro?.kegiatan?.code || "-";
+    const programCode = ro?.kro?.kegiatan?.program?.code || "-";
+    const kegiatanCode = ro?.kro?.kegiatan?.code || "-";
     return `${balaiCode}.${programCode}.${kegiatanCode}`;
-  };
-
-  const realisasiPct = (rencana: number, realisasi: number) => {
-    if (rencana > 0) return Math.round((realisasi / rencana) * 100);
-    return realisasi > 0 ? 100 : 0;
   };
 
   // Sel angka per tahun: baris atas = Rencana, baris bawah = Realisasi
   // (dengan centang bila sudah terisi). Dipakai di baris tiap proyek.
   const renderYearCell = (
+    year: number,
     v: { rencana: number; realisasi: number } | undefined,
   ) => {
     const rencana = v?.rencana || 0;
     const realisasi = v?.realisasi || 0;
     return (
-      <div className="w-24 shrink-0 text-right">
+      <div key={year} className="w-24 shrink-0 text-right">
         <p className="text-xs font-semibold">{formatRupiahShort(rencana)}</p>
         <p className="text-[11px] text-emerald-600 flex items-center justify-end gap-1">
           {realisasi > 0 && (
@@ -290,19 +469,19 @@ export default function PlanningsPage() {
           </TooltipTrigger>
           <TooltipContent>Lihat Detail</TooltipContent>
         </Tooltip>
-        {canSubmit(p) && (
+        {canApprove() && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                onClick={() => handleSubmit(p.id)}
+                className="h-7 w-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                onClick={() => handleApprove(p.id)}
               >
-                <Send size={14} />
+                <CheckCheck size={14} />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Ajukan ke Verifikator</TooltipContent>
+            <TooltipContent>Setujui Proyek</TooltipContent>
           </Tooltip>
         )}
         {canDelete(p) && (
@@ -317,7 +496,7 @@ export default function PlanningsPage() {
                 <Trash2 size={14} />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Hapus Planning</TooltipContent>
+            <TooltipContent>Hapus Proyek</TooltipContent>
           </Tooltip>
         )}
       </div>
@@ -328,36 +507,40 @@ export default function PlanningsPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Planning</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Proyek</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {total} planning ditemukan
+            {total} proyek ditemukan
           </p>
         </div>
-        {(user?.role === "SATKER" || user?.role === "ADMINISTRATOR") && (
-          <div className="flex items-center gap-2">
-            {(user?.role === "SATKER" || user?.role === "ADMINISTRATOR") && (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    console.log("Tombol diklik");
-                    setShowImport(true);
-                  }}
-                >
-                  <Upload size={16} className="mr-2" /> Import Excel
-                </Button>
-                <Button
-                  onClick={() => {
-                    setEditData(null);
-                    setShowForm(true);
-                  }}
-                >
-                  <Plus size={16} className="mr-2" /> Buat Planning
-                </Button>
-              </>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleExportExcel}
+            disabled={exporting}
+          >
+            {exporting ? (
+              <Loader2 size={16} className="mr-2 animate-spin" />
+            ) : (
+              <FileSpreadsheet size={16} className="mr-2" />
             )}
-          </div>
-        )}
+            Export Excel
+          </Button>
+          {(user?.role === "SATKER" || user?.role === "ADMINISTRATOR") && (
+            <>
+              <Button variant="outline" onClick={() => setShowImport(true)}>
+                <Upload size={16} className="mr-2" /> Import Excel
+              </Button>
+              <Button
+                onClick={() => {
+                  setEditData(null);
+                  setShowForm(true);
+                }}
+              >
+                <Plus size={16} className="mr-2" /> Buat Proyek
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center justify-between gap-3">
@@ -374,26 +557,37 @@ export default function PlanningsPage() {
               className="pl-9"
             />
           </div>
-          <Select
-            value={statusFilter}
-            onValueChange={(v) => {
-              setStatusFilter(v);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-44">
-              <Filter size={14} className="mr-2 text-muted-foreground" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Semua Status</SelectItem>
-              <SelectItem value="DRAFT">Draft</SelectItem>
-              <SelectItem value="SUBMITTED">Menunggu Review</SelectItem>
-              <SelectItem value="REVISION">Perlu Revisi</SelectItem>
-              <SelectItem value="APPROVED">Disetujui</SelectItem>
-              <SelectItem value="REJECTED">Ditolak</SelectItem>
-            </SelectContent>
-          </Select>
+          {/* 2 tampilan saja: Proyek (default, sudah disetujui) & Draft (punya sendiri) */}
+          <div className="inline-flex items-center rounded-lg border bg-muted/40 p-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setView("proyek");
+                setPage(1);
+              }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                view === "proyek"
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Proyek
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setView("draft");
+                setPage(1);
+              }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                view === "draft"
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Draft
+            </button>
+          </div>
         </div>
 
         <Button
@@ -411,17 +605,109 @@ export default function PlanningsPage() {
         </Button>
       </div>
 
+      {/* Filter Program/Kegiatan/KRO/RO/Balai — cascading, opsi dari data
+          yang sudah termuat di halaman ini. */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <select
+          value={filterBalai}
+          onChange={(e) => setFilterBalai(e.target.value)}
+          className="h-8 rounded-md border bg-background px-2 text-xs"
+        >
+          <option value="">Semua Balai</option>
+          {filterOptions.balai.map(([id, name]) => (
+            <option key={id} value={id}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterProgram}
+          onChange={(e) => {
+            setFilterProgram(e.target.value);
+            setFilterKegiatan("");
+            setFilterKro("");
+            setFilterRo("");
+          }}
+          className="h-8 rounded-md border bg-background px-2 text-xs"
+        >
+          <option value="">Semua Program</option>
+          {filterOptions.program.map(([id, name]) => (
+            <option key={id} value={id}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterKegiatan}
+          onChange={(e) => {
+            setFilterKegiatan(e.target.value);
+            setFilterKro("");
+            setFilterRo("");
+          }}
+          className="h-8 rounded-md border bg-background px-2 text-xs max-w-[220px]"
+        >
+          <option value="">Semua Kegiatan</option>
+          {filterOptions.kegiatan.map(([id, v]) => (
+            <option key={id} value={id}>
+              {v.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterKro}
+          onChange={(e) => {
+            setFilterKro(e.target.value);
+            setFilterRo("");
+          }}
+          className="h-8 rounded-md border bg-background px-2 text-xs max-w-[220px]"
+        >
+          <option value="">Semua KRO</option>
+          {filterOptions.kro.map(([id, v]) => (
+            <option key={id} value={id}>
+              {v.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterRo}
+          onChange={(e) => setFilterRo(e.target.value)}
+          className="h-8 rounded-md border bg-background px-2 text-xs max-w-[220px]"
+        >
+          <option value="">Semua RO</option>
+          {filterOptions.ro.map(([id, v]) => (
+            <option key={id} value={id}>
+              {v.code} — {v.name}
+            </option>
+          ))}
+        </select>
+        {(filterBalai || filterProgram || filterKegiatan || filterKro || filterRo) && (
+          <button
+            type="button"
+            onClick={() => {
+              setFilterBalai("");
+              setFilterProgram("");
+              setFilterKegiatan("");
+              setFilterKro("");
+              setFilterRo("");
+            }}
+            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+          >
+            Reset filter
+          </button>
+        )}
+      </div>
+
       {/* Sub-header kolom tahun — sekali saja untuk seluruh daftar */}
-      {!loading && groups.groups.length > 0 && (
+      {!loading && groups.balaiGroups.length > 0 && (
         <div className="hidden md:flex items-center gap-4 px-5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
           <div className="flex-1 min-w-0" />
           <div className="flex items-center gap-4">
+            <div className="w-24 shrink-0 text-right border-r pr-3">Total</div>
             {groups.years.map((year) => (
               <div key={year} className="w-24 shrink-0 text-right">
                 {year}
               </div>
             ))}
-            <div className="w-24 shrink-0 text-right border-l pl-3">Total</div>
           </div>
           <div className="w-[76px] shrink-0" />
         </div>
@@ -434,186 +720,330 @@ export default function PlanningsPage() {
               <div key={i} className="h-20 bg-muted rounded-xl animate-pulse" />
             ))}
           </div>
-        ) : groups.groups.length === 0 ? (
+        ) : groups.balaiGroups.length === 0 ? (
           <Card>
             <CardContent className="text-center py-16 text-muted-foreground">
               <FileText size={40} className="mx-auto mb-3 opacity-30" />
-              <p className="text-sm font-medium">Tidak ada planning</p>
+              <p className="text-sm font-medium">Tidak ada proyek</p>
             </CardContent>
           </Card>
         ) : (
-          groups.groups.map((group) => {
-            const isCollapsed = collapsedGroups.has(group.kegiatanCode);
-            const pct = realisasiPct(
-              group.grandTotalRencana,
-              group.grandTotalRealisasi,
+          groups.balaiGroups.map((balaiGroup) => {
+            const balaiOpen = expandedBalai.has(balaiGroup.balai.id);
+            const proyekCount = balaiGroup.kegiatanGroups.reduce(
+              (acc, kg) => acc + kg.plannings.length,
+              0,
             );
-            const barColor =
-              pct >= 80
-                ? "bg-emerald-400"
-                : pct >= 40
-                  ? "bg-amber-400"
-                  : "bg-rose-400";
 
             return (
               <Card
-                key={group.kegiatanCode}
+                key={balaiGroup.balai.id}
                 className="overflow-hidden border-l-4 border-l-blue-600 py-0"
               >
+                {/* Level 1: Balai */}
                 <button
-                  onClick={() => toggleGroup(group.kegiatanCode)}
+                  onClick={() => toggleBalai(balaiGroup.balai.id)}
                   className="w-full text-left bg-card text-foreground transition-colors hover:bg-accent/40"
                 >
-                  <div className="flex items-center gap-3 px-5 pt-3.5 pb-2">
-                    {isCollapsed ? (
-                      <ChevronRight
-                        size={16}
-                        className="text-muted-foreground shrink-0"
-                      />
-                    ) : (
+                  <div className="flex items-center gap-3 px-5 py-3">
+                    {balaiOpen ? (
                       <ChevronDown
                         size={16}
                         className="text-muted-foreground shrink-0"
                       />
+                    ) : (
+                      <ChevronRight
+                        size={16}
+                        className="text-muted-foreground shrink-0"
+                      />
                     )}
-                    <span className="text-xs font-mono bg-slate-100 text-slate-700 px-2 py-1 rounded font-semibold shrink-0">
-                      {group.programCode}.{group.kegiatanCode}
-                    </span>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold truncate">
-                        {group.kegiatanName}
+                        {balaiGroup.balai.name}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {group.plannings.length} proyek
+                        {balaiGroup.kegiatanGroups.length} kegiatan &middot;{" "}
+                        {proyekCount} proyek
                       </p>
                     </div>
 
-                    {/* Total per tahun & keseluruhan — atas Rencana, bawah Realisasi */}
+                    {/* Total per tahun & keseluruhan — atas Rencana, bawah Realisasi.
+                        Total di kiri (sebelum kolom tahun), bukan paling kanan. */}
                     <div className="hidden md:flex items-center gap-4 shrink-0">
+                      <div className="w-24 shrink-0 text-right border-r pr-3">
+                        <p className="text-sm font-bold tabular-nums">
+                          {formatRupiahShort(balaiGroup.grandTotalRencana)}
+                        </p>
+                        <p className="text-[11px] text-emerald-600 tabular-nums">
+                          {formatRupiahShort(balaiGroup.grandTotalRealisasi)}
+                        </p>
+                      </div>
                       {groups.years.map((year) => (
                         <div key={year} className="w-24 shrink-0 text-right">
                           <p className="text-xs font-semibold tabular-nums">
-                            {formatRupiahShort(group.rencanaByYear[year] || 0)}
+                            {formatRupiahShort(
+                              balaiGroup.rencanaByYear[year] || 0,
+                            )}
                           </p>
                           <p className="text-[11px] text-emerald-600 tabular-nums">
                             {formatRupiahShort(
-                              group.realisasiByYear[year] || 0,
+                              balaiGroup.realisasiByYear[year] || 0,
                             )}
                           </p>
                         </div>
                       ))}
-                      <div className="w-24 shrink-0 text-right border-l pl-3">
-                        <p className="text-sm font-bold tabular-nums">
-                          {formatRupiahShort(group.grandTotalRencana)}
-                        </p>
-                        <p className="text-[11px] text-emerald-600 tabular-nums">
-                          {formatRupiahShort(group.grandTotalRealisasi)}
-                        </p>
-                      </div>
                     </div>
                     <div className="w-[76px] shrink-0" />
                   </div>
-                  <div className="px-5 pb-3 flex items-center gap-2">
-                    <div className="h-[5px] w-full max-w-[200px] rounded-full bg-muted overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${barColor}`}
-                        style={{ width: `${Math.min(100, pct)}%` }}
-                      />
-                    </div>
-                    <span className="text-[10px] text-muted-foreground tabular-nums w-8 text-right">
-                      {pct}%
-                    </span>
-                  </div>
                 </button>
 
-                {!isCollapsed && (
+                {balaiOpen && (
                   <CardContent className="p-0 divide-y divide-border border-t">
-                    {group.plannings.map((p) => {
-                      const cfg = statusConfig[p.status];
-                      const byYear: Record<
-                        number,
-                        { rencana: number; realisasi: number }
-                      > = {};
-                      for (const a of p.alokasi) {
-                        if (!byYear[a.tahun]) {
-                          byYear[a.tahun] = { rencana: 0, realisasi: 0 };
-                        }
-                        if (a.status === "RENCANA") {
-                          byYear[a.tahun].rencana += Number(a.total);
-                        } else {
-                          byYear[a.tahun].realisasi += Number(a.total);
-                        }
-                      }
-                      const total = Object.values(byYear).reduce(
-                        (acc, v) => {
-                          acc.rencana += v.rencana;
-                          acc.realisasi += v.realisasi;
-                          return acc;
-                        },
-                        { rencana: 0, realisasi: 0 },
-                      );
+                    {balaiGroup.kegiatanGroups.map((kegGroup) => {
+                      const kegKey = `${balaiGroup.balai.id}:${kegGroup.kegiatanCode}`;
+                      const kegOpen = expandedKegiatan.has(kegKey);
 
                       return (
-                        <div
-                          key={p.id}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => setDetailData(p)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              setDetailData(p);
-                            }
-                          }}
-                          className="group px-5 py-3 hover:bg-accent/30 transition-colors cursor-pointer outline-none focus-visible:bg-accent/40"
-                        >
-                          <div className="flex items-center gap-4">
-                            <Badge
-                              variant="dot"
-                              dotColor={cfg.dotColor}
-                              className="shrink-0"
-                            >
-                              {cfg.label}
-                            </Badge>
-
-                            <div className="min-w-0 flex-1">
-                              <span className="inline-block text-[11px] font-mono font-medium text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded shrink-0 truncate mb-1">
-                                {getPlanningKode(p)}
-                              </span>
-                              <p className="text-sm font-medium truncate mb-0.5 group-hover:text-primary transition-colors">
-                                {p.projectName}
-                              </p>
-                              <p className="text-[11px] text-muted-foreground truncate">
-                                {p.balai.shortName}
-                              </p>
-                            </div>
-
-                            <div className="hidden md:flex items-center gap-4 shrink-0">
-                              {groups.years.map((year) =>
-                                renderYearCell(byYear[year]),
+                        <div key={kegKey} className="bg-muted/20">
+                          {/* Level 2: Kegiatan */}
+                          <button
+                            onClick={() => toggleKegiatan(kegKey)}
+                            className="w-full text-left transition-colors hover:bg-accent/30"
+                          >
+                            <div className="flex items-center gap-3 pl-9 pr-5 py-2.5">
+                              {kegOpen ? (
+                                <ChevronDown
+                                  size={14}
+                                  className="text-muted-foreground shrink-0"
+                                />
+                              ) : (
+                                <ChevronRight
+                                  size={14}
+                                  className="text-muted-foreground shrink-0"
+                                />
                               )}
-                              <div className="w-24 shrink-0 text-right border-l pl-3">
-                                <p className="text-xs font-bold">
-                                  {formatRupiahShort(total.rencana)}
+                              <span className="text-[11px] font-mono bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-semibold shrink-0">
+                                {kegGroup.programCode}.{kegGroup.kegiatanCode}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium truncate">
+                                  {kegGroup.kegiatanName}
                                 </p>
-                                <p className="text-[11px] font-semibold text-emerald-600">
-                                  {formatRupiahShort(total.realisasi)}
+                                <p className="text-[11px] text-muted-foreground">
+                                  {kegGroup.plannings.length} proyek
                                 </p>
                               </div>
+                              <div className="hidden md:flex items-center gap-4 shrink-0">
+                                <div className="w-24 shrink-0 text-right border-r pr-3">
+                                  <p className="text-sm font-bold tabular-nums">
+                                    {formatRupiahShort(
+                                      kegGroup.grandTotalRencana,
+                                    )}
+                                  </p>
+                                  <p className="text-[11px] text-emerald-600 tabular-nums">
+                                    {formatRupiahShort(
+                                      kegGroup.grandTotalRealisasi,
+                                    )}
+                                  </p>
+                                </div>
+                                {groups.years.map((year) => (
+                                  <div
+                                    key={year}
+                                    className="w-24 shrink-0 text-right"
+                                  >
+                                    <p className="text-xs font-semibold tabular-nums">
+                                      {formatRupiahShort(
+                                        kegGroup.rencanaByYear[year] || 0,
+                                      )}
+                                    </p>
+                                    <p className="text-[11px] text-emerald-600 tabular-nums">
+                                      {formatRupiahShort(
+                                        kegGroup.realisasiByYear[year] || 0,
+                                      )}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="w-[76px] shrink-0" />
                             </div>
+                          </button>
 
-                            {/* Afordansi visual pengganti tooltip "klik 2x": chevron
-                                muncul saat baris di-hover, menandakan seluruh baris
-                                bisa diklik untuk membuka detail. */}
-                            <ChevronRight
-                              size={16}
-                              className="hidden md:block shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-                            />
+                          {kegOpen && (
+                            <div className="divide-y divide-border border-t bg-background">
+                              {kegGroup.plannings.map((p) => {
+                                const byYear = byYearOf(alokasiOf(p));
+                                const total = Object.values(byYear).reduce(
+                                  (acc, v) => {
+                                    acc.rencana += v.rencana;
+                                    acc.realisasi += v.realisasi;
+                                    return acc;
+                                  },
+                                  { rencana: 0, realisasi: 0 },
+                                );
+                                const proyekOpen = expandedProyek.has(p.id);
 
-                            <div onClick={(e) => e.stopPropagation()}>
-                              {renderActions(p)}
+                                return (
+                                  <div key={p.id}>
+                                    {/* Level 3: Proyek */}
+                                    <div
+                                      role="button"
+                                      tabIndex={0}
+                                      onClick={() => toggleProyek(p.id)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter" || e.key === " ") {
+                                          e.preventDefault();
+                                          toggleProyek(p.id);
+                                        }
+                                      }}
+                                      className="group pl-14 pr-5 py-3 hover:bg-accent/30 transition-colors cursor-pointer outline-none focus-visible:bg-accent/40"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        {proyekOpen ? (
+                                          <ChevronDown
+                                            size={13}
+                                            className="text-muted-foreground shrink-0"
+                                          />
+                                        ) : (
+                                          <ChevronRight
+                                            size={13}
+                                            className="text-muted-foreground shrink-0"
+                                          />
+                                        )}
+                                        <div className="min-w-0 flex-1">
+                                          <span className="inline-block text-[11px] font-mono font-medium text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded shrink-0 truncate mb-1">
+                                            {getPlanningKode(p)}
+                                          </span>
+                                          <p className="text-sm font-medium truncate mb-0.5 group-hover:text-primary transition-colors">
+                                            {p.projectName}
+                                          </p>
+                                          <div className="flex items-center gap-2 text-[11px] text-muted-foreground truncate">
+                                            <span>{paketOf(p).length} paket</span>
+                                            <TooltipProvider delayDuration={300}>
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                  <MapPin
+                                                    size={11}
+                                                    className={
+                                                      hasLokasi(p)
+                                                        ? "text-emerald-600"
+                                                        : "text-muted-foreground/40"
+                                                    }
+                                                  />
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                  {hasLokasi(p)
+                                                    ? "Sudah ada lokasi"
+                                                    : "Belum ada lokasi"}
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </TooltipProvider>
+                                            <TooltipProvider delayDuration={300}>
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                  <StickyNote
+                                                    size={11}
+                                                    className={
+                                                      p.catatan
+                                                        ? "text-amber-600"
+                                                        : "text-muted-foreground/40"
+                                                    }
+                                                  />
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                  {p.catatan
+                                                    ? "Ada catatan"
+                                                    : "Belum ada catatan"}
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </TooltipProvider>
+                                          </div>
+                                        </div>
+
+                                        <div className="hidden md:flex items-center gap-4 shrink-0">
+                                          <div className="w-24 shrink-0 text-right border-r pr-3">
+                                            <p className="text-xs font-bold">
+                                              {formatRupiahShort(total.rencana)}
+                                            </p>
+                                            <p className="text-[11px] font-semibold text-emerald-600">
+                                              {formatRupiahShort(
+                                                total.realisasi,
+                                              )}
+                                            </p>
+                                          </div>
+                                          {groups.years.map((year) =>
+                                            renderYearCell(year, byYear[year]),
+                                          )}
+                                        </div>
+
+                                        <div
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          {renderActions(p)}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Level 4: Paket */}
+                                    {proyekOpen && (
+                                      <div className="divide-y divide-border border-t bg-muted/10">
+                                        {paketOf(p).length === 0 ? (
+                                          <p className="pl-20 pr-5 py-2.5 text-[11px] text-muted-foreground italic">
+                                            Belum ada paket
+                                          </p>
+                                        ) : (
+                                          paketOf(p).map((pk) => {
+                                            const pkByYear = byYearOf(
+                                              pk.alokasi,
+                                            );
+                                            return (
+                                              <div
+                                                key={pk.id}
+                                                role="button"
+                                                tabIndex={0}
+                                                onClick={() =>
+                                                  setDetailData(p)
+                                                }
+                                                onKeyDown={(e) => {
+                                                  if (
+                                                    e.key === "Enter" ||
+                                                    e.key === " "
+                                                  ) {
+                                                    e.preventDefault();
+                                                    setDetailData(p);
+                                                  }
+                                                }}
+                                                className="flex items-center gap-3 pl-20 pr-5 py-2.5 hover:bg-accent/30 transition-colors cursor-pointer outline-none focus-visible:bg-accent/40"
+                                              >
+                                                <div className="min-w-0 flex-1">
+                                                  <p className="text-[13px] font-medium truncate">
+                                                    {pk.name}
+                                                  </p>
+                                                  <p className="text-[11px] text-muted-foreground truncate">
+                                                    {pk.ro?.code} &middot;{" "}
+                                                    {pk.ro?.name}
+                                                  </p>
+                                                </div>
+                                                <div className="hidden md:flex items-center gap-4 shrink-0">
+                                                  <div className="w-24 shrink-0" />
+                                                  {groups.years.map((year) =>
+                                                    renderYearCell(
+                                                      year,
+                                                      pkByYear[year],
+                                                    ),
+                                                  )}
+                                                </div>
+                                                <div className="w-[76px] shrink-0" />
+                                              </div>
+                                            );
+                                          })
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
-                          </div>
+                          )}
                         </div>
                       );
                     })}
@@ -625,10 +1055,10 @@ export default function PlanningsPage() {
         )}
       </div>
 
-      {!loading && groups.groups.length > 0 && totalPages > 1 && (
+      {!loading && groups.balaiGroups.length > 0 && totalPages > 1 && (
         <div className="flex items-center justify-between pt-1">
           <p className="text-xs text-muted-foreground">
-            Halaman {page} dari {totalPages} &middot; {total} planning total
+            Halaman {page} dari {totalPages} &middot; {total} proyek total
           </p>
           <div className="flex items-center gap-2">
             <Button
@@ -705,9 +1135,9 @@ export default function PlanningsPage() {
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Hapus Planning?</AlertDialogTitle>
+            <AlertDialogTitle>Hapus Proyek?</AlertDialogTitle>
             <AlertDialogDescription>
-              Planning yang dihapus tidak dapat dikembalikan.
+              Proyek yang dihapus tidak dapat dikembalikan.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -11,37 +11,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export class KriteriaDokumenDto {
-  @ApiProperty({ example: 'Dokumen Lingkungan' })
-  @IsString()
-  jenis: string;
-
-  @ApiProperty({ enum: ['TIDAK_PERLU', 'BELUM_ADA', 'SUDAH_ADA'] })
-  @IsEnum(['TIDAK_PERLU', 'BELUM_ADA', 'SUDAH_ADA'])
-  status: string;
-
-  @ApiPropertyOptional({ example: 2025 })
-  @IsOptional()
-  @IsInt()
-  tahun?: number;
-}
-
-export class MajorProjectDto {
-  @ApiProperty()
-  @IsString()
-  majorProjectId: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  detail?: string;
-}
-
 export class AlokasiDto {
-  @ApiProperty({ example: '005' })
-  @IsString()
-  roId: string;
-
   @ApiProperty({ example: 2025 })
   @IsInt()
   tahun: number;
@@ -101,40 +71,79 @@ export class AlokasiDto {
   catatan?: string;
 }
 
-export class PrioritasDto {
-  @ApiProperty({ example: 2025 })
-  @IsInt()
-  tahun: number;
+/**
+ * 1 proyek (Planning) bisa punya banyak Paket. Field yang dulu ada di
+ * Planning (RO/masa pelaksanaan/wilayah sungai) sekarang di sini — lihat
+ * docs-planning/fitur-paket/01-database.md.
+ */
+export class PaketDto {
+  @ApiPropertyOptional({ description: 'Kosongkan untuk paket baru' })
+  @IsOptional()
+  @IsString()
+  id?: string;
+
+  // kodePaket sengaja tidak ada di sini — digenerate otomatis di service.
+
+  @ApiProperty()
+  @IsString()
+  name: string;
+
+  @ApiProperty({ example: '005' })
+  @IsString()
+  roId: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsBoolean()
-  proyekPrioritas?: boolean;
+  @IsString()
+  komponenId?: string;
+
+  @ApiProperty({ enum: ['FISIK', 'NON_FISIK'] })
+  @IsEnum(['FISIK', 'NON_FISIK'])
+  jenis: string;
+
+  @ApiProperty({ enum: ['SINGLE_YEAR', 'MULTI_YEAR'] })
+  @IsEnum(['SINGLE_YEAR', 'MULTI_YEAR'])
+  masaPelaksanaan: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsBoolean()
-  proyekRPIW?: boolean;
+  @IsString()
+  wilayahSungaiId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsBoolean()
-  kegiatanBaru?: boolean;
+  @IsString()
+  dokLingStatus?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsBoolean()
-  kegiatanWajib?: boolean;
+  @IsString()
+  catatanPembina?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsBoolean()
-  proyekKonregFKS?: boolean;
+  @IsString()
+  catatanSspsda?: string;
 
-  @ApiPropertyOptional()
+  // Indikator RENJA — semuanya FK ke master data, dikonfirmasi dari
+  // referensi 1.xlsx (lihat docs-planning/fitur-paket/04-rekonsiliasi-referensi.md)
+  @ApiPropertyOptional() @IsOptional() @IsString() kegiatanPrioritasId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() pkpnId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() indikatorSasaranProgramId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() indikatorSasaranKegiatanId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() indikatorRoId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() tematikRenjaId?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() fkb?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() fkw?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() mpa?: boolean;
+
+  @ApiPropertyOptional({ type: [AlokasiDto] })
   @IsOptional()
-  @IsBoolean()
-  proyekMusrengbangnas?: boolean;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AlokasiDto)
+  alokasi?: AlokasiDto[];
 }
 
 export class CreatePlanningDto {
@@ -146,13 +155,12 @@ export class CreatePlanningDto {
   @IsInt()
   periodeId: number;
 
+  // kodeProyek sengaja tidak ada di sini — digenerate otomatis di service
+  // (lihat src/common/kode-generator.ts), bukan input manual.
+
   @ApiProperty({ example: 'Pembangunan Sumur Air Tanah' })
   @IsString()
   projectName: string;
-
-  @ApiProperty({ enum: ['SINGLE_YEAR', 'MULTI_YEAR'] })
-  @IsEnum(['SINGLE_YEAR', 'MULTI_YEAR'])
-  masaPelaksanaan: string;
 
   @ApiPropertyOptional({ enum: ['PUSAT', 'DAERAH'], default: 'PUSAT' })
   @IsOptional()
@@ -180,11 +188,6 @@ export class CreatePlanningDto {
   longitude?: number;
 
   // Kesesuaian Proyek
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  wilayahSungaiId?: string;
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
@@ -215,38 +218,57 @@ export class CreatePlanningDto {
   @IsString()
   sesuaiMasterplan?: string;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  polaRencana?: string;
+
+  // StudiLayak/DED/LARAP — angka tahun polos, sesuai DB.xlsx (lihat
+  // docs-planning/audit-restrukturisasi-db-xlsx.md §3.3)
+  @ApiPropertyOptional({ example: 2020 })
+  @IsOptional()
+  @IsInt()
+  tahunStudiLayak?: number;
+
+  @ApiPropertyOptional({ example: 2022 })
+  @IsOptional()
+  @IsInt()
+  tahunDed?: number;
+
+  @ApiPropertyOptional({ example: 2025 })
+  @IsOptional()
+  @IsInt()
+  tahunLarap?: number;
+
+  @ApiPropertyOptional({
+    enum: [
+      'PEMERINTAH_DAERAH',
+      'KEMENTERIAN_LEMBAGA',
+      'MASYARAKAT',
+      'TINDAK_LANJUT_RENAKSI',
+      'LAINNYA',
+    ],
+  })
+  @IsOptional()
+  @IsEnum([
+    'PEMERINTAH_DAERAH',
+    'KEMENTERIAN_LEMBAGA',
+    'MASYARAKAT',
+    'TINDAK_LANJUT_RENAKSI',
+    'LAINNYA',
+  ])
+  sumberUsulanProyek?: string;
+
+  @ApiPropertyOptional({ description: 'Diisi kalau sumberUsulanProyek = LAINNYA' })
+  @IsOptional()
+  @IsString()
+  sumberUsulanLainnya?: string;
+
   // Relasi
-  @ApiPropertyOptional({ type: [KriteriaDokumenDto] })
+  @ApiPropertyOptional({ type: [PaketDto] })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => KriteriaDokumenDto)
-  kriteriaDokumen?: KriteriaDokumenDto[];
-
-  @ApiPropertyOptional({ type: [MajorProjectDto] })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => MajorProjectDto)
-  majorProjects?: MajorProjectDto[];
-
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  tindakLanjutIds?: string[];
-
-  @ApiPropertyOptional({ type: [AlokasiDto] })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => AlokasiDto)
-  alokasi?: AlokasiDto[];
-
-  @ApiPropertyOptional({ type: [PrioritasDto] })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => PrioritasDto)
-  prioritas?: PrioritasDto[];
+  @Type(() => PaketDto)
+  paket?: PaketDto[];
 }

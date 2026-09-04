@@ -39,7 +39,7 @@ function SheetOverlay({
     <DialogPrimitive.Overlay
       data-slot="sheet-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/20 duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className,
       )}
       {...props}
@@ -48,44 +48,34 @@ function SheetOverlay({
 }
 
 /**
- * SheetContent — panel geser dari kanan.
- *
- * layer="1"  → drawer utama (~660px), dipakai untuk Detail Proyek.
- * layer="2"  → drawer turunan (~440px), menumpuk di atas layer 1
- *              (form Alokasi / form Lokasi).
- *
- * Saat sebuah drawer layer="2" terbuka, drawer layer="1" di baliknya
- * diberi class "pushed" (lihat util `sheetPushedClass` di bawah) untuk
- * memberi efek "terdorong" — bukan drawer baru yang menutupi total.
+ * SheetContent — modal terpusat (bekas panel geser, sekarang tampil seperti
+ * Dialog biasa). layer="1" cuma menentukan lebar maksimal (~660px, dipakai
+ * untuk Detail Proyek), layer="2" lebih sempit (~440px, form Alokasi/Lokasi).
+ * Menumpuk seperti dialog-di-atas-dialog biasa — tidak ada lagi efek
+ * "terdorong" (lihat `sheetPushedProps`).
  */
 function SheetContent({
   className,
   children,
-  side = "right",
   layer = "1",
   showCloseButton = true,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
-  side?: "right" | "left";
+  side?: "right" | "left"; // dipertahankan supaya call site lama tidak perlu diubah; tidak lagi berpengaruh ke tampilan
   layer?: "1" | "2";
   showCloseButton?: boolean;
 }) {
   return (
     <SheetPortal>
-      <SheetOverlay className={cn(layer === "2" && "bg-black/10")} />
+      <SheetOverlay />
       <DialogPrimitive.Content
         data-slot="sheet-content"
         data-layer={layer}
         className={cn(
-          "fixed inset-y-0 z-50 flex h-full flex-col gap-0 bg-background text-sm shadow-xl outline-none duration-200",
-          side === "right" ? "right-0" : "left-0",
-          side === "right"
-            ? "data-open:animate-in data-open:slide-in-from-right data-closed:animate-out data-closed:slide-out-to-right"
-            : "data-open:animate-in data-open:slide-in-from-left data-closed:animate-out data-closed:slide-out-to-left",
-          layer === "1" &&
-            "w-[660px] max-w-[92vw] transition-transform transition-filter duration-200 ease-out data-[pushed=true]:-translate-x-8 data-[pushed=true]:scale-[0.98] data-[pushed=true]:brightness-[.94] max-sm:w-full max-sm:max-w-full",
-          layer === "2" &&
-            "w-[440px] max-w-[92vw] border-l shadow-2xl max-sm:w-full max-sm:max-w-full",
+          "fixed top-1/2 left-1/2 z-50 flex max-h-[85vh] w-full -translate-x-1/2 -translate-y-1/2 flex-col gap-0 overflow-hidden rounded-xl bg-popover text-sm text-popover-foreground ring-1 ring-foreground/10 outline-none duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          layer === "1" && "max-w-[660px]",
+          layer === "2" && "max-w-[440px]",
+          "max-sm:max-w-[calc(100%-2rem)]",
           className,
         )}
         {...props}
@@ -236,9 +226,15 @@ function SheetBreadcrumb({
   );
 }
 
-/** Util: class yang diterapkan ke SheetContent layer 1 saat drawer layer 2 terbuka. */
-function sheetPushedProps(pushed: boolean) {
-  return { "data-pushed": pushed ? "true" : "false" } as const;
+/**
+ * Bekas util efek "terdorong" dari mode drawer. Sheet sekarang tampil sebagai
+ * modal biasa (lihat SheetContent) yang menumpuk seperti dialog-di-atas-dialog,
+ * jadi tidak butuh efek dorong lagi — dibiarkan sebagai no-op supaya call site
+ * lama (`{...sheetPushedProps(pushed)}`) tidak perlu ikut diubah satu-satu.
+ * ponytail: no-op shim, hapus pemanggilannya di call site kalau sempat beres-beres.
+ */
+function sheetPushedProps(_pushed: boolean) {
+  return {} as const;
 }
 
 export {

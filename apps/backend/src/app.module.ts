@@ -11,6 +11,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { PlanningsModule } from './plannings/plannings.module';
 import { MasterModule } from './master/master.module';
 import { AlokasiModule } from './alokasi/alokasi.module';
+import { PaketModule } from './paket/paket.module';
 import { ImportModule } from './import/import.module';
 import { WilayahModule } from './wilayah/wilayah.module';
 
@@ -24,6 +25,7 @@ import { WilayahModule } from './wilayah/wilayah.module';
     PlanningsModule,
     MasterModule,
     AlokasiModule,
+    PaketModule,
     ImportModule,
     WilayahModule,
   ],

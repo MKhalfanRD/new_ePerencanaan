@@ -74,21 +74,25 @@ interface AlokasiDetail {
   outcomeTarget?: string;
   outcomeUnit?: string;
   catatan?: string;
-  planning: { id: string; projectName: string };
-  ro: {
+  paket: {
     id: string;
     name: string;
-    code: string;
-    indikatorRO: { id: string; nama: string; satuan: string }[];
-    kro: {
+    planning: { id: string; projectName: string };
+    ro: {
       id: string;
       name: string;
       code: string;
-      kegiatan: {
+      indikatorRO: { id: string; nama: string; satuan: string }[];
+      kro: {
         id: string;
         name: string;
         code: string;
-        program: { id: string; name: string; code: string };
+        kegiatan: {
+          id: string;
+          name: string;
+          code: string;
+          program: { id: string; name: string; code: string };
+        };
       };
     };
   };
@@ -219,23 +223,38 @@ export function AlokasiExpandPanel({
 
   return (
     <div className="border-t bg-muted/10 px-4 py-5 space-y-5">
-      {/* Breadcrumb nomenklatur RO */}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {[
-          data.ro.kro.kegiatan.program.code,
-          data.ro.kro.kegiatan.code,
-          data.ro.kro.code,
-          data.ro.code,
-        ].map((code, i, arr) => (
-          <div key={i} className="flex items-center gap-1.5">
-            <span className="text-xs font-mono bg-background border px-2 py-0.5 rounded text-muted-foreground">
-              {code}
-            </span>
-            {i < arr.length - 1 && (
-              <ChevronRight size={11} className="text-muted-foreground" />
-            )}
-          </div>
-        ))}
+      {/* Breadcrumb nomenklatur RO + tombol Edit Alokasi — sengaja ditaruh
+          di sini (bukan sejajar "+ Lokasi" di footer) supaya jelas bedanya:
+          Edit di sini = ubah data alokasi, "+ Lokasi" di footer = tambah
+          titik lokasi. */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {[
+            data.paket.ro.kro.kegiatan.program.code,
+            data.paket.ro.kro.kegiatan.code,
+            data.paket.ro.kro.code,
+            data.paket.ro.code,
+          ].map((code, i, arr) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <span className="text-xs font-mono bg-background border px-2 py-0.5 rounded text-muted-foreground">
+                {code}
+              </span>
+              {i < arr.length - 1 && (
+                <ChevronRight size={11} className="text-muted-foreground" />
+              )}
+            </div>
+          ))}
+        </div>
+        {canManage && onEdit && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs shrink-0"
+            onClick={onEdit}
+          >
+            <Pencil size={11} className="mr-1.5" /> Edit Alokasi
+          </Button>
+        )}
       </div>
 
       {/* Total + Sumber Dana — grid 5-kolom flat (fund-chip), sesuai mockup.
@@ -271,7 +290,7 @@ export function AlokasiExpandPanel({
             Rincian Output
           </p>
           <div className="rounded-lg border bg-background p-3 space-y-1.5">
-            <p className="text-sm font-medium">{data.ro.name}</p>
+            <p className="text-sm font-medium">{data.paket.ro.name}</p>
             {data.outputTarget && (
               <p className="text-xs text-muted-foreground">
                 Target:{" "}
@@ -295,9 +314,9 @@ export function AlokasiExpandPanel({
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             Indikator RO
           </p>
-          {data.ro.indikatorRO.length > 0 ? (
+          {data.paket.ro.indikatorRO.length > 0 ? (
             <div className="rounded-lg border bg-background divide-y divide-border overflow-hidden">
-              {data.ro.indikatorRO.map((ind) => (
+              {data.paket.ro.indikatorRO.map((ind) => (
                 <div key={ind.id} className="px-3 py-2 text-xs">
                   <p className="font-medium">{ind.nama}</p>
                   <p className="text-muted-foreground">Satuan: {ind.satuan}</p>
@@ -386,21 +405,10 @@ export function AlokasiExpandPanel({
         )}
       </div>
 
-      {/* Footer aksi — Edit / + Lokasi / Riwayat sejajar, persis mockup.
-          Edit Alokasi & Hapus dulu ada sebagai ikon di baris ter-collapse;
-          sekarang Edit pindah ke sini (Hapus tetap di baris, lihat catatan
-          di komentar Props di atas). */}
+      {/* Footer aksi — + Lokasi / Riwayat. Edit Alokasi dipindah ke pojok
+          atas panel (dekat breadcrumb), supaya tidak bersebelahan dengan
+          "+ Lokasi" dan disangka tombol untuk edit lokasi. */}
       <div className="flex items-center gap-2 pt-1">
-        {canManage && onEdit && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 text-xs"
-            onClick={onEdit}
-          >
-            <Pencil size={12} className="mr-1.5" /> Edit
-          </Button>
-        )}
         {canManage && (
           <Button
             size="sm"

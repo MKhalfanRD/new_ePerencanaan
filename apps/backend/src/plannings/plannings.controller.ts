@@ -24,7 +24,6 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { PlanningsService } from './plannings.service';
 import { CreatePlanningDto } from './dto/create-planning.dto';
 import { UpdatePlanningDto } from './dto/update-planning.dto';
-import { ReviewPlanningDto } from './dto/review-planning.dto';
 import { QueryPlanningDto } from './dto/query-planning.dto';
 
 @ApiTags('Plannings')
@@ -56,25 +55,21 @@ export class PlanningsController {
     return this.planningsService.findOne(id, user);
   }
 
-  @ApiOperation({ summary: 'Submit planning ke verifikator' })
-  @Roles('SATKER')
-  @Patch(':id/submit')
-  submit(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.planningsService.submit(id, user);
+  @ApiOperation({ summary: 'Setujui planning (DRAFT → APPROVED)' })
+  @Roles('ADMINISTRATOR')
+  @Patch(':id/approve')
+  approve(@Param('id') id: string) {
+    return this.planningsService.approve(id);
   }
 
-  @ApiOperation({ summary: 'Review planning: approve / revision / reject' })
-  @Roles('VERIFICATOR', 'ADMINISTRATOR')
-  @Patch(':id/review')
-  review(
-    @Param('id') id: string,
-    @Body() dto: ReviewPlanningDto,
-    @CurrentUser() user: any,
-  ) {
-    return this.planningsService.review(id, dto.action, dto.catatan, user);
+  @ApiOperation({ summary: 'Kembalikan planning ke draft (APPROVED → DRAFT)' })
+  @Roles('ADMINISTRATOR')
+  @Patch(':id/unapprove')
+  unapprove(@Param('id') id: string) {
+    return this.planningsService.unapprove(id);
   }
 
-  @ApiOperation({ summary: 'Edit planning (hanya DRAFT/REVISION)' })
+  @ApiOperation({ summary: 'Edit planning (hanya DRAFT)' })
   @Roles('SATKER', 'ADMINISTRATOR')
   @Patch(':id')
   update(

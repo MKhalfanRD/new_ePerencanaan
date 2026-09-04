@@ -11,11 +11,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 export class CreateAlokasiDto {
   @ApiProperty()
   @IsString()
-  planningId: string;
-
-  @ApiProperty()
-  @IsString()
-  roId: string;
+  paketId: string;
 
   @ApiProperty()
   @IsInt()

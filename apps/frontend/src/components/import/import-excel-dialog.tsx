@@ -56,17 +56,15 @@ interface ExistingPlanning {
   namaProyek: string;
   balaiName: string;
   existingId: string;
-  existingAlokasiCount: number;
+  existingPaketCount: number;
   existingTotal: number;
-  newAlokasiCount: number;
+  newPaketCount: number;
   newTotal: number;
 }
 interface ParseError {
-  sheetName: string;
   excelRowNumber: number;
   namaProyek: string;
   balaiName: string;
-  tahun: number;
   reason: string;
 }
 
@@ -94,7 +92,7 @@ interface CommitResult {
   createdPlanning: number;
   updatedPlanning: number;
   skippedPlanning: number;
-  createdAlokasi: number;
+  createdPaket: number;
   skipped: number;
   commitErrors: ParseError[];
 }
@@ -117,22 +115,13 @@ const formatRupiah = (val: number) =>
 
 function downloadErrorsToExcel(errors: ParseError[], filename: string) {
   const rows = errors.map((e) => ({
-    Sheet: e.sheetName,
     "Baris Excel": e.excelRowNumber,
     "Nama Proyek": e.namaProyek,
     Balai: e.balaiName,
-    Tahun: e.tahun || "-",
     "Alasan Gagal": e.reason,
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = [
-    { wch: 10 },
-    { wch: 12 },
-    { wch: 40 },
-    { wch: 30 },
-    { wch: 8 },
-    { wch: 50 },
-  ];
+  ws["!cols"] = [{ wch: 12 }, { wch: 40 }, { wch: 30 }, { wch: 50 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Data Error");
   XLSX.writeFile(wb, `${filename}-${Date.now()}.xlsx`);
@@ -141,10 +130,10 @@ function downloadErrorsToExcel(errors: ParseError[], filename: string) {
 // Tabel error dengan pagination — supaya tidak crash render ribuan baris
 function ErrorTable({
   errors,
-  showBalaiTahun = true,
+  showBalai = true,
 }: {
   errors: ParseError[];
-  showBalaiTahun?: boolean;
+  showBalai?: boolean;
 }) {
   const [page, setPage] = useState(1);
   const perPage = 25;
@@ -160,14 +149,10 @@ function ErrorTable({
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-red-50">
             <tr>
-              <th className="text-left p-2 font-medium">Sheet</th>
               <th className="text-left p-2 font-medium">Baris</th>
               <th className="text-left p-2 font-medium">Proyek</th>
-              {showBalaiTahun && (
+              {showBalai && (
                 <th className="text-left p-2 font-medium">Balai</th>
-              )}
-              {showBalaiTahun && (
-                <th className="text-left p-2 font-medium">Tahun</th>
               )}
               <th className="text-left p-2 font-medium">Alasan</th>
             </tr>
@@ -175,17 +160,15 @@ function ErrorTable({
           <tbody className="divide-y">
             {pageData.map((e, i) => (
               <tr key={i}>
-                <td className="p-2 text-muted-foreground">{e.sheetName}</td>
                 <td className="p-2 text-muted-foreground">
                   #{e.excelRowNumber}
                 </td>
                 <td className="p-2 truncate max-w-[120px]">{e.namaProyek}</td>
-                {showBalaiTahun && (
+                {showBalai && (
                   <td className="p-2 truncate max-w-[100px] text-muted-foreground">
                     {e.balaiName}
                   </td>
                 )}
-                {showBalaiTahun && <td className="p-2">{e.tahun || "-"}</td>}
                 <td className="p-2 text-red-600">{e.reason}</td>
               </tr>
             ))}
@@ -248,6 +231,14 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
   );
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  // DB.xlsx tidak punya kolom Tahun/Status Rencana-Realisasi (satu file =
+  // satu snapshot anggaran) — dipilih sekali untuk seluruh batch import.
+  const [importTahun, setImportTahun] = useState(
+    new Date().getFullYear().toString(),
+  );
+  const [importStatus, setImportStatus] = useState<"RENCANA" | "REALISASI">(
+    "RENCANA",
+  );
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [resolutions, setResolutions] = useState<Record<string, Resolution>>(
     {},
@@ -365,6 +356,8 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
         sessionId: preview.sessionId,
         balaiResolutions: Object.values(resolutions),
         planningResolutions,
+        tahun: Number(importTahun),
+        status: importStatus,
       });
       setResult(res.data);
       setStep("done");
@@ -428,7 +421,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
         <DialogHeader className="px-8 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet size={20} className="text-primary" />
-            Import Planning dari Excel
+            Import Proyek dari Excel
           </DialogTitle>
           <p className="text-sm text-muted-foreground mt-1">
             {step === "upload" &&
@@ -472,7 +465,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   {file ? file.name : "Klik atau seret file Excel ke sini"}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Format .xlsx atau .xls, sheet 7691/7692/7693/7694
+                  Format .xlsx sesuai struktur DB.xlsx (kolom Proyek dan Paket)
                 </p>
               </div>
 
@@ -506,6 +499,39 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   meminta konfirmasi sebelum data disimpan.
                 </p>
               </div>
+
+              {/* DB.xlsx tidak punya kolom Tahun/Status — dipilih sekali untuk
+                  seluruh file yang diimpor */}
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Tahun Anggaran
+                  </label>
+                  <Input
+                    type="number"
+                    value={importTahun}
+                    onChange={(e) => setImportTahun(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Status Alokasi
+                  </label>
+                  <Select
+                    value={importStatus}
+                    onValueChange={(v) => setImportStatus(v as any)}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="RENCANA">Rencana</SelectItem>
+                      <SelectItem value="REALISASI">Realisasi</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
           )}
 
@@ -518,7 +544,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                     {preview.summary.totalPlanning}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Total Planning
+                    Total Proyek
                   </p>
                 </div>
                 <div className="rounded-lg border p-3 text-center">
@@ -540,7 +566,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                     {preview.summary.totalRowsValid}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Alokasi Valid
+                    Paket Valid
                   </p>
                 </div>
               </div>
@@ -566,7 +592,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                     <div className="border-t border-red-200 bg-white">
                       <ErrorTable
                         errors={preview.parseErrors}
-                        showBalaiTahun={false}
+                        showBalai={false}
                       />
                       <div className="p-2 border-t border-red-200">
                         <Button
@@ -774,7 +800,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                               Data Lama
                             </p>
                             <p className="font-semibold text-sm">
-                              {ep.existingAlokasiCount} alokasi · Rp{" "}
+                              {ep.existingPaketCount} paket · Rp{" "}
                               {formatRupiah(ep.existingTotal)}
                             </p>
                           </div>
@@ -783,7 +809,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                               Data Baru (Excel)
                             </p>
                             <p className="font-semibold text-sm">
-                              {ep.newAlokasiCount} alokasi · Rp{" "}
+                              {ep.newPaketCount} paket · Rp{" "}
                               {formatRupiah(ep.newTotal)}
                             </p>
                           </div>
@@ -958,7 +984,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
               <Button variant="outline" onClick={handleClose}>
                 Batal
               </Button>
-              <Button onClick={handleUpload} disabled={!file || uploading}>
+              <Button onClick={handleUpload} disabled={!file || !importTahun || uploading}>
                 {uploading ? (
                   <Loader2 size={15} className="mr-2 animate-spin" />
                 ) : (

@@ -17,6 +17,7 @@ import {
   SheetBody,
   SheetFooter,
   SheetBreadcrumb,
+  SheetTitle,
 } from "@/components/ui/sheet";
 import {
   Select,
@@ -26,12 +27,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import api from "@/lib/api";
-import { RO } from "@/types";
 
 interface AlokasiLike {
   id: string;
-  roId?: string;
-  ro?: { id: string };
   tahun: number;
   status: "RENCANA" | "REALISASI";
   rm: string | number;
@@ -46,8 +44,12 @@ interface AlokasiLike {
   catatan?: string;
 }
 
+// Input number kosong via valueAsNumber jadi NaN, bukan undefined —
+// z.number().optional() menolak NaN, gagalnya senyap (lihat bug submit
+// planning-form-dialog.tsx yang sama).
+const toOptionalNumber = (v: string) => (v === "" ? undefined : Number(v));
+
 const schema = z.object({
-  roId: z.string().min(1, "RO wajib dipilih"),
   tahun: z.number().min(2020),
   status: z.enum(["RENCANA", "REALISASI"]),
   rm: z.number(),
@@ -68,12 +70,15 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  planningId: string;
+  paketId: string;
+  /** Satuan resmi RO paket ini (dari referensi 1.xlsx) — mengunci field
+   * Satuan Output Target, bukan input teks bebas. */
+  roSatuan?: string | null;
   editData?: AlokasiLike | null;
   /** Nama proyek — dipakai di breadcrumb header. */
   projectName?: string;
   /**
-   * Klik segmen "Daftar Planning" di breadcrumb — menutup Sheet lapis-2 ini
+   * Klik segmen "Daftar Proyek" di breadcrumb — menutup Sheet lapis-2 ini
    * SEKALIGUS Sheet lapis-1 di baliknya (kembali ke daftar). Opsional: kalau
    * tidak disediakan, segmen tersebut tidak clickable.
    */
@@ -84,13 +89,12 @@ export function AlokasiFormDialog({
   open,
   onClose,
   onSuccess,
-  planningId,
+  paketId,
+  roSatuan,
   editData,
   projectName,
   onNavigateToList,
 }: Props) {
-  const [roList, setROList] = useState<RO[]>([]);
-  const [loadingMaster, setLoadingMaster] = useState(false);
   const isEdit = !!editData;
 
   const {
@@ -114,18 +118,8 @@ export function AlokasiFormDialog({
   });
 
   useEffect(() => {
-    if (!open) return;
-    setLoadingMaster(true);
-    api
-      .get("/master/ro")
-      .then((res) => setROList(res.data))
-      .finally(() => setLoadingMaster(false));
-  }, [open]);
-
-  useEffect(() => {
     if (editData) {
       reset({
-        roId: editData.roId || editData.ro?.id || "",
         tahun: editData.tahun,
         status: editData.status,
         rm: Number(editData.rm),
@@ -136,7 +130,9 @@ export function AlokasiFormDialog({
         outputTarget: editData.outputTarget
           ? Number(editData.outputTarget)
           : undefined,
-        outputUnit: editData.outputUnit || "",
+        // Satuan ikut RO paket (sumber kebenaran) — fallback ke nilai lama
+        // kalau RO belum punya satuan resmi di master data.
+        outputUnit: roSatuan || editData.outputUnit || "",
         outcomeTarget: editData.outcomeTarget
           ? Number(editData.outcomeTarget)
           : undefined,
@@ -152,17 +148,22 @@ export function AlokasiFormDialog({
         pln: 0,
         sbsn: 0,
         kpbu: 0,
+        outputUnit: roSatuan || "",
       });
     }
-  }, [editData, open]);
+  }, [editData, open, roSatuan]);
 
   const onSubmit = async (data: FormData) => {
     try {
       if (isEdit) {
-        await api.patch(`/alokasi/${editData!.id}`, data);
+        // tahun & status sengaja tidak ada di UpdateAlokasiDto (immutable
+        // setelah dibuat) — backend forbidNonWhitelisted, jadi harus dibuang
+        // dari payload di sini, bukan cuma disable di UI.
+        const { tahun, status, ...editable } = data;
+        await api.patch(`/alokasi/${editData!.id}`, editable);
         toast.success("Alokasi berhasil diperbarui");
       } else {
-        await api.post("/alokasi", { ...data, planningId });
+        await api.post("/alokasi", { ...data, paketId });
         toast.success("Alokasi berhasil ditambahkan");
       }
       onSuccess();
@@ -191,14 +192,14 @@ export function AlokasiFormDialog({
         <SheetHeader className="gap-1.5">
           <SheetBreadcrumb
             items={[
-              { label: "Daftar Planning", onClick: onNavigateToList },
+              { label: "Daftar Proyek", onClick: onNavigateToList },
               { label: projectName || "Proyek", onClick: onClose },
               { label: currentPageLabel },
             ]}
           />
-          <h2 className="text-base font-semibold leading-snug">
+          <SheetTitle className="text-base leading-snug">
             {isEdit ? "Edit Alokasi" : "Tambah Alokasi Baru"}
-          </h2>
+          </SheetTitle>
           <p className="text-xs text-muted-foreground">
             {isEdit
               ? "Perubahan akan tercatat di histori alokasi"
@@ -207,52 +208,7 @@ export function AlokasiFormDialog({
         </SheetHeader>
 
         <SheetBody className="px-5 py-5 space-y-5">
-          {loadingMaster ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <>
-              {/* RO */}
-              <div className="space-y-2">
-                <Label>
-                  RO (Rincian Output){" "}
-                  <span className="text-destructive">*</span>
-                </Label>
-                <Select
-                  value={watch("roId")}
-                  onValueChange={(v) => setValue("roId", v)}
-                  disabled={isEdit}
-                >
-                  <SelectTrigger className="w-full h-10">
-                    <SelectValue placeholder="Pilih RO" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {roList.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        <span className="font-medium">
-                          {r.kro.kegiatan.program.code} · {r.kro.code} ·{" "}
-                          {r.code}
-                        </span>
-                        <span className="text-muted-foreground ml-2 text-xs">
-                          — {r.name}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.roId && (
-                  <p className="text-destructive text-xs">
-                    {errors.roId.message}
-                  </p>
-                )}
-                {isEdit && (
-                  <p className="text-xs text-muted-foreground">
-                    RO tidak dapat diubah setelah dibuat
-                  </p>
-                )}
-              </div>
-
+          <>
               {/* Tahun + Status */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
@@ -322,11 +278,18 @@ export function AlokasiFormDialog({
                       type="number"
                       className="h-10"
                       placeholder="0"
-                      {...register("outputTarget", { valueAsNumber: true })}
+                      {...register("outputTarget", {
+                        setValueAs: toOptionalNumber,
+                      })}
                     />
+                    {/* Satuan ikut RO paket (referensi 1.xlsx) — dikunci,
+                        bukan input bebas, supaya tidak salah ketik/beda
+                        istilah dari satuan resmi. */}
                     <Input
-                      className="h-10 w-24 shrink-0"
+                      className={`h-10 w-24 shrink-0 ${roSatuan ? "bg-muted" : ""}`}
                       placeholder="Satuan"
+                      readOnly={!!roSatuan}
+                      title={roSatuan ? "Satuan mengikuti RO" : undefined}
                       {...register("outputUnit")}
                     />
                   </div>
@@ -338,7 +301,9 @@ export function AlokasiFormDialog({
                       type="number"
                       className="h-10"
                       placeholder="0"
-                      {...register("outcomeTarget", { valueAsNumber: true })}
+                      {...register("outcomeTarget", {
+                        setValueAs: toOptionalNumber,
+                      })}
                     />
                     <Input
                       className="h-10 w-24 shrink-0"
@@ -358,8 +323,7 @@ export function AlokasiFormDialog({
                   {...register("catatan")}
                 />
               </div>
-            </>
-          )}
+          </>
         </SheetBody>
 
         <SheetFooter>
@@ -368,7 +332,7 @@ export function AlokasiFormDialog({
           </Button>
           <Button
             onClick={handleSubmit(onSubmit)}
-            disabled={isSubmitting || loadingMaster}
+            disabled={isSubmitting}
           >
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isEdit ? "Simpan Perubahan" : "Tambah Alokasi"}

@@ -60,7 +60,7 @@ function SelectTrigger({
 function SelectContent({
   className,
   children,
-  position = "item-aligned",
+  position = "popper",
   align = "center",
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
@@ -87,6 +87,45 @@ function SelectContent({
         <SelectScrollDownButton />
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>
+  )
+}
+
+/**
+ * Kotak pencarian di dalam SelectContent — dipakai saat opsi > 20 biar
+ * tidak harus scroll satu-satu. Taruh sebagai child PERTAMA SelectContent,
+ * lalu filter daftar SelectItem di pemanggil berdasarkan `value`-nya.
+ * onKeyDown di-stop-propagation supaya ketikan tidak direbut typeahead
+ * bawaan Radix Select.
+ */
+function SelectSearchBox({
+  value,
+  onChange,
+  placeholder = "Cari...",
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+}) {
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  return (
+    <div className="sticky top-0 z-10 -mx-1 -mt-1 mb-1 border-b bg-popover p-1.5">
+      <input
+        ref={inputRef}
+        autoFocus
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value)
+          // Radix Select punya roving-tabindex sendiri yang merebut fokus ke
+          // item yang di-highlight tiap daftar SelectItem berubah (mis. hasil
+          // filter bertambah/berkurang) — refocus lagi setelah render commit
+          // supaya ketikan/backspace berikutnya tidak jatuh ke tempat lain.
+          setTimeout(() => inputRef.current?.focus(), 0)
+        }}
+        onKeyDown={(e) => e.stopPropagation()}
+        placeholder={placeholder}
+        className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      />
+    </div>
   )
 }
 
@@ -186,6 +225,7 @@ export {
   SelectLabel,
   SelectScrollDownButton,
   SelectScrollUpButton,
+  SelectSearchBox,
   SelectSeparator,
   SelectTrigger,
   SelectValue,

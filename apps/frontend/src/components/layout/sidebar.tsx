@@ -6,7 +6,6 @@ import {
   LayoutDashboard,
   FolderKanban,
   Users,
-  ClipboardCheck,
   LogOut,
   ChevronRight,
   Database,
@@ -29,16 +28,10 @@ const navItems = [
     roles: ["ADMINISTRATOR", "SATKER", "VERIFICATOR"],
   },
   {
-    label: "Planning",
+    label: "Proyek",
     href: "/plannings",
     icon: FolderKanban,
     roles: ["ADMINISTRATOR", "SATKER", "VERIFICATOR"],
-  },
-  {
-    label: "Review",
-    href: "/review",
-    icon: ClipboardCheck,
-    roles: ["VERIFICATOR", "ADMINISTRATOR"],
   },
   {
     label: "Pengguna",

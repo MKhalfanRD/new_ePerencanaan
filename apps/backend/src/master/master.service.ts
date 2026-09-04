@@ -36,12 +36,52 @@ export class MasterService {
       orderBy: { name: 'asc' },
     });
   }
-  getMajorProjects() {
-    return this.prisma.majorProject.findMany({ orderBy: { name: 'asc' } });
+  getKomponen() {
+    return this.prisma.komponen.findMany({
+      include: { ro: true },
+      orderBy: { name: 'asc' },
+    });
   }
-  getTindakLanjut() {
-    return this.prisma.tindakLanjut.findMany({ orderBy: { name: 'asc' } });
+  // Indikator RENJA (lihat docs-planning/fitur-paket/04-rekonsiliasi-referensi.md)
+  getPrioritasNasional() {
+    return this.prisma.prioritasNasional.findMany({
+      include: {
+        programPrioritas: { include: { kegiatanPrioritas: true } },
+      },
+      orderBy: { code: 'asc' },
+    });
   }
+  getProgramPrioritas() {
+    return this.prisma.programPrioritas.findMany({
+      include: { prioritasNasional: true },
+      orderBy: { code: 'asc' },
+    });
+  }
+  getKegiatanPrioritas() {
+    return this.prisma.kegiatanPrioritas.findMany({
+      include: {
+        programPrioritas: { include: { prioritasNasional: true } },
+      },
+      orderBy: { code: 'asc' },
+    });
+  }
+  getPkpn() {
+    return this.prisma.pkpn.findMany({ orderBy: { name: 'asc' } });
+  }
+  getTematikRenja() {
+    return this.prisma.tematikRenja.findMany({ orderBy: { name: 'asc' } });
+  }
+  getSasaranProgram() {
+    return this.prisma.sasaranProgram.findMany({
+      include: { program: true, indikator: true },
+    });
+  }
+  getSasaranKegiatan() {
+    return this.prisma.sasaranKegiatan.findMany({
+      include: { kegiatan: true, indikator: true },
+    });
+  }
+
   getWilayahSungai() {
     return this.prisma.wilayahSungai.findMany({ orderBy: { name: 'asc' } });
   }
@@ -148,28 +188,135 @@ export class MasterService {
     };
   }
 
-  // ========== MAJOR PROJECT ==========
-  createMajorProject(dto: any) {
-    return this.prisma.majorProject.create({ data: dto });
+  // ========== KOMPONEN ==========
+  createKomponen(dto: any) {
+    return this.prisma.komponen.create({ data: dto });
   }
-  updateMajorProject(id: string, dto: any) {
-    return this.prisma.majorProject.update({ where: { id }, data: dto });
+  updateKomponen(id: string, dto: any) {
+    return this.prisma.komponen.update({ where: { id }, data: dto });
   }
-  async deleteMajorProject(id: string) {
-    await this.prisma.majorProject.delete({ where: { id } });
-    return { message: 'Major Project berhasil dihapus' };
+  async deleteKomponen(id: string) {
+    await this.prisma.komponen.delete({ where: { id } });
+    return { message: 'Komponen berhasil dihapus' };
+  }
+  async bulkDeleteKomponen(ids: string[]) {
+    const result = await this.prisma.komponen.deleteMany({
+      where: { id: { in: ids } },
+    });
+    return {
+      message: `${result.count} Komponen berhasil dihapus`,
+      count: result.count,
+    };
   }
 
-  // ========== TINDAK LANJUT ==========
-  createTindakLanjut(dto: any) {
-    return this.prisma.tindakLanjut.create({ data: dto });
+  // ========== PRIORITAS NASIONAL (PN) ==========
+  createPrioritasNasional(dto: any) {
+    return this.prisma.prioritasNasional.create({ data: dto });
   }
-  updateTindakLanjut(id: string, dto: any) {
-    return this.prisma.tindakLanjut.update({ where: { id }, data: dto });
+  updatePrioritasNasional(id: string, dto: any) {
+    return this.prisma.prioritasNasional.update({ where: { id }, data: dto });
   }
-  async deleteTindakLanjut(id: string) {
-    await this.prisma.tindakLanjut.delete({ where: { id } });
-    return { message: 'Tindak Lanjut berhasil dihapus' };
+  async deletePrioritasNasional(id: string) {
+    await this.prisma.prioritasNasional.delete({ where: { id } });
+    return { message: 'Prioritas Nasional berhasil dihapus' };
+  }
+
+  // ========== PROGRAM PRIORITAS (PP) ==========
+  createProgramPrioritas(dto: any) {
+    return this.prisma.programPrioritas.create({ data: dto });
+  }
+  updateProgramPrioritas(id: string, dto: any) {
+    return this.prisma.programPrioritas.update({ where: { id }, data: dto });
+  }
+  async deleteProgramPrioritas(id: string) {
+    await this.prisma.programPrioritas.delete({ where: { id } });
+    return { message: 'Program Prioritas berhasil dihapus' };
+  }
+
+  // ========== KEGIATAN PRIORITAS (KP) ==========
+  createKegiatanPrioritas(dto: any) {
+    return this.prisma.kegiatanPrioritas.create({ data: dto });
+  }
+  updateKegiatanPrioritas(id: string, dto: any) {
+    return this.prisma.kegiatanPrioritas.update({ where: { id }, data: dto });
+  }
+  async deleteKegiatanPrioritas(id: string) {
+    await this.prisma.kegiatanPrioritas.delete({ where: { id } });
+    return { message: 'Kegiatan Prioritas berhasil dihapus' };
+  }
+
+  // ========== PKPN ==========
+  createPkpn(dto: any) {
+    return this.prisma.pkpn.create({ data: dto });
+  }
+  updatePkpn(id: string, dto: any) {
+    return this.prisma.pkpn.update({ where: { id }, data: dto });
+  }
+  async deletePkpn(id: string) {
+    await this.prisma.pkpn.delete({ where: { id } });
+    return { message: 'PKPN berhasil dihapus' };
+  }
+
+  // ========== TEMATIK RENJA ==========
+  createTematikRenja(dto: any) {
+    return this.prisma.tematikRenja.create({ data: dto });
+  }
+  updateTematikRenja(id: string, dto: any) {
+    return this.prisma.tematikRenja.update({ where: { id }, data: dto });
+  }
+  async deleteTematikRenja(id: string) {
+    await this.prisma.tematikRenja.delete({ where: { id } });
+    return { message: 'Tematik RENJA berhasil dihapus' };
+  }
+
+  // ========== SASARAN PROGRAM (SP) & INDIKATORNYA (ISP) ==========
+  createSasaranProgram(dto: any) {
+    return this.prisma.sasaranProgram.create({ data: dto });
+  }
+  updateSasaranProgram(id: string, dto: any) {
+    return this.prisma.sasaranProgram.update({ where: { id }, data: dto });
+  }
+  async deleteSasaranProgram(id: string) {
+    await this.prisma.sasaranProgram.delete({ where: { id } });
+    return { message: 'Sasaran Program berhasil dihapus' };
+  }
+  createIndikatorSasaranProgram(dto: any) {
+    return this.prisma.indikatorSasaranProgram.create({ data: dto });
+  }
+  updateIndikatorSasaranProgram(id: string, dto: any) {
+    return this.prisma.indikatorSasaranProgram.update({
+      where: { id },
+      data: dto,
+    });
+  }
+  async deleteIndikatorSasaranProgram(id: string) {
+    await this.prisma.indikatorSasaranProgram.delete({ where: { id } });
+    return { message: 'Indikator Sasaran Program berhasil dihapus' };
+  }
+
+  // ========== SASARAN KEGIATAN (SK) & INDIKATORNYA (ISK) ==========
+  createSasaranKegiatan(dto: any) {
+    return this.prisma.sasaranKegiatan.create({ data: dto });
+  }
+  updateSasaranKegiatan(id: string, dto: any) {
+    return this.prisma.sasaranKegiatan.update({ where: { id }, data: dto });
+  }
+  async deleteSasaranKegiatan(id: string) {
+    await this.prisma.sasaranKegiatan.delete({ where: { id } });
+    return { message: 'Sasaran Kegiatan berhasil dihapus' };
+  }
+  createIndikatorSasaranKegiatan(dto: any) {
+    return this.prisma.indikatorSasaranKegiatan.create({ data: dto });
+  }
+  updateIndikatorSasaranKegiatan(id: string, dto: any) {
+    return this.prisma.indikatorSasaranKegiatan.update({
+      where: { id },
+      data: dto,
+    });
+  }
+  async deleteIndikatorSasaranKegiatan(id: string) {
+    await this.prisma.indikatorSasaranKegiatan.delete({ where: { id } });
+    return { message: 'Indikator Sasaran Kegiatan berhasil dihapus' };
   }
 
   // ========== WILAYAH SUNGAI ==========

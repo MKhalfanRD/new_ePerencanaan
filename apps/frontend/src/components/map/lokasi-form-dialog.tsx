@@ -15,6 +15,7 @@ import {
   SheetBody,
   SheetFooter,
   SheetBreadcrumb,
+  SheetTitle,
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import api from "@/lib/api";
@@ -214,15 +215,15 @@ export function LokasiFormDialog({
         <SheetHeader className="gap-1.5">
           <SheetBreadcrumb
             items={[
-              { label: "Daftar Planning", onClick: onNavigateToList },
+              { label: "Daftar Proyek", onClick: onNavigateToList },
               { label: projectName || "Proyek", onClick: onClose },
               { label: currentPageLabel },
             ]}
           />
-          <h2 className="text-base font-semibold leading-snug flex items-center gap-2">
+          <SheetTitle className="text-base leading-snug flex items-center gap-2">
             <MapPin size={16} className="text-primary" />
             {isEdit ? "Edit Lokasi" : "Tambah Lokasi Baru"}
-          </h2>
+          </SheetTitle>
           <p className="text-xs text-muted-foreground">
             Tentukan lokasi di peta dan lengkapi informasi wilayah administratif
           </p>
@@ -265,6 +266,32 @@ export function LokasiFormDialog({
               </div>
             </div>
           )}
+
+          {/* Garis/Poligon tidak punya satu lat/long — yang disimpan &
+              ditampilkan adalah SELURUH titik yang digambar (array
+              [lat,lng] per titik), ditampilkan sebagai daftar supaya
+              kelihatan datanya benar-benar bertambah tiap klik di peta. */}
+          {(tipeKoordinat === "GARIS" || tipeKoordinat === "POLIGON") &&
+            coordinates.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">
+                  {coordinates.length} Titik Koordinat
+                </Label>
+                <div className="max-h-24 overflow-y-auto rounded-lg border text-xs divide-y">
+                  {coordinates.map(([lat, lng], i) => (
+                    <div
+                      key={i}
+                      className="flex justify-between px-2.5 py-1.5 text-muted-foreground"
+                    >
+                      <span>#{i + 1}</span>
+                      <span>
+                        {lat.toFixed(6)}, {lng.toFixed(6)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
           <Separator />
 

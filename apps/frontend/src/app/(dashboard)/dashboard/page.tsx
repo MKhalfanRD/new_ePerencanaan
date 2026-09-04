@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   FileText,
-  Clock,
   CheckCircle2,
   PenLine,
   Wallet,
@@ -66,8 +65,6 @@ export default function DashboardPage() {
   }, []);
 
   const isSatker = user?.role === "SATKER";
-  const isReviewer =
-    user?.role === "VERIFICATOR" || user?.role === "ADMINISTRATOR";
 
   // Periode aktif diturunkan dari data yang sudah ada (tidak nambah request) —
   // setiap Planning bawa objek `periode` lengkap dgn flag isActive.
@@ -77,21 +74,20 @@ export default function DashboardPage() {
   }, [plannings]);
 
   const statusCounts = useMemo(() => {
-    const base: Record<string, number> = {
-      DRAFT: 0,
-      SUBMITTED: 0,
-      REVISION: 0,
-      REJECTED: 0,
-      APPROVED: 0,
-    };
+    const base: Record<string, number> = { DRAFT: 0, APPROVED: 0 };
     for (const p of plannings) base[p.status] = (base[p.status] ?? 0) + 1;
     return base;
   }, [plannings]);
 
+  // Semua Alokasi lintas Paket milik satu Planning — dipakai berulang di
+  // bawah, jadi 1 helper alih-alih guard `?? []` berulang tiap tempat.
+  const alokasiOf = (p: Planning) => (p.paket ?? []).flatMap((pk) => pk.alokasi);
+
   const totalLokasi = useMemo(
     () =>
       plannings.reduce(
-        (acc, p) => acc + p.alokasi.reduce((s, a) => s + a.lokasi.length, 0),
+        (acc, p) =>
+          acc + alokasiOf(p).reduce((s, a) => s + a.lokasi.length, 0),
         0,
       ),
     [plannings],
@@ -100,7 +96,7 @@ export default function DashboardPage() {
   // Rencana vs realisasi, plus rincian per sumber dana — meniru grid 5-kolom
   // flat yang sudah dipakai di alokasi-expand-panel.tsx supaya konsisten.
   const anggaran = useMemo(() => {
-    const semuaAlokasi = plannings.flatMap((p) => p.alokasi);
+    const semuaAlokasi = plannings.flatMap(alokasiOf);
     const rencana = semuaAlokasi.filter((a) => a.status === "RENCANA");
     const realisasi = semuaAlokasi.filter((a) => a.status === "REALISASI");
     const sum = (
@@ -133,7 +129,7 @@ export default function DashboardPage() {
   const perTahun = useMemo(() => {
     const map = new Map<number, number>();
     for (const p of plannings) {
-      for (const a of p.alokasi) {
+      for (const a of alokasiOf(p)) {
         if (a.status !== "RENCANA") continue;
         map.set(a.tahun, (map.get(a.tahun) ?? 0) + Number(a.total));
       }
@@ -159,7 +155,7 @@ export default function DashboardPage() {
   const kpiCards = [
     {
       key: "total",
-      title: "Total Planning",
+      title: "Total Proyek",
       value: plannings.length,
       icon: FileText,
       tone: "blue",
@@ -170,13 +166,6 @@ export default function DashboardPage() {
       value: statusCounts.DRAFT,
       icon: PenLine,
       tone: statusConfig.DRAFT.dotColor,
-    },
-    {
-      key: "submitted",
-      title: statusConfig.SUBMITTED.label,
-      value: statusCounts.SUBMITTED,
-      icon: Clock,
-      tone: statusConfig.SUBMITTED.dotColor,
     },
     {
       key: "approved",
@@ -222,14 +211,14 @@ export default function DashboardPage() {
           <Button asChild size="sm" className="gap-1.5 self-start sm:self-auto">
             <Link href="/plannings">
               <Plus size={15} />
-              Planning Baru
+              Proyek Baru
             </Link>
           </Button>
         )}
       </div>
 
       {/* KPI cards — aksen kiri tipis per warna status, bukan blok warna penuh */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {kpiCards.map((card) => (
           <Card key={card.key} className="border-l-4 border-l-transparent">
             <CardContent className="p-5">
@@ -417,32 +406,17 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
-            {isReviewer && (
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="w-full justify-between"
-              >
-                <Link href="/review">
-                  Buka antrean review
-                  <ArrowRight size={14} />
-                </Link>
-              </Button>
-            )}
-            {!isReviewer && (
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="w-full justify-between"
-              >
-                <Link href="/plannings">
-                  Lihat semua planning
-                  <ArrowRight size={14} />
-                </Link>
-              </Button>
-            )}
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="w-full justify-between"
+            >
+              <Link href="/plannings">
+                Lihat semua proyek
+                <ArrowRight size={14} />
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -450,7 +424,7 @@ export default function DashboardPage() {
       {/* Planning terbaru */}
       <Card>
         <CardHeader className="pb-3 flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Planning Terbaru</CardTitle>
+          <CardTitle className="text-base">Proyek Terbaru</CardTitle>
           <Link
             href="/plannings"
             className="text-xs font-medium text-blue-600 hover:underline flex items-center gap-1"
@@ -472,7 +446,7 @@ export default function DashboardPage() {
           ) : recentPlannings.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <FileText size={40} className="mx-auto mb-3 opacity-30" />
-              <p className="text-sm">Belum ada planning</p>
+              <p className="text-sm">Belum ada proyek</p>
             </div>
           ) : (
             <div className="divide-y">

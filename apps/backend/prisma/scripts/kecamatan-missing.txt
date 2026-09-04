@@ -1,0 +1,322 @@
+110110 Pasi Raja (Pasie Raja)
+110310 Rantau Peureulak (Ranto Peureulak)
+110313 Indra Makmu (Indra Makmur)
+110417 Laut Tawar (Lut Tawar)
+110501 Johan Pahwalan (Johan Pahlawan)
+110508 Pante Ceureumen (Pantai Ceuremen)
+110814 T. Jambo Aye (Tanah Jambo Aye)
+110822 Simpang Kramat (Keramat)
+110824 Pirak Timur
+110825 Geuredong Pase
+111012 Suro Makmur
+111307 Puteri Betung (Putri Betung)
+111310 Teripe Jaya (Tripe Jaya)
+111403 Setia Bhakti (Setia Bakti)
+111605 Kota Kualasinpang (Kota Kuala Simpang)
+120332 Angkola Muara Tais
+120501 Bahorok
+120518 Berandan Barat (Brandan Barat)
+120708 STM Hilir (Sinembah Tanjung Muda Hilir)
+120720 STM Hulu (Sinembah Tanjung Muda Hulu)
+120805 Panombeian Panei / Pane
+120810 Pamatang Sidamanik (Pematang Sidamanik)
+120815 Haranggaol Horisan (Haranggaol Horison)
+120820 Dolok Pardamean
+120826 Dolok Silou (Dolok Silau)
+120827 Silou Kahean
+120831 Pamatang Silima Huta (Pematang)
+121501 Sitelu Tali Urang Jehe (Sitellu)
+121504 Sitelu Tali Urang Julu (Sitellu)
+121706 Sianjar Mula Mula (Sianjur)
+121806 Bandar Khalipah / Khalifah
+122113 Barumun Baru
+122114 Ulu Sosa
+122115 Sosa Julu
+122116 Barumun Barat
+122117 Sosa Timur
+122201 Kotapinang (Kota Pinang)
+130307 Lubuak Tarok
+130308 Koto VII
+130401 X Koto (Sepuluh Koto)
+130412 Tanjuang Baru (Tanjung Baru)
+130414 Batipuah Selatan (Batipuh Selatan)
+130504 2 x 11 Enam Lingkuang
+130505 VII Koto Sungai Sarik
+130506 V Koto Kampung Dalam
+130507 Sungai Garingging
+130510 Ulakan Tapakih
+130511 Sintuak Toboh Gadang
+130614 Candung
+130707 Kapur IX/Sembilan
+130812 Duo Koto
+130906 Siberut Barat Daya
+131005 Sembilan Koto
+131106 Pauh Duo
+131202 Lembah Melintang
+137501 Guguak Panjang (Guguk Panjang)
+137604 Lamposi Tigo Nagori / Nagari
+140206 Siberida (Seberida)
+140208 Batang Gangsal (Batang Gansal)
+140710 Bangko Pusako / Pusaka
+147106 Rumbai Barat
+147108 Binawidya
+147113 Tuahmadani
+147114 Kulim
+147115 Rumbai Timur
+150117 Depati Tujuh
+150122 Tanah Cogok
+150123 Danau Kerinci Barat
+150218 Jangkat Timur (Sungai Tenang)
+150310 Cermin Nan Gedang / Gadang
+150311 Mandiangin Timur
+150803 Pasar Muaro Bungo (Pasar Muara Bungo)
+150810 Batin II Babeko (Bathin)
+160219 Pangkalan Lampam
+160303 Rambang Niru (Rambang Dangku)
+160308 Semende Darat Laut
+160309 Semende Darat Tengah
+160310 Semende Darat Ulu
+160326 Empat Petulai Dangku
+160327 Panang Enim
+160510 STL Ulu Terawas (Suku Tengah Lakitan Ulu Terawas)
+160514 BTS Ulu
+160615 Jirak Jaya
+160714 Air Salek
+160720 Karang Agung Ilir
+160721 Selat Penuguan
+167101 Ilir Barat Dua (Ilir Barat II)
+167102 Seberang Ulu Satu (Seberang Ulu I)
+167103 Seberang Ulu Dua (Seberang Ulu II)
+167104 Ilir Barat Satu (Ilir Barat I)
+167105 Ilir Timur Satu (Ilir Timur I)
+167106 Ilir Timur Dua (Ilir Timur II)
+167118 Ilir Timur Tiga
+167301 Lubuk Linggau Timur Satu (I)
+167302 Lubuk Linggau Barat Satu (I)
+167303 Lubuk Linggau Selatan Satu (I)
+167304 Lubuk Linggau Utara Satu (I)
+167305 Lubuk Linggau Timur Dua (II)
+167306 Lubuk Linggau Barat Dua (II)
+167307 Lubuk Linggau Selatan Dua (II)
+167308 Lubuk Linggau Utara Dua (II)
+170308 Giri Mulia (Giri Mulya)
+170408 Semidang Gumay / Gumai
+170613 Air Majunto
+170709 Tubei (Pelabai)
+170806 Kebawetan
+170911 Semidang Lagan
+180217 Way Pangubuan
+180715 Bandar Sribhawono (Bandar Sribawono)
+180722 Braja Selebah (Braja Slebah)
+180815 Umpu Semenguk
+180901 Gedong Tataan
+181310 Ngaras (Bengkunat Belimbing)
+181311 Bangkunat (Bengkunat)
+190302 Lepar (Lepar Pongok)
+210110 Telok Sebong (Teluk Sebong)
+210213 Selat Gelam
+210214 Sugie Besar
+210324 Pulau Seluan
+210411 Katang Bidare
+210412 Temiang Pesisir
+210413 Bakung Serumpun
+210508 Siantan Utara
+210509 Jemaja Barat
+210510 Kute Siantan
+320132 Klapanunggal
+320538 Bl. Limbangan (Blubur Limbangan)
+321517 Telagasari (Talagasari)
+327106 Tanah Sareal (Tanah Sereal)
+330402 Purworeja Klampok (Purworejo Klampok)
+330920 Gladagsari
+330922 Wonosamodro
+332402 Pageruyung (Pagerruyung)
+332604 Petungkriyono (Petungkriono)
+350704 Sumbermanjing Wetan
+351119 Sempol
+351316 Pejarakan (Pajarakan)
+351614 Gedeg
+352908 Giliginting (Gili Ginting)
+357102 Kota (Kediri Kota)
+360228 Cigemlong (Cigemblong)
+367206 Gerogol
+520316 Suwela (Suela)
+520321 Lenek
+527105 Selaprang (Selaparang)
+530423 Nanaet Duabesi
+530517 Pantar Baru Laut
+530518 Abad Selatan
+530609 Wotan Ulumando
+531111 Wulla Waijelu (Wula Waijelu)
+531307 Buyasuri
+531411 Loaholu
+531511 Pacar
+531512 Kuwus Barat
+531706 Umbu Ratu Nggay Tengah
+531902 Lamba Leda Selatan (Poco Ranaka)
+531908 Lamba Leda Timur (Poco Ranaka Timur)
+531910 Kota Komba Utara
+531911 Lamba Leda Utara
+531912 Congkar
+610208 Jongkat (Siantan)
+610306 Beduai (Beduwai)
+611102 Simpang Hilir
+611103 Teluk Batang
+611104 Pulau Maya (Pulau Maya Karimata)
+611105 Seponti
+611106 Kepulauan Karimata
+611202 Kuala Mandor B
+611203 Sungai Ambawang
+611204 Terentang
+611207 Rasau Jaya
+611208 Teluk Pakedai
+611209 Sungai Kakap
+617101 Pontianak Selatan
+617102 Pontianak Timur
+617103 Pontianak Barat
+617104 Pontianak Utara
+617105 Pontianak Kota
+617106 Pontianak Tenggara
+617201 Singkawang Tengah
+617202 Singkawang Barat
+617203 Singkawang Timur
+617204 Singkawang Utara
+617205 Singkawang Selatan
+620405 Gn. Bintang Awai (Gunung Bintang Awai)
+621302 Banua Lima
+630222 Pulaulaut Sigam
+630320 Cintapuri Darussalam
+631011 Kusan Tengah
+631012 Teluk Kepayang
+640103 Paser Belengkong (Pasir Belengkong)
+640208 Kota Bangun
+640213 Samboja (Semboja)
+640219 Kota Bangun Darat
+640220 Samboja Barat
+640718 Mook Manaar Bulatn
+640808 Kombeng (Kongbeng)
+650320 Lumbis Pansiangan
+650321 Lumbis Hulu
+710523 Suluun Tareran
+711101 Bolaang Uki
+720204 Pamona Puselemba
+720225 Lore Piore
+720410 Dako Pemean (Dako Pamean)
+730106 Pasimasunggu (Pasimassunggu)
+730110 Pasimasunggu Timur
+730205 Herlang (Hero Lange Lange)
+730503 Polongbangkeng Selatan (Polombangkeng)
+730504 Polongbangkeng Utara (Polombangkeng)
+730510 Kepulauan Tanakeke
+730511 Polongbangkeng Timur
+730512 Laikang
+730603 Tompobullu (Tompobulu)
+730613 Pattalasang (Pattallassang)
+730615 Bontolempangang
+730906 Malllawa (Mallawa)
+731202 Liliraja (Lili Riaja)
+731301 Sabangparu
+731510 Lansirang (Lanrisang)
+731705 Bua Ponrang (Bupon)
+731801 Saluputi (Saluputti)
+731819 Gandangbatu Sillanan (Gandang Batu Sillanan)
+731833 Sangalla Selatan
+732205 Rongkong (Limbong)
+732213 Sukamaju Selatan
+732214 Baebunta Selatan
+732215 Sabbang Selatan
+732604 Rindingallo
+732617 Bangkelekila
+740427 Siotapina (Siontapia / Siontapina)
+740617 Kepulauan Masaloka Raya
+741006 Wakorumba Utara
+750122 Talaga Jaya (Telaga Jaya)
+760216 Kep. Bala Balakang
+760405 Tutar (Tubbi Taramanu, Tutallu)
+760415 Allu (Alu)
+760506 Tammerodo Sendana (Tammeredo Sendana)
+810113 Pulau Haruku
+810306 Fordata (Yaru)
+810514 Siritaun Wida Timur
+810803 Mdona Hyera (Mndona Hiera)
+810804 Babar Barat (Pulau Pulau Babar)
+810805 Pulau-pulau Babar Timur
+810806 Wetar Selatan
+810807 Kisar Selatan (Pulau Pulau Terselatan)
+810808 Pulau Leti (Letti Moa Lakor)
+810812 Pulau Lakor
+810816 Kepulauan Roma (Romang)
+810902 Waesama
+817103 Baguala
+817204 Pulau-Pulau Kur
+820107 Ibu Utara
+820110 Loloda Tengah
+820418 Kepulauan Botanglomang
+820706 Pulau Rao
+910312 Ebungfao (Ebungfau / Ebungfa)
+910314 Nambluong
+910507 Yapen Utara
+910510 Kepulauan Ambai
+910515 Anotaurei
+910517 Nusawani
+912002 Mamberamo Hulu
+912003 Rufaer
+912005 Mamberamo Hilir
+920217 Tanah Rubuh
+920703 Teluk Duairi
+920708 Rasiei
+920803 Teluk Arguni Atas
+921103 Neney
+921209 Minyambaouw
+930110 Elikobal
+930121 Padua
+930122 Kontuar
+930219 Ki
+930302 Mambioman Bapai
+930402 Atsj (Atsy)
+930419 Betcbamu
+930424 Tomor Birip
+930425 Sor Ep
+940113 Moora
+940304 Bogabaida
+940311 Wegee Muka
+940318 Youtadi
+940319 Baya Biru
+940320 Deiyai Miyo
+940321 Dogomo
+940507 Agandugume
+940516 Mage'abume
+940707 Ugimba
+940708 Tomosiga
+950118 Taelarek
+950119 Itlay Hisage
+950131 Piramid
+950135 Welesi
+950140 Wesaput
+950203 Okbibab
+950213 Kalomdol
+950216 Ok Aom
+950223 Okbemtau
+950230 Jetfa
+950232 Eipumek
+950406 Wunim
+950412 Konda/ Kondaga
+950429 Wari/Taiyeve II
+950433 Wakuwo
+950444 Li Anogomma
+950706 Melagineri
+950715 Yugungwi
+950719 Wiringgambut
+950724 Goa Balim
+950730 Kuly Lanny
+950739 Melagi
+950809 Koroptak
+950812 Mebarok
+950823 Mbua Tengah
+950824 Embetpen
+950830 Nenggeagin
+960142 Moisegen
+960420 Matemani
+960912 Mubrani
+960928 Kasi
+961005 Aitinyo Barat

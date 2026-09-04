@@ -4,18 +4,6 @@ export const statusConfig = {
     label: "Draft",
     dotColor: "slate" as DotColor,
   },
-  SUBMITTED: {
-    label: "Menunggu Review",
-    dotColor: "blue" as DotColor,
-  },
-  REVISION: {
-    label: "Perlu Revisi",
-    dotColor: "amber" as DotColor,
-  },
-  REJECTED: {
-    label: "Ditolak",
-    dotColor: "rose" as DotColor,
-  },
   APPROVED: {
     label: "Disetujui",
     dotColor: "emerald" as DotColor,

@@ -1,31 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import {
-  Building2,
-  Calendar,
-  BookOpen,
-  FolderTree,
-  Target,
-  Flag,
-  Droplets,
-  AlertTriangle,
-} from "lucide-react";
+import { Building2, Calendar, FolderTree, Droplets } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { BalaiTab } from "@/components/master/balai-tab";
 import { PeriodeTab } from "@/components/master/periode-tab";
 import { NomenklaturTab } from "@/components/master/nomenklatur-tab";
-import { MajorProjectTab } from "@/components/master/major-project-tab";
-import { TindakLanjutTab } from "@/components/master/tindak-lanjut-tab";
 import { WilayahSungaiTab } from "@/components/master/wilayah-sungai-tab";
 
 const tabs = [
   { id: "balai", label: "Balai", icon: Building2 },
   { id: "periode", label: "Periode", icon: Calendar },
   { id: "nomenklatur", label: "Nomenklatur", icon: FolderTree },
-  { id: "major-project", label: "Major Project", icon: Flag },
-  { id: "tindak-lanjut", label: "Tindak Lanjut", icon: AlertTriangle },
   { id: "wilayah-sungai", label: "Wilayah Sungai", icon: Droplets },
 ];
 
@@ -65,8 +52,6 @@ export default function MasterPage() {
         {activeTab === "balai" && <BalaiTab />}
         {activeTab === "periode" && <PeriodeTab />}
         {activeTab === "nomenklatur" && <NomenklaturTab />}
-        {activeTab === "major-project" && <MajorProjectTab />}
-        {activeTab === "tindak-lanjut" && <TindakLanjutTab />}
         {activeTab === "wilayah-sungai" && <WilayahSungaiTab />}
       </div>
     </div>

@@ -26,6 +26,9 @@ export interface RO {
   id: string;
   name: string;
   code: string;
+  /** Satuan resmi RO (kolom "Satuan RO" di referensi 1.xlsx, mis. "Unit",
+   * "Km") — mengunci field Satuan Output Target di form Alokasi. */
+  satuan?: string | null;
   kro: {
     id: string;
     name: string;
@@ -41,13 +44,74 @@ export interface RO {
       };
     };
   };
+  indikatorRO?: { id: string; nama: string; satuan: string }[];
+}
+
+export interface Komponen {
+  id: string;
+  code: string;
+  name: string;
+  roId: string;
+}
+
+export interface Paket {
+  id: string;
+  planningId: string;
+  kodePaket?: string;
+  name: string;
+  roId: string;
+  ro: RO;
+  komponenId?: string;
+  komponen?: Komponen;
+  jenis: "FISIK" | "NON_FISIK";
+  masaPelaksanaan: "SINGLE_YEAR" | "MULTI_YEAR";
+  wilayahSungaiId?: string;
+  wilayahSungai?: { id: string; name: string };
+  dokLingStatus?: string;
+  catatanPembina?: string;
+  catatanSspsda?: string;
+  kegiatanPrioritasId?: string;
+  kegiatanPrioritas?: {
+    id: string;
+    code: string;
+    name: string;
+    programPrioritas: {
+      id: string;
+      code: string;
+      name: string;
+      prioritasNasional: { id: string; code: string; name: string };
+    };
+  };
+  pkpnId?: string;
+  pkpn?: { id: string; name: string };
+  indikatorSasaranProgramId?: string;
+  indikatorSasaranProgram?: {
+    id: string;
+    name: string;
+    satuan?: string;
+    sasaranProgram: { id: string; name: string };
+  };
+  indikatorSasaranKegiatanId?: string;
+  indikatorSasaranKegiatan?: {
+    id: string;
+    name: string;
+    satuan?: string;
+    sasaranKegiatan: { id: string; name: string };
+  };
+  indikatorRoId?: string;
+  indikatorRo?: { id: string; nama: string; satuan: string };
+  tematikRenjaId?: string;
+  tematikRenja?: { id: string; name: string };
+  fkb: boolean;
+  fkw: boolean;
+  mpa: boolean;
+  score?: string;
+  alokasi: Alokasi[];
 }
 
 export interface Alokasi {
   id: string;
-  planningId: string;
-  roId: string;
-  ro: RO;
+  paketId: string;
   tahun: number;
   status: "RENCANA" | "REALISASI";
   rm: string;
@@ -62,6 +126,8 @@ export interface Alokasi {
   outcomeUnit?: string;
   catatan?: string;
   lokasi: LokasiAlokasi[];
+  // Hadir kalau di-include dari endpoint alokasi (bukan dari nested Planning.paket[].alokasi)
+  paket?: Paket;
 }
 
 export interface LokasiAlokasi {
@@ -82,32 +148,36 @@ export interface LokasiAlokasi {
   createdAt: string;
 }
 
+export type SumberUsulanProyek =
+  | "PEMERINTAH_DAERAH"
+  | "KEMENTERIAN_LEMBAGA"
+  | "MASYARAKAT"
+  | "TINDAK_LANJUT_RENAKSI"
+  | "LAINNYA";
+
 export interface Planning {
   id: string;
+  kodeProyek?: string;
   projectName: string;
-  masaPelaksanaan: "SINGLE_YEAR" | "MULTI_YEAR";
   kewenangan: "PUSAT" | "DAERAH";
-  status: "DRAFT" | "SUBMITTED" | "REVISION" | "REJECTED" | "APPROVED";
+  status: "DRAFT" | "APPROVED";
   catatan?: string;
   balai: Balai;
   periode: Periode;
-  wilayahSungai?: { id: string; name: string };
   kebutuhanTanah: boolean;
   sesuaiRTRW?: string;
   nomorPerdaRTRW?: string;
   sesuaiPolaSDA?: string;
   nomorKepmenPUPR?: string;
   sesuaiMasterplan?: string;
-  kriteriaDokumen: KriteriaDokumen[];
-  majorProjects: {
-    id: string;
-    majorProject: { id: string; name: string };
-    detail?: string;
-  }[];
-  tindakLanjut: { id: string; tindakLanjut: { id: string; name: string } }[];
-  alokasi: Alokasi[];
-  prioritas: Prioritas[];
-  reviews: Review[];
+  polaRencana?: string;
+  // StudiLayak/DED/LARAP — angka tahun polos sesuai DB.xlsx
+  tahunStudiLayak?: number;
+  tahunDed?: number;
+  tahunLarap?: number;
+  sumberUsulanProyek?: SumberUsulanProyek;
+  sumberUsulanLainnya?: string;
+  paket: Paket[];
   createdBy: {
     id: string;
     name: string;
@@ -116,32 +186,6 @@ export interface Planning {
   };
   createdAt: string;
   updatedAt: string;
-}
-
-export interface KriteriaDokumen {
-  id: string;
-  jenis: string;
-  status: "TIDAK_PERLU" | "BELUM_ADA" | "SUDAH_ADA";
-  tahun?: number;
-}
-
-export interface Prioritas {
-  id: string;
-  tahun: number;
-  proyekPrioritas: boolean;
-  proyekRPIW: boolean;
-  kegiatanBaru: boolean;
-  kegiatanWajib: boolean;
-  proyekKonregFKS: boolean;
-  proyekMusrengbangnas: boolean;
-}
-
-export interface Review {
-  id: string;
-  action: string;
-  catatan?: string;
-  createdAt: string;
-  reviewer: { id: string; name: string; username: string };
 }
 
 export interface PaginatedResponse<T> {

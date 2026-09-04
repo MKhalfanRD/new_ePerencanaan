@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -87,6 +87,11 @@ export function MasterTable<T extends { id: string | number }>({
   };
 
   const [lastClicked, setLastClicked] = useState<number | null>(null);
+  // Checkbox baris pakai onChange (bukan onClick) supaya bukan read-only di
+  // mata React, tapi native "change" event tidak bawa shiftKey — jadi
+  // ditangkap duluan di mousedown (yang bawa shiftKey) lalu dibaca saat
+  // onChange menyusul.
+  const shiftKeyRef = useRef(false);
 
   const toggleSelectOne = (
     id: string | number,
@@ -218,8 +223,11 @@ export function MasterTable<T extends { id: string | number }>({
                           <input
                             type="checkbox"
                             checked={selected.has(item.id)}
-                            onClick={(e) =>
-                              toggleSelectOne(item.id, i, e.shiftKey)
+                            onMouseDown={(e) => {
+                              shiftKeyRef.current = e.shiftKey;
+                            }}
+                            onChange={() =>
+                              toggleSelectOne(item.id, i, shiftKeyRef.current)
                             }
                             className="h-4 w-4 rounded border-muted-foreground/40"
                           />

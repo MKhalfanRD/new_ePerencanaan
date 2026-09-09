@@ -4,7 +4,7 @@ import { test, expect } from "@playwright/test";
 // bergantung pada backend/DB nyala. Skenario yang butuh backend asli (alur
 // planning penuh, dll) ada di file e2e terpisah dan didokumentasikan perlu
 // backend berjalan (lihat TESTING_PLAN.md §7-8).
-const API_BASE = "http://localhost:3000";
+const API_BASE = "http://localhost:3010";
 
 test.describe("Login", () => {
   test("login sukses redirect ke /dashboard", async ({ page }) => {

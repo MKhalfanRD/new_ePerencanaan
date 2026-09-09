@@ -20,8 +20,10 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import api from "@/lib/api";
+import { useRowSelection } from "@/lib/use-row-selection";
 import { useAuthStore } from "@/store/auth";
 import { UserFormDialog } from "@/components/users/user-form-dialog";
+import { RoleScopePanel } from "@/components/users/role-scope-panel";
 
 interface User {
   id: string;
@@ -45,6 +47,8 @@ export default function UsersPage() {
   const [editData, setEditData] = useState<User | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -68,6 +72,34 @@ export default function UsersPage() {
       u.username.toLowerCase().includes(search.toLowerCase()) ||
       u.role?.name.toLowerCase().includes(search.toLowerCase()),
   );
+
+  // id akun sendiri tidak bisa dihapus — dikeluarkan dari "pilih semua".
+  const selectableIds = filtered
+    .filter((u) => u.id !== currentUser?.id)
+    .map((u) => u.id);
+  const sel = useRowSelection(selectableIds);
+
+  useEffect(() => {
+    sel.clear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, users]);
+
+  const handleBulkDelete = async () => {
+    setBulkDeleting(true);
+    try {
+      const res = await api.post("/users/bulk-delete", {
+        ids: Array.from(sel.selected),
+      });
+      toast.success(res.data?.message || "Pengguna terpilih berhasil dihapus");
+      sel.clear();
+      setBulkOpen(false);
+      fetchUsers();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal menghapus");
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   const handleToggleStatus = async (user: User) => {
     try {
@@ -118,18 +150,32 @@ export default function UsersPage() {
         </Button>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search
-          size={16}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-        />
-        <Input
-          placeholder="Cari nama, username, atau role..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      <RoleScopePanel />
+
+      {/* Search + aksi massal */}
+      <div className="flex items-center gap-3">
+        <div className="relative max-w-sm flex-1">
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            placeholder="Cari nama, username, atau role..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        {sel.selected.size > 0 && (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setBulkOpen(true)}
+          >
+            <Trash2 size={14} className="mr-1.5" />
+            Hapus ({sel.selected.size})
+          </Button>
+        )}
       </div>
 
       {/* List */}
@@ -157,11 +203,37 @@ export default function UsersPage() {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {filtered.map((u) => (
+              {selectableIds.length > 0 && (
+                <label className="flex items-center gap-3 px-4 py-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={sel.allSelected}
+                    onChange={sel.toggleAll}
+                    className="h-4 w-4 rounded border-muted-foreground/40"
+                  />
+                  Pilih semua
+                </label>
+              )}
+              {filtered.map((u) => {
+                const bisaPilih = u.id !== currentUser?.id;
+                const idx = selectableIds.indexOf(u.id);
+                return (
                 <div
                   key={u.id}
                   className="flex items-center gap-4 p-4 hover:bg-accent/40 transition-colors"
                 >
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 shrink-0 rounded border-muted-foreground/40 disabled:opacity-0"
+                    checked={sel.selected.has(u.id)}
+                    disabled={!bisaPilih}
+                    onMouseDown={(e) => {
+                      sel.shiftRef.current = e.shiftKey;
+                    }}
+                    onChange={() =>
+                      sel.toggleOne(u.id, idx, sel.shiftRef.current)
+                    }
+                  />
                   {/* Avatar */}
                   <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                     <span className="text-primary font-semibold text-sm">
@@ -240,7 +312,8 @@ export default function UsersPage() {
                     </Button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -274,6 +347,33 @@ export default function UsersPage() {
               className="bg-destructive hover:bg-destructive/90"
             >
               {deleting ? "Menghapus..." : "Hapus"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirm */}
+      <AlertDialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Hapus {sel.selected.size} pengguna?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {sel.selected.size} pengguna terpilih akan dihapus permanen dan
+              tidak dapat dikembalikan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {bulkDeleting
+                ? "Menghapus..."
+                : `Hapus ${sel.selected.size} pengguna`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/tooltip";
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
+import { punyaRole } from "@/lib/role";
 import { Planning, Paket, Alokasi } from "@/types";
 import {
   exportPlanningDetailToExcel,
@@ -63,35 +64,10 @@ import { PaketFormDialog } from "./paket-form-dialog";
 import {
   statusConfig,
   alokasiStatusConfig,
+  nilaiRealisasi,
 } from "@/components/shared/status-config";
 
-const formatRupiah = (val: string | number) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(Number(val));
-
-// Format ringkas ala mockup drawer ("Rp 12,0 M" / "Rp 500 jt") — beda dari
-// formatRupiahShort di plannings/page.tsx (yang tanpa "Rp"/koma, mis.
-// "12.0M") karena drawer & list memang punya konvensi berbeda di mockup.
-const formatRupiahShort = (val: number) => {
-  if (val >= 1_000_000_000) {
-    const m = (val / 1_000_000_000).toLocaleString("id-ID", {
-      minimumFractionDigits: 1,
-      maximumFractionDigits: 1,
-    });
-    return `Rp ${m} M`;
-  }
-  if (val >= 1_000_000) {
-    const jt = (val / 1_000_000).toLocaleString("id-ID", {
-      maximumFractionDigits: 0,
-    });
-    return `Rp ${jt} jt`;
-  }
-  if (val === 0) return "-";
-  return formatRupiah(val);
-};
+import { formatRupiah, formatRupiahShort } from "@/lib/format-rupiah";
 
 // Kode identitas ringkas per proyek (mis. "BWS.07.7755") — logic sama
 // persis dengan `getPlanningKode` di plannings/page.tsx, supaya kode yang
@@ -190,8 +166,7 @@ export function PlanningDetailSheet({
     });
   };
 
-  const canEdit =
-    user?.role === "SATKER" || user?.role === "ADMINISTRATOR";
+  const canEdit = punyaRole(user, "SATKER", "ADMINISTRATOR");
 
   const canManagePaket = canEdit;
 
@@ -259,7 +234,6 @@ export function PlanningDetailSheet({
   // Backend selalu balikin array, tapi dijaga di sini juga — dipakai berulang di bawah.
   const paket = planning.paket ?? [];
   const firstRo = paket[0]?.ro;
-  const kegiatanPrioritasPaket = paket.find((pk) => pk.kegiatanPrioritas);
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
@@ -300,7 +274,7 @@ export function PlanningDetailSheet({
                 <Edit size={13} className="mr-1.5" /> Edit Proyek
               </Button>
             )}
-            {user?.role === "ADMINISTRATOR" && planning.status === "DRAFT" && (
+            {punyaRole(user, "ADMINISTRATOR") && planning.status === "DRAFT" && (
               <Button size="sm" onClick={handleApprove} disabled={approving}>
                 {approving ? (
                   <Loader2 size={13} className="mr-1.5 animate-spin" />
@@ -310,7 +284,7 @@ export function PlanningDetailSheet({
                 Setujui
               </Button>
             )}
-            {user?.role === "ADMINISTRATOR" &&
+            {punyaRole(user, "ADMINISTRATOR") &&
               planning.status === "APPROVED" && (
                 <Button
                   size="sm"
@@ -371,15 +345,23 @@ export function PlanningDetailSheet({
                 }
               />
               <InfoStat
-                label="KRO / RO"
-                value={firstRo ? `${firstRo.kro.name} · ${firstRo.name}` : "—"}
+                label="Kegiatan"
+                value={
+                  firstRo
+                    ? `${firstRo.kro.kegiatan.code} · ${firstRo.kro.kegiatan.name}`
+                    : "—"
+                }
               />
               <InfoStat
-                label="Prioritas Nasional"
+                label="Kegiatan Prioritas (PN.PP.KP)"
+                value={planning.kegiatanPrioritas?.name ?? "Tidak"}
+              />
+              <InfoStat
+                label="Skor Evaluasi"
                 value={
-                  kegiatanPrioritasPaket?.kegiatanPrioritas
-                    ? `Ya — ${kegiatanPrioritasPaket.kegiatanPrioritas.name}`
-                    : "Tidak"
+                  planning.skorEvaluasi
+                    ? `${(Number(planning.skorEvaluasi) * 100).toFixed(1)}%`
+                    : "Belum dievaluasi"
                 }
               />
               <InfoStat
@@ -442,10 +424,13 @@ export function PlanningDetailSheet({
                     acc[a.tahun].push(a);
                     return acc;
                   }, {});
-                  const totalPaket = pk.alokasi.reduce(
-                    (s, a) => s + Number(a.total),
-                    0,
-                  );
+                  // Total paket = akumulasi RENCANA saja. Dulu menjumlah
+                  // semua alokasi, jadi Rencana + Realisasi tahun yang sama
+                  // ikut ditambah dua kali (rencana 9 jt + realisasi 1 jt
+                  // tampil sebagai 10 jt).
+                  const totalPaket = pk.alokasi
+                    .filter((a) => a.status === "RENCANA")
+                    .reduce((s, a) => s + Number(a.total), 0);
 
                   return (
                     <div key={pk.id} className="rounded-lg border overflow-hidden">
@@ -470,13 +455,16 @@ export function PlanningDetailSheet({
                             {pk.name}
                           </p>
                           <p className="text-[10.5px] font-mono text-muted-foreground truncate">
-                            {pk.ro.code} · {pk.ro.name}
+                            {pk.ro.kro.kegiatan.code} · {pk.ro.name}
                           </p>
                         </div>
                         <Badge variant="outline" className="shrink-0 text-[10px]">
                           {pk.jenis === "FISIK" ? "Fisik" : "Non-Fisik"}
                         </Badge>
-                        <span className="text-xs font-bold shrink-0 w-28 text-right">
+                        <span
+                          className="text-xs font-bold shrink-0 w-28 text-right"
+                          title={formatRupiah(totalPaket)}
+                        >
                           {formatRupiahShort(totalPaket)}
                         </span>
                         {canManagePaket && (
@@ -554,6 +542,10 @@ export function PlanningDetailSheet({
                                   const yearRealisasi = alokasi
                                     .filter((a) => a.status === "REALISASI")
                                     .reduce((s, a) => s + Number(a.total), 0);
+                                  const nilai = nilaiRealisasi(
+                                    yearRealisasi,
+                                    yearRencana,
+                                  );
                                   return (
                                     <div key={tahun} className="border-b last:border-b-0">
                                       <div className="flex items-center gap-3 px-3.5 py-2.5 bg-muted/40 border-b">
@@ -563,17 +555,21 @@ export function PlanningDetailSheet({
                                         <div className="flex items-center gap-4 text-xs flex-1 flex-wrap">
                                           <span className="text-muted-foreground">
                                             Rencana{" "}
-                                            <b className="text-foreground font-semibold">
+                                            <b
+                                              className="text-foreground font-semibold"
+                                              title={formatRupiah(yearRencana)}
+                                            >
                                               {formatRupiahShort(yearRencana)}
                                             </b>
                                           </span>
                                           <span className="text-muted-foreground">
                                             Realisasi{" "}
                                             <b
-                                              className={
+                                              className={`font-semibold ${nilai.className}`}
+                                              title={
                                                 yearRealisasi > 0
-                                                  ? "text-emerald-600 font-semibold"
-                                                  : "text-foreground font-semibold"
+                                                  ? formatRupiah(yearRealisasi)
+                                                  : undefined
                                               }
                                             >
                                               {yearRealisasi > 0
@@ -582,10 +578,16 @@ export function PlanningDetailSheet({
                                                   )
                                                 : "-"}
                                             </b>
-                                            {yearRealisasi > 0 && (
+                                            {nilai.checked && (
                                               <span className="text-emerald-600">
                                                 {" "}
                                                 ✓
+                                              </span>
+                                            )}
+                                            {nilai.over && (
+                                              <span className="text-red-600">
+                                                {" "}
+                                                melebihi rencana
                                               </span>
                                             )}
                                           </span>
@@ -628,7 +630,12 @@ export function PlanningDetailSheet({
                                                 <span className="text-xs text-muted-foreground shrink-0 w-16 text-right">
                                                   {a.lokasi.length} lokasi
                                                 </span>
-                                                <span className="text-xs font-bold shrink-0 w-28 text-right">
+                                                <span
+                                                  className="text-xs font-bold shrink-0 w-28 text-right"
+                                                  title={formatRupiah(
+                                                    Number(a.total),
+                                                  )}
+                                                >
                                                   {formatRupiahShort(
                                                     Number(a.total),
                                                   )}
@@ -670,6 +677,14 @@ export function PlanningDetailSheet({
                                               {isExpanded && (
                                                 <AlokasiExpandPanel
                                                   alokasiId={a.id}
+                                                  // Panel punya fetch sendiri
+                                                  // (`/alokasi/:id`) yang dulu
+                                                  // cuma jalan sekali saat
+                                                  // baris di-expand — setelah
+                                                  // Edit Alokasi, grid RM/RMP/
+                                                  // ... di dalamnya masih
+                                                  // menampilkan nilai lama.
+                                                  version={a.updatedAt}
                                                   onRefreshParent={onRefresh}
                                                   projectName={
                                                     planning.projectName

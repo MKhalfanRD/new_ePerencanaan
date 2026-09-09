@@ -83,6 +83,10 @@ describe('AuthService', () => {
         username: 'admin',
         name: 'Admin Satu',
         role: 'ADMINISTRATOR',
+        // Cakupan kegiatan role — null untuk role lintas kegiatan.
+        kegiatanId: null,
+        // Template izin role turunan — null untuk role bawaan.
+        baseRole: null,
       });
       // Pastikan passwordHash TIDAK ikut ke response — ini penting dari sisi
       // keamanan, jangan sampai hash password bocor ke client.
@@ -108,6 +112,10 @@ describe('AuthService', () => {
         sub: 'user_99',
         username: 'satker1',
         role: 'SATKER',
+        // Ikut di token supaya filter proyek per kegiatan tidak perlu
+        // query role tiap request.
+        kegiatanId: null,
+        baseRole: null,
       });
     });
 

@@ -3,6 +3,39 @@ export interface User {
   username: string;
   name: string;
   role: string;
+  /** Cakupan kegiatan role (mis. "7691"). null = lintas kegiatan
+   * (SUPER_ADMIN/ADMINISTRATOR). */
+  kegiatanId?: string | null;
+  /** Template izin yang dipinjam role turunan (mis. OPERATOR_7691 -> SATKER).
+   * Selalu cek lewat punyaRole() di lib/role.ts, bukan == kode role. */
+  baseRole?: string | null;
+}
+
+export interface KegiatanPrioritas {
+  id: string;
+  code: string;
+  name: string;
+  programPrioritas: {
+    id: string;
+    code: string;
+    name: string;
+    prioritasNasional: { id: string; code: string; name: string };
+  };
+}
+
+export type KriteriaEvaluasi =
+  | "URGENSITAS"
+  | "KESIAPAN_TEKNIS"
+  | "TEMATIK"
+  | "VALUASI";
+
+export interface EvaluasiItem {
+  id: string;
+  kegiatanId: string;
+  kriteria: KriteriaEvaluasi;
+  urutan: number;
+  name: string;
+  score: number;
 }
 
 export interface Balai {
@@ -65,23 +98,9 @@ export interface Paket {
   komponen?: Komponen;
   jenis: "FISIK" | "NON_FISIK";
   masaPelaksanaan: "SINGLE_YEAR" | "MULTI_YEAR";
-  wilayahSungaiId?: string;
-  wilayahSungai?: { id: string; name: string };
   dokLingStatus?: string;
   catatanPembina?: string;
   catatanSspsda?: string;
-  kegiatanPrioritasId?: string;
-  kegiatanPrioritas?: {
-    id: string;
-    code: string;
-    name: string;
-    programPrioritas: {
-      id: string;
-      code: string;
-      name: string;
-      prioritasNasional: { id: string; code: string; name: string };
-    };
-  };
   pkpnId?: string;
   pkpn?: { id: string; name: string };
   indikatorSasaranProgramId?: string;
@@ -125,6 +144,7 @@ export interface Alokasi {
   outcomeTarget?: string;
   outcomeUnit?: string;
   catatan?: string;
+  updatedAt: string;
   lokasi: LokasiAlokasi[];
   // Hadir kalau di-include dari endpoint alokasi (bukan dari nested Planning.paket[].alokasi)
   paket?: Paket;
@@ -165,12 +185,13 @@ export interface Planning {
   balai: Balai;
   periode: Periode;
   kebutuhanTanah: boolean;
-  sesuaiRTRW?: string;
-  nomorPerdaRTRW?: string;
-  sesuaiPolaSDA?: string;
-  nomorKepmenPUPR?: string;
-  sesuaiMasterplan?: string;
-  polaRencana?: string;
+  wilayahSungaiId?: string;
+  wilayahSungai?: { id: string; name: string };
+  kegiatanPrioritasId?: string;
+  kegiatanPrioritas?: KegiatanPrioritas;
+  /** Skor MCA 0..1, dihitung backend dari tagging evaluasi. */
+  skorEvaluasi?: string | null;
+  evaluasi?: { itemId: string; keterangan?: string; item: EvaluasiItem }[];
   // StudiLayak/DED/LARAP — angka tahun polos sesuai DB.xlsx
   tahunStudiLayak?: number;
   tahunDed?: number;

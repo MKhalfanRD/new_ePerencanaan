@@ -16,6 +16,7 @@ import {
   Maximize2,
   Minimize2,
   CheckCircle2,
+  AlertTriangle,
   MapPin,
   StickyNote,
   FileSpreadsheet,
@@ -23,6 +24,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { exportPlanningsToExcel } from "@/lib/export-plannings-excel";
+import { nilaiRealisasi } from "@/components/shared/status-config";
+import { punyaRole } from "@/lib/role";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -215,10 +218,10 @@ export default function PlanningsPage() {
     }
   };
 
-  const canApprove = () => view === "draft" && user?.role === "ADMINISTRATOR";
+  const canApprove = () => view === "draft" && punyaRole(user, "ADMINISTRATOR");
 
   const canDelete = (p: Planning) =>
-    user?.role === "ADMINISTRATOR" || p.createdBy.id === user?.id;
+    punyaRole(user, "ADMINISTRATOR") || p.createdBy.id === user?.id;
 
   // Opsi filter, dicascade dari data yang sudah termuat: Balai independen;
   // Program > Kegiatan > KRO > RO mengikuti pilihan level di atasnya.
@@ -440,16 +443,40 @@ export default function PlanningsPage() {
   ) => {
     const rencana = v?.rencana || 0;
     const realisasi = v?.realisasi || 0;
+    const nilai = nilaiRealisasi(realisasi, rencana);
     return (
       <div key={year} className="w-24 shrink-0 text-right">
         <p className="text-xs font-semibold">{formatRupiahShort(rencana)}</p>
-        <p className="text-[11px] text-emerald-600 flex items-center justify-end gap-1">
-          {realisasi > 0 && (
+        <p
+          className={`text-[11px] flex items-center justify-end gap-1 ${nilai.className}`}
+          title={nilai.over ? "Realisasi melebihi rencana" : undefined}
+        >
+          {nilai.checked && (
             <CheckCircle2 size={10} className="text-emerald-500 shrink-0" />
           )}
+          {nilai.over && <AlertTriangle size={10} className="shrink-0" />}
           {formatRupiahShort(realisasi)}
         </p>
       </div>
+    );
+  };
+
+  // Baris realisasi (bawah) untuk baris agregat Balai/Kegiatan. Dulu selalu
+  // hijau; sekarang ikut aturan nilaiRealisasi (merah + ⚠️ kalau realisasi
+  // melebihi rencana), konsisten dengan baris proyek di bawahnya.
+  const renderRealisasiAgregat = (realisasi: number, rencana: number) => {
+    const n = nilaiRealisasi(realisasi, rencana);
+    return (
+      <p
+        className={`text-[11px] tabular-nums flex items-center justify-end gap-1 ${n.className}`}
+        title={n.over ? "Realisasi melebihi rencana" : undefined}
+      >
+        {n.checked && (
+          <CheckCircle2 size={10} className="text-emerald-500 shrink-0" />
+        )}
+        {n.over && <AlertTriangle size={10} className="shrink-0" />}
+        {formatRupiahShort(realisasi)}
+      </p>
     );
   };
 
@@ -525,7 +552,7 @@ export default function PlanningsPage() {
             )}
             Export Excel
           </Button>
-          {(user?.role === "SATKER" || user?.role === "ADMINISTRATOR") && (
+          {punyaRole(user, "SATKER", "ADMINISTRATOR") && (
             <>
               <Button variant="outline" onClick={() => setShowImport(true)}>
                 <Upload size={16} className="mr-2" /> Import Excel
@@ -774,9 +801,10 @@ export default function PlanningsPage() {
                         <p className="text-sm font-bold tabular-nums">
                           {formatRupiahShort(balaiGroup.grandTotalRencana)}
                         </p>
-                        <p className="text-[11px] text-emerald-600 tabular-nums">
-                          {formatRupiahShort(balaiGroup.grandTotalRealisasi)}
-                        </p>
+                        {renderRealisasiAgregat(
+                          balaiGroup.grandTotalRealisasi,
+                          balaiGroup.grandTotalRencana,
+                        )}
                       </div>
                       {groups.years.map((year) => (
                         <div key={year} className="w-24 shrink-0 text-right">
@@ -785,11 +813,10 @@ export default function PlanningsPage() {
                               balaiGroup.rencanaByYear[year] || 0,
                             )}
                           </p>
-                          <p className="text-[11px] text-emerald-600 tabular-nums">
-                            {formatRupiahShort(
-                              balaiGroup.realisasiByYear[year] || 0,
-                            )}
-                          </p>
+                          {renderRealisasiAgregat(
+                            balaiGroup.realisasiByYear[year] || 0,
+                            balaiGroup.rencanaByYear[year] || 0,
+                          )}
                         </div>
                       ))}
                     </div>
@@ -840,11 +867,10 @@ export default function PlanningsPage() {
                                       kegGroup.grandTotalRencana,
                                     )}
                                   </p>
-                                  <p className="text-[11px] text-emerald-600 tabular-nums">
-                                    {formatRupiahShort(
-                                      kegGroup.grandTotalRealisasi,
-                                    )}
-                                  </p>
+                                  {renderRealisasiAgregat(
+                                    kegGroup.grandTotalRealisasi,
+                                    kegGroup.grandTotalRencana,
+                                  )}
                                 </div>
                                 {groups.years.map((year) => (
                                   <div
@@ -856,11 +882,10 @@ export default function PlanningsPage() {
                                         kegGroup.rencanaByYear[year] || 0,
                                       )}
                                     </p>
-                                    <p className="text-[11px] text-emerald-600 tabular-nums">
-                                      {formatRupiahShort(
-                                        kegGroup.realisasiByYear[year] || 0,
-                                      )}
-                                    </p>
+                                    {renderRealisasiAgregat(
+                                      kegGroup.realisasiByYear[year] || 0,
+                                      kegGroup.rencanaByYear[year] || 0,
+                                    )}
                                   </div>
                                 ))}
                               </div>
@@ -964,11 +989,10 @@ export default function PlanningsPage() {
                                             <p className="text-xs font-bold">
                                               {formatRupiahShort(total.rencana)}
                                             </p>
-                                            <p className="text-[11px] font-semibold text-emerald-600">
-                                              {formatRupiahShort(
-                                                total.realisasi,
-                                              )}
-                                            </p>
+                                            {renderRealisasiAgregat(
+                                              total.realisasi,
+                                              total.rencana,
+                                            )}
                                           </div>
                                           {groups.years.map((year) =>
                                             renderYearCell(year, byYear[year]),

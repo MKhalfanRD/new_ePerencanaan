@@ -93,11 +93,17 @@ export function exportPlanningDetailToExcel(p: Planning) {
         : "-",
     },
     { Field: "Kebutuhan Tanah", Value: p.kebutuhanTanah ? "Ada" : "Tidak" },
-    { Field: "Sesuai RTRW", Value: p.sesuaiRTRW || "-" },
-    { Field: "No. Perda RTRW", Value: p.nomorPerdaRTRW || "-" },
-    { Field: "Sesuai Pola SDA", Value: p.sesuaiPolaSDA || "-" },
-    { Field: "No. Kepmen PUPR", Value: p.nomorKepmenPUPR || "-" },
-    { Field: "Sesuai Masterplan", Value: p.sesuaiMasterplan || "-" },
+    { Field: "Wilayah Sungai", Value: p.wilayahSungai?.name || "-" },
+    {
+      Field: "Kegiatan Prioritas (PN.PP.KP)",
+      Value: p.kegiatanPrioritas?.name || "-",
+    },
+    {
+      Field: "Skor Evaluasi",
+      Value: p.skorEvaluasi
+        ? `${(Number(p.skorEvaluasi) * 100).toFixed(1)}%`
+        : "-",
+    },
     { Field: "Dibuat Oleh", Value: p.createdBy.name },
     {
       Field: "Tanggal Dibuat",
@@ -251,10 +257,14 @@ export function exportPlanningDetailToPDF(p: Planning) {
           : "-",
       ],
       ["Kebutuhan Tanah", p.kebutuhanTanah ? "Ada" : "Tidak"],
-      ["Sesuai RTRW", p.sesuaiRTRW || "-"],
-      ["No. Perda RTRW", p.nomorPerdaRTRW || "-"],
-      ["Sesuai Pola SDA", p.sesuaiPolaSDA || "-"],
-      ["No. Kepmen PUPR", p.nomorKepmenPUPR || "-"],
+      ["Wilayah Sungai", p.wilayahSungai?.name || "-"],
+      ["Kegiatan Prioritas (PN.PP.KP)", p.kegiatanPrioritas?.name || "-"],
+      [
+        "Skor Evaluasi",
+        p.skorEvaluasi
+          ? `${(Number(p.skorEvaluasi) * 100).toFixed(1)}%`
+          : "-",
+      ],
       ["Dibuat Oleh", `${p.createdBy.name} (${p.createdBy.role.name})`],
     ],
     styles: { fontSize: 8 },

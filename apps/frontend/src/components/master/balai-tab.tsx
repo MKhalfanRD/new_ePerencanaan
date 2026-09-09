@@ -103,6 +103,16 @@ export function BalaiTab() {
     }
   };
 
+  const onBulkDelete = async (ids: (string | number)[]) => {
+    try {
+      const res = await api.post("/master/balai/bulk-delete", { ids });
+      toast.success(res.data?.message || "Balai terpilih berhasil dihapus");
+      fetch();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal menghapus");
+    }
+  };
+
   return (
     <>
       <MasterTable
@@ -124,6 +134,7 @@ export function BalaiTab() {
         onAdd={openAdd}
         onEdit={openEdit}
         onDelete={onDelete}
+        onBulkDelete={onBulkDelete}
         searchKeys={["name", "shortName", "code"]}
       />
 

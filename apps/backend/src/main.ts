@@ -36,7 +36,7 @@ async function bootstrap() {
     swaggerOptions: { persistAuthorization: true },
   });
 
-  const port = process.env.PORT ?? 3000;
+  const port = process.env.PORT ?? 3010;
   await app.listen(port, '0.0.0.0');
   console.log(`🚀 Server berjalan di http://localhost:${port}`);
   console.log(`📖 Swagger docs di http://localhost:${port}/api-docs`);

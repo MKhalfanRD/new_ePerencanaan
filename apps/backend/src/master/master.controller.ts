@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
@@ -112,10 +113,53 @@ export class MasterController {
     return this.masterService.getWilayahSungai();
   }
 
+  @ApiOperation({ summary: 'Daftar Indikator RO' })
+  @Get('indikator-ro')
+  getIndikatorRO() {
+    return this.masterService.getIndikatorRO();
+  }
+
+  @ApiOperation({ summary: 'Item evaluasi (MCA), opsional filter kegiatanId' })
+  @Get('evaluasi-item')
+  getEvaluasiItem(@Query('kegiatanId') kegiatanId?: string) {
+    return this.masterService.getEvaluasiItem(kegiatanId);
+  }
+
   @ApiOperation({ summary: 'Daftar semua Role' })
   @Get('roles')
   getRoles() {
     return this.masterService.getRoles();
+  }
+
+  @ApiOperation({ summary: 'Tambah role baru' })
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('roles')
+  createRole(@Body() dto: any) {
+    return this.masterService.createRole(dto);
+  }
+
+  @ApiOperation({ summary: 'Ubah nama / cakupan kegiatan sebuah role' })
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Patch('roles/:id')
+  updateRole(@Param('id') id: string, @Body() dto: any) {
+    return this.masterService.updateRole(id, dto);
+  }
+
+  @ApiOperation({ summary: 'Hapus role' })
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Delete('roles/:id')
+  deleteRole(@Param('id') id: string) {
+    return this.masterService.deleteRole(id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('roles/bulk-delete')
+  bulkDeleteRole(@Body('ids') ids: string[]) {
+    return this.masterService.bulkDeleteRole(ids);
   }
 
   // ========== CRUD BALAI ==========
@@ -138,6 +182,13 @@ export class MasterController {
   @Delete('balai/:id')
   deleteBalai(@Param('id') id: string) {
     return this.masterService.deleteBalai(Number(id));
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('balai/bulk-delete')
+  bulkDeleteBalai(@Body('ids') ids: (string | number)[]) {
+    return this.masterService.bulkDeleteBalai(ids);
   }
 
   // ========== CRUD PERIODE ==========
@@ -182,6 +233,13 @@ export class MasterController {
   @Delete('programs/:id')
   deleteProgram(@Param('id') id: string) {
     return this.masterService.deleteProgram(id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('programs/bulk-delete')
+  bulkDeleteProgram(@Body('ids') ids: string[]) {
+    return this.masterService.bulkDeleteProgram(ids);
   }
 
   // ========== CRUD KEGIATAN ==========
@@ -298,6 +356,35 @@ export class MasterController {
   @Post('komponen/bulk-delete')
   bulkDeleteKomponen(@Body('ids') ids: string[]) {
     return this.masterService.bulkDeleteKomponen(ids);
+  }
+
+  // ========== CRUD INDIKATOR RO ==========
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('indikator-ro')
+  createIndikatorRO(@Body() dto: any) {
+    return this.masterService.createIndikatorRO(dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Patch('indikator-ro/:id')
+  updateIndikatorRO(@Param('id') id: string, @Body() dto: any) {
+    return this.masterService.updateIndikatorRO(id, dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Delete('indikator-ro/:id')
+  deleteIndikatorRO(@Param('id') id: string) {
+    return this.masterService.deleteIndikatorRO(id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('indikator-ro/bulk-delete')
+  bulkDeleteIndikatorRO(@Body('ids') ids: string[]) {
+    return this.masterService.bulkDeleteIndikatorRO(ids);
   }
 
   // ========== CRUD PRIORITAS NASIONAL / PROGRAM / KEGIATAN PRIORITAS ==========
@@ -493,5 +580,12 @@ export class MasterController {
   @Delete('wilayah-sungai/:id')
   deleteWilayahSungai(@Param('id') id: string) {
     return this.masterService.deleteWilayahSungai(id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('wilayah-sungai/bulk-delete')
+  bulkDeleteWilayahSungai(@Body('ids') ids: string[]) {
+    return this.masterService.bulkDeleteWilayahSungai(ids);
   }
 }

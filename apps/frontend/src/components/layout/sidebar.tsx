@@ -9,6 +9,7 @@ import {
   LogOut,
   ChevronRight,
   Database,
+  ScrollText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
@@ -20,30 +21,27 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const navItems = [
+// `roles: undefined` = semua role yang sudah login. Daftar role tidak lagi
+// dipatok satu per satu karena sekarang ada role per kegiatan
+// (OPERATOR_7691, VERIFIKATOR_7692, dst.) yang jumlahnya bertambah tiap
+// kegiatan baru — cukup batasi yang memang khusus admin.
+const ADMIN = ["SUPER_ADMIN", "ADMINISTRATOR"];
+
+const navItems: {
+  label: string;
+  href: string;
+  icon: typeof LayoutDashboard;
+  roles?: string[];
+}[] = [
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Proyek", href: "/plannings", icon: FolderKanban },
+  { label: "Pengguna", href: "/users", icon: Users, roles: ADMIN },
+  { label: "Master Data", href: "/master", icon: Database, roles: ADMIN },
   {
-    label: "Dashboard",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-    roles: ["ADMINISTRATOR", "SATKER", "VERIFICATOR"],
-  },
-  {
-    label: "Proyek",
-    href: "/plannings",
-    icon: FolderKanban,
-    roles: ["ADMINISTRATOR", "SATKER", "VERIFICATOR"],
-  },
-  {
-    label: "Pengguna",
-    href: "/users",
-    icon: Users,
-    roles: ["ADMINISTRATOR"],
-  },
-  {
-    label: "Master Data",
-    href: "/master",
-    icon: Database,
-    roles: ["ADMINISTRATOR"],
+    label: "Log Aktivitas",
+    href: "/activity-log",
+    icon: ScrollText,
+    roles: ["SUPER_ADMIN"],
   },
 ];
 
@@ -59,7 +57,7 @@ export function Sidebar() {
   };
 
   const filteredNav = navItems.filter(
-    (item) => user && item.roles.includes(user.role),
+    (item) => user && (!item.roles || item.roles.includes(user.role)),
   );
 
   return (

@@ -151,4 +151,17 @@ export class UsersService {
 
     return { message: 'User berhasil dihapus' };
   }
+
+  async bulkRemove(ids: string[], requesterId: string) {
+    if (ids.includes(requesterId)) {
+      throw new BadRequestException('Tidak dapat menghapus akun sendiri');
+    }
+    const result = await this.prisma.user.deleteMany({
+      where: { id: { in: ids } },
+    });
+    return {
+      message: `${result.count} user berhasil dihapus`,
+      count: result.count,
+    };
+  }
 }

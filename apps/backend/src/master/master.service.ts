@@ -1,9 +1,53 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { BASE_ROLES } from '../auth/role';
 
 @Injectable()
 export class MasterService {
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * Hapus banyak baris sekaligus by id. Dipakai fitur "pilih pakai checkbox
+   * lalu Hapus" di halaman master. Prisma tetap menolak baris yang masih
+   * dirujuk FK — errornya diteruskan ke klien apa adanya.
+   */
+  private async bulkDelete(
+    model: { deleteMany: (args: any) => Promise<{ count: number }> },
+    ids: (string | number)[],
+    label: string,
+  ) {
+    const result = await model.deleteMany({ where: { id: { in: ids } } });
+    return {
+      message: `${result.count} ${label} berhasil dihapus`,
+      count: result.count,
+    };
+  }
+
+  bulkDeleteBalai(ids: (string | number)[]) {
+    return this.bulkDelete(this.prisma.balai, ids.map(Number), 'Balai');
+  }
+  bulkDeleteWilayahSungai(ids: string[]) {
+    return this.bulkDelete(this.prisma.wilayahSungai, ids, 'Wilayah Sungai');
+  }
+  bulkDeleteIndikatorRO(ids: string[]) {
+    return this.bulkDelete(this.prisma.indikatorRO, ids, 'Indikator RO');
+  }
+  bulkDeleteProgram(ids: string[]) {
+    return this.bulkDelete(this.prisma.program, ids, 'Program');
+  }
+  async bulkDeleteRole(ids: string[]) {
+    // Per-id: deleteRole() punya pengaman (role sistem / masih dipakai user).
+    let count = 0;
+    for (const id of ids) {
+      await this.deleteRole(id);
+      count++;
+    }
+    return { message: `${count} role berhasil dihapus`, count };
+  }
 
   // ========== READ ==========
   getBalai() {
@@ -40,6 +84,20 @@ export class MasterService {
     return this.prisma.komponen.findMany({
       include: { ro: true },
       orderBy: { name: 'asc' },
+    });
+  }
+  getIndikatorRO() {
+    return this.prisma.indikatorRO.findMany({
+      include: { ro: true },
+      orderBy: { nama: 'asc' },
+    });
+  }
+  /** Item evaluasi (MCA). Difilter per kegiatan supaya form proyek cuma
+   * menarik daftar yang relevan, bukan seluruh master. */
+  getEvaluasiItem(kegiatanId?: string) {
+    return this.prisma.evaluasiItem.findMany({
+      where: kegiatanId ? { kegiatanId } : undefined,
+      orderBy: [{ kriteria: 'asc' }, { urutan: 'asc' }],
     });
   }
   // Indikator RENJA (lihat docs-planning/fitur-paket/04-rekonsiliasi-referensi.md)
@@ -86,7 +144,102 @@ export class MasterService {
     return this.prisma.wilayahSungai.findMany({ orderBy: { name: 'asc' } });
   }
   getRoles() {
-    return this.prisma.role.findMany({ orderBy: { name: 'asc' } });
+    return this.prisma.role.findMany({
+      include: { kegiatan: { select: { id: true, code: true, name: true } } },
+      orderBy: { name: 'asc' },
+    });
+  }
+  /**
+   * Role bawaan sistem: kode & keberadaannya dipakai langsung di kode
+   * (RolesGuard, filter kegiatan, halaman log aktivitas), jadi tidak boleh
+   * dihapus atau diikat ke satu kegiatan lewat UI.
+   */
+  private readonly ROLE_SISTEM = ['SUPER_ADMIN', 'ADMINISTRATOR'];
+
+  /** Buat role baru dari UI. Kode dinormalkan jadi HURUF_BESAR karena
+   * dipakai apa adanya di @Roles() dan pengecekan role di frontend. */
+  async createRole(dto: {
+    code: string;
+    name: string;
+    kegiatanId?: string;
+    baseRole?: string;
+  }) {
+    const code = String(dto.code || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9_]/g, '_');
+    if (!code) throw new BadRequestException('Kode role wajib diisi');
+    if (!dto.name?.trim())
+      throw new BadRequestException('Nama role wajib diisi');
+
+    const duplikat = await this.prisma.role.findUnique({ where: { code } });
+    if (duplikat)
+      throw new BadRequestException(`Role dengan kode "${code}" sudah ada`);
+
+    // Tanpa baseRole, role baru ditolak semua endpoint karena kodenya tidak
+    // ada di dekorator @Roles() mana pun — jadi wajib diisi, bukan opsional.
+    if (!dto.baseRole || !BASE_ROLES.includes(dto.baseRole))
+      throw new BadRequestException(
+        `Template izin wajib dipilih: ${BASE_ROLES.join(', ')}`,
+      );
+
+    return this.prisma.role.create({
+      data: {
+        code,
+        name: dto.name.trim(),
+        kegiatanId: dto.kegiatanId || null,
+        baseRole: dto.baseRole,
+      },
+      include: { kegiatan: true },
+    });
+  }
+
+  async deleteRole(id: string) {
+    const role = await this.prisma.role.findUnique({
+      where: { id },
+      include: { _count: { select: { users: true } } },
+    });
+    if (!role) throw new NotFoundException('Role tidak ditemukan');
+    if (this.ROLE_SISTEM.includes(role.code))
+      throw new BadRequestException(
+        `Role "${role.code}" dipakai sistem dan tidak bisa dihapus`,
+      );
+    // Kalau tetap dihapus, user-nya jadi tanpa role dan kehilangan seluruh
+    // akses tanpa jejak — lebih baik ditolak dengan pesan yang jelas.
+    if (role._count.users > 0)
+      throw new BadRequestException(
+        `Role masih dipakai ${role._count.users} pengguna — pindahkan dulu penggunanya`,
+      );
+
+    await this.prisma.role.delete({ where: { id } });
+    return { message: 'Role berhasil dihapus' };
+  }
+
+  /** Ganti nama / cakupan kegiatan sebuah role. SUPER_ADMIN & ADMINISTRATOR
+   * memang lintas kegiatan, jadi kegiatanId-nya dipaksa null. */
+  async updateRole(
+    id: string,
+    dto: { kegiatanId?: string | null; name?: string; baseRole?: string },
+  ) {
+    const role = await this.prisma.role.findUnique({ where: { id } });
+    if (!role) throw new NotFoundException('Role tidak ditemukan');
+    // Dipaksa di server, bukan cuma di-disable di UI: dua role ini memang
+    // lintas kegiatan, mengikatnya ke satu kegiatan akan mengunci admin
+    // dari proyek kegiatan lain.
+    const lintasKegiatan = this.ROLE_SISTEM.includes(role.code);
+    if (dto.baseRole !== undefined && !BASE_ROLES.includes(dto.baseRole))
+      throw new BadRequestException(
+        `Template izin tidak dikenal: ${dto.baseRole}`,
+      );
+    return this.prisma.role.update({
+      where: { id },
+      data: {
+        name: dto.name,
+        kegiatanId: lintasKegiatan ? null : dto.kegiatanId || null,
+        baseRole: dto.baseRole,
+      },
+      include: { kegiatan: true },
+    });
   }
 
   // ========== BALAI ==========
@@ -191,6 +344,16 @@ export class MasterService {
   // ========== KOMPONEN ==========
   createKomponen(dto: any) {
     return this.prisma.komponen.create({ data: dto });
+  }
+  createIndikatorRO(dto: any) {
+    return this.prisma.indikatorRO.create({ data: dto });
+  }
+  updateIndikatorRO(id: string, dto: any) {
+    return this.prisma.indikatorRO.update({ where: { id }, data: dto });
+  }
+  async deleteIndikatorRO(id: string) {
+    await this.prisma.indikatorRO.delete({ where: { id } });
+    return { message: 'Indikator RO berhasil dihapus' };
   }
   updateKomponen(id: string, dto: any) {
     return this.prisma.komponen.update({ where: { id }, data: dto });

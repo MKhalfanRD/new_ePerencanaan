@@ -23,7 +23,6 @@ const COL = {
   kdBalai: 3,
   balai: 4,
   kewenangan: 5,
-  polaRencana: 6,
   studiLayak: 7,
   ded: 8,
   larap: 9,
@@ -86,7 +85,6 @@ interface ParsedPaketRow {
   kdBalai: number | null;
   balaiName: string;
   kewenangan: string;
-  polaRencana: string;
   tahunStudiLayak?: number;
   tahunDed?: number;
   tahunLarap?: number;
@@ -328,7 +326,6 @@ export class ImportService {
       kdBalai: num(get(COL.kdBalai)) ?? null,
       balaiName: str(get(COL.balai)),
       kewenangan: str(get(COL.kewenangan)),
-      polaRencana: str(get(COL.polaRencana)),
       tahunStudiLayak: num(get(COL.studiLayak)),
       tahunDed: num(get(COL.ded)),
       tahunLarap: num(get(COL.larap)),
@@ -407,7 +404,6 @@ export class ImportService {
       | 'kdBalai'
       | 'balaiName'
       | 'kewenangan'
-      | 'polaRencana'
       | 'tahunStudiLayak'
       | 'tahunDed'
       | 'tahunLarap'
@@ -439,7 +435,6 @@ export class ImportService {
           kdBalai: parsed.kdBalai,
           balaiName: parsed.balaiName,
           kewenangan: parsed.kewenangan,
-          polaRencana: parsed.polaRencana,
           tahunStudiLayak: parsed.tahunStudiLayak,
           tahunDed: parsed.tahunDed,
           tahunLarap: parsed.tahunLarap,
@@ -791,20 +786,16 @@ export class ImportService {
 
       const [
         komponenId,
-        wilayahSungaiId,
         pkpnId,
         tematikRenjaId,
         indikatorRoId,
-        kegiatanPrioritasId,
         indikatorSasaranProgramId,
         indikatorSasaranKegiatanId,
       ] = await Promise.all([
         resolveKomponenId(roId, row.kdKomponen, row.nmKomponen),
-        resolveWilayahSungaiId(row.namaWilayahSungai || ''),
         resolvePkpnId(row.pkpn || ''),
         resolveTematikId(row.tematikRenja || ''),
         resolveIndikatorRoId(roId, row.iro || '', row.satuanIro || ''),
-        resolveKegiatanPrioritasId(row.kp || ''),
         resolveIspId(roId, row.isp || ''),
         resolveIskId(row.kdKegiatan, row.isk || ''),
       ]);
@@ -816,11 +807,9 @@ export class ImportService {
         komponenId,
         jenis: row.jenisPaket as any,
         masaPelaksanaan: row.masaLaksana as any,
-        wilayahSungaiId,
         dokLingStatus: row.dokLing,
         catatanPembina: row.catatanPembina,
         catatanSspsda: row.catatanSspsda,
-        kegiatanPrioritasId,
         pkpnId,
         indikatorSasaranProgramId,
         indikatorSasaranKegiatanId,
@@ -908,7 +897,12 @@ export class ImportService {
               projectName: first.namaProyek,
               balaiId,
               kewenangan: (first.kewenangan || 'PUSAT') as any,
-              polaRencana: first.polaRencana || undefined,
+              wilayahSungaiId: await resolveWilayahSungaiId(
+                first.namaWilayahSungai || '',
+              ),
+              kegiatanPrioritasId: await resolveKegiatanPrioritasId(
+                first.kp || '',
+              ),
               tahunStudiLayak: first.tahunStudiLayak,
               tahunDed: first.tahunDed,
               tahunLarap: first.tahunLarap,
@@ -945,7 +939,12 @@ export class ImportService {
             balaiId,
             periodeId: await this.resolvePeriodeId(dto.tahun),
             kewenangan: (first.kewenangan || 'PUSAT') as any,
-            polaRencana: first.polaRencana || undefined,
+            wilayahSungaiId: await resolveWilayahSungaiId(
+              first.namaWilayahSungai || '',
+            ),
+            kegiatanPrioritasId: await resolveKegiatanPrioritasId(
+              first.kp || '',
+            ),
             tahunStudiLayak: first.tahunStudiLayak,
             tahunDed: first.tahunDed,
             tahunLarap: first.tahunLarap,

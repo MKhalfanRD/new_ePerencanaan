@@ -1,23 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, Calendar, FolderTree, Droplets } from "lucide-react";
+import { Building2, FolderTree, Droplets } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { BalaiTab } from "@/components/master/balai-tab";
-import { PeriodeTab } from "@/components/master/periode-tab";
 import { NomenklaturTab } from "@/components/master/nomenklatur-tab";
 import { WilayahSungaiTab } from "@/components/master/wilayah-sungai-tab";
 
+// Program/Kegiatan/KRO/RO/IRO/Komponen/Tahun jadi SATU halaman
+// ("Nomenklatur") — tab "Periode" lama dilebur ke sana sebagai bagian
+// "Tahun" supaya seluruh hierarki terbaca sekaligus.
 const tabs = [
-  { id: "balai", label: "Balai", icon: Building2 },
-  { id: "periode", label: "Periode", icon: Calendar },
   { id: "nomenklatur", label: "Nomenklatur", icon: FolderTree },
+  { id: "balai", label: "Balai", icon: Building2 },
   { id: "wilayah-sungai", label: "Wilayah Sungai", icon: Droplets },
 ];
 
 export default function MasterPage() {
-  const [activeTab, setActiveTab] = useState("balai");
+  const [activeTab, setActiveTab] = useState("nomenklatur");
 
   return (
     <div className="space-y-5">
@@ -50,7 +51,6 @@ export default function MasterPage() {
       {/* Tab content */}
       <div>
         {activeTab === "balai" && <BalaiTab />}
-        {activeTab === "periode" && <PeriodeTab />}
         {activeTab === "nomenklatur" && <NomenklaturTab />}
         {activeTab === "wilayah-sungai" && <WilayahSungaiTab />}
       </div>

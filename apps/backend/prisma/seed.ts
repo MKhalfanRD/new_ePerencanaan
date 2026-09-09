@@ -7,7 +7,16 @@ async function main() {
   // =============================================
   // ROLES
   // =============================================
-  const roles = [
+  // kegiatanId = cakupan kegiatan role. Diisi = role itu cuma menangani
+  // satu kegiatan (mis. OP7691 khusus 7691). SUPER_ADMIN & ADMINISTRATOR
+  // sengaja null: cuma dua role itu yang boleh lintas kegiatan.
+  const roles: {
+    code: string;
+    name: string;
+    kegiatanId?: string;
+    baseRole?: string;
+  }[] = [
+    { code: 'SUPER_ADMIN', name: 'Super Admin' },
     { code: 'ADMINISTRATOR', name: 'Administrator' },
     { code: 'OPERATOR', name: 'Operator' },
     { code: 'VERIFICATOR', name: 'Verifikator' },
@@ -21,11 +30,41 @@ async function main() {
     { code: 'MONITORING', name: 'Monitoring' },
   ];
 
+  // Role per kegiatan teknis — dibuat kalau kegiatannya sudah ada di master
+  // (diisi dari sync-nomenklatur-rspp.ts).
+  for (const kd of ['7691', '7692', '7693', '7694', '7695']) {
+    const keg = await prisma.kegiatan.findFirst({ where: { code: kd } });
+    if (keg) {
+      // baseRole wajib: tanpa itu role turunan ditolak semua @Roles().
+      roles.push({
+        code: `OPERATOR_${kd}`,
+        name: `Operator ${kd}`,
+        kegiatanId: keg.id,
+        baseRole: 'SATKER',
+      });
+      roles.push({
+        code: `VERIFIKATOR_${kd}`,
+        name: `Verifikator ${kd}`,
+        kegiatanId: keg.id,
+        baseRole: 'VERIFICATOR',
+      });
+    }
+  }
+
   for (const role of roles) {
     await prisma.role.upsert({
       where: { code: role.code },
-      update: { name: role.name },
-      create: { code: role.code, name: role.name },
+      update: {
+        name: role.name,
+        kegiatanId: role.kegiatanId ?? null,
+        baseRole: role.baseRole ?? null,
+      },
+      create: {
+        code: role.code,
+        name: role.name,
+        kegiatanId: role.kegiatanId ?? null,
+        baseRole: role.baseRole ?? null,
+      },
     });
   }
   console.log('✅ Roles seeded');
@@ -33,6 +72,9 @@ async function main() {
   // =============================================
   // USERS
   // =============================================
+  const superAdminRole = await prisma.role.findUnique({
+    where: { code: 'SUPER_ADMIN' },
+  });
   const adminRole = await prisma.role.findUnique({
     where: { code: 'ADMINISTRATOR' },
   });
@@ -43,13 +85,26 @@ async function main() {
     where: { code: 'SATKER' },
   });
 
+  // Satu-satunya role yang bisa membuka halaman Log Aktivitas.
+  await prisma.user.upsert({
+    where: { username: 'superadmin' },
+    update: {},
+    create: {
+      username: 'superadmin',
+      passwordHash: await bcrypt.hash('superadmin123', 10),
+      name: 'Super Admin',
+      roleId: superAdminRole?.id,
+      status: 'ACTIVE',
+    },
+  });
+
   await prisma.user.upsert({
     where: { username: 'admin' },
     update: {},
     create: {
       username: 'admin',
       passwordHash: await bcrypt.hash('admin123', 10),
-      name: 'Super Admin',
+      name: 'Administrator',
       roleId: adminRole?.id,
       status: 'ACTIVE',
     },
@@ -79,6 +134,7 @@ async function main() {
     },
   });
   console.log('✅ Users seeded');
+  console.log('   superadmin  / superadmin123');
   console.log('   admin       / admin123');
   console.log('   verificator / veri123');
   console.log('   satker      / satker123');

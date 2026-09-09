@@ -35,6 +35,11 @@ export class AuthService {
       sub: user.id,
       username: user.username,
       role: user.role?.code,
+      // Cakupan kegiatan role (mis. "7691"). Ikut di token supaya filter
+      // proyek per kegiatan tidak perlu query role tiap request.
+      kegiatanId: user.role?.kegiatanId ?? null,
+      // Template izin role turunan — lihat src/auth/role.ts.
+      baseRole: user.role?.baseRole ?? null,
     };
 
     return {
@@ -45,6 +50,8 @@ export class AuthService {
         username: user.username,
         name: user.name,
         role: user.role?.code,
+        kegiatanId: user.role?.kegiatanId ?? null,
+        baseRole: user.role?.baseRole ?? null,
       },
     };
   }

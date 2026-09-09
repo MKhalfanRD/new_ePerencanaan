@@ -108,11 +108,6 @@ export class PaketDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  wilayahSungaiId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   dokLingStatus?: string;
 
   @ApiPropertyOptional()
@@ -127,7 +122,6 @@ export class PaketDto {
 
   // Indikator RENJA — semuanya FK ke master data, dikonfirmasi dari
   // referensi 1.xlsx (lihat docs-planning/fitur-paket/04-rekonsiliasi-referensi.md)
-  @ApiPropertyOptional() @IsOptional() @IsString() kegiatanPrioritasId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() pkpnId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() indikatorSasaranProgramId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() indikatorSasaranKegiatanId?: string;
@@ -187,7 +181,7 @@ export class CreatePlanningDto {
   @IsNumber()
   longitude?: number;
 
-  // Kesesuaian Proyek
+  // Kesesuaian Proyek — cuma wilayah sungai & kebutuhan tanah.
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
@@ -196,32 +190,13 @@ export class CreatePlanningDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  sesuaiRTRW?: string;
+  wilayahSungaiId?: string;
 
+  // PN.PP.KP — pindah dari Paket ke Planning (1 proyek = 1 KP).
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  nomorPerdaRTRW?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  sesuaiPolaSDA?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  nomorKepmenPUPR?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  sesuaiMasterplan?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  polaRencana?: string;
+  kegiatanPrioritasId?: string;
 
   // StudiLayak/DED/LARAP — angka tahun polos, sesuai DB.xlsx (lihat
   // docs-planning/audit-restrukturisasi-db-xlsx.md §3.3)
@@ -263,6 +238,14 @@ export class CreatePlanningDto {
   @IsOptional()
   @IsString()
   sumberUsulanLainnya?: string;
+
+  // Tagging evaluasi (MCA) — daftar id EvaluasiItem yang dicentang.
+  // Skornya dihitung di service, tidak diterima dari client.
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  evaluasiItemIds?: string[];
 
   // Relasi
   @ApiPropertyOptional({ type: [PaketDto] })

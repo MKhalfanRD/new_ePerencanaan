@@ -31,6 +31,8 @@ interface Role {
   id: string;
   code: string;
   name: string;
+  /** Kegiatan yang ditangani role ini; null = lintas kegiatan. */
+  kegiatan?: { id: string; code: string; name: string } | null;
 }
 
 interface UserData {
@@ -128,20 +130,13 @@ export function UserFormDialog({ open, onClose, onSuccess, editData }: Props) {
       })
       .catch(() => {});
 
-    // Fetch roles dari backend
+    // Role diambil dari /master/roles, bukan lagi hardcode: daftarnya
+    // bertambah tiap ada role per kegiatan (OPERATOR_7691, dst.) dan
+    // cakupan kegiatannya perlu ikut ditampilkan saat memilih.
     api
-      .get("/master/balai")
-      .then((b) => setBalaiList(b.data))
-      .catch(() => {});
-
-    // Hardcode roles karena tidak ada endpoint khusus
-    setRoles([
-      { id: "1", code: "ADMINISTRATOR", name: "Administrator" },
-      { id: "2", code: "VERIFICATOR", name: "Verifikator" },
-      { id: "3", code: "SATKER", name: "Satuan Kerja" },
-      { id: "4", code: "OPERATOR", name: "Operator" },
-      { id: "5", code: "MONITORING", name: "Monitoring" },
-    ]);
+      .get<Role[]>("/master/roles")
+      .then((r) => setRoles(r.data))
+      .catch(() => setRoles([]));
 
     setLoadingMaster(false);
   }, [open]);
@@ -342,9 +337,17 @@ export function UserFormDialog({ open, onClose, onSuccess, editData }: Props) {
                   <SelectContent>
                     {balaiList.map((b) => (
                       <SelectItem key={b.id} value={b.id.toString()}>
-                        <span className="font-medium">{b.shortName}</span>
-                        <span className="text-muted-foreground ml-2">
-                          — {b.name}
+                        {b.shortName && (
+                          <span className="font-medium">{b.shortName}</span>
+                        )}
+                        <span
+                          className={
+                            b.shortName
+                              ? "text-muted-foreground ml-2"
+                              : "font-medium"
+                          }
+                        >
+                          {b.shortName ? `— ${b.name}` : b.name}
                         </span>
                       </SelectItem>
                     ))}

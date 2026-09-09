@@ -86,6 +86,16 @@ export function WilayahSungaiTab() {
     }
   };
 
+  const onBulkDelete = async (ids: (string | number)[]) => {
+    try {
+      const res = await api.post("/master/wilayah-sungai/bulk-delete", { ids });
+      toast.success(res.data?.message || "Data terpilih berhasil dihapus");
+      fetch();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal menghapus");
+    }
+  };
+
   return (
     <>
       <MasterTable
@@ -96,6 +106,7 @@ export function WilayahSungaiTab() {
         onAdd={openAdd}
         onEdit={openEdit}
         onDelete={onDelete}
+        onBulkDelete={onBulkDelete}
         searchKeys={["name"]}
       />
 

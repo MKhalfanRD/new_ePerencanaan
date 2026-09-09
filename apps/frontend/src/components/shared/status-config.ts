@@ -41,3 +41,24 @@ export const alokasiStatusConfig = {
 } satisfies Record<string, { label: string; dotColor: DotColor }>;
 
 export type AlokasiStatus = keyof typeof alokasiStatusConfig;
+
+/**
+ * Penilaian realisasi terhadap rencananya. Hijau + centang HANYA kalau ada
+ * realisasi dan nilainya tidak melebihi rencana — realisasi yang melebihi
+ * rencana itu over-budget, bukan "sukses", jadi merah tanpa centang.
+ * Dipakai bareng di daftar proyek & drawer detail supaya aturannya satu,
+ * bukan dua salinan yang gampang beda.
+ */
+export const nilaiRealisasi = (realisasi: number, rencana: number) => {
+  const over = realisasi > rencana;
+  return {
+    over,
+    checked: realisasi > 0 && !over,
+    className:
+      realisasi <= 0
+        ? "text-muted-foreground"
+        : over
+          ? "text-red-600"
+          : "text-emerald-600",
+  };
+};

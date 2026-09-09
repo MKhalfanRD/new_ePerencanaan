@@ -12,6 +12,8 @@ import { CreatePlanningDto } from './dto/create-planning.dto';
 import { UpdatePlanningDto } from './dto/update-planning.dto';
 import { QueryPlanningDto } from './dto/query-planning.dto';
 import { generateKodeProyek } from '../common/kode-generator';
+import { skorDariItemIds } from './evaluasi-skor';
+import { LINTAS_KEGIATAN, roleEfektif } from '../auth/role';
 
 /** Lengkapi array alokasi nested-create dengan pasangan status (Rencana<->
  * Realisasi) bernilai 0 untuk tahun yang belum punya pasangannya — meniru
@@ -56,7 +58,6 @@ const planningInclude = Prisma.validator<Prisma.PlanningInclude>()({
         },
       },
       komponen: true,
-      wilayahSungai: true,
       alokasi: {
         include: { lokasi: true },
         orderBy: [
@@ -67,7 +68,30 @@ const planningInclude = Prisma.validator<Prisma.PlanningInclude>()({
     },
     orderBy: { createdAt: Prisma.SortOrder.asc },
   },
+  wilayahSungai: true,
+  kegiatanPrioritas: {
+    include: { programPrioritas: { include: { prioritasNasional: true } } },
+  },
+  evaluasi: { include: { item: true } },
 });
+
+/**
+ * Batas kegiatan yang boleh dilihat/diubah seorang user. SUPER_ADMIN &
+ * ADMINISTRATOR lintas kegiatan; role lain WAJIB terikat satu kegiatan
+ * (Role.kegiatanId) dan cuma melihat proyek yang punya paket di kegiatan itu.
+ */
+function filterKegiatan(user: any): Prisma.PlanningWhereInput | null {
+  if (LINTAS_KEGIATAN.includes(user?.role)) return null;
+  if (!user?.kegiatanId) return null;
+  return {
+    paket: {
+      some: {
+        deletedAt: null,
+        ro: { kro: { kegiatanId: user.kegiatanId } },
+      },
+    },
+  };
+}
 
 @Injectable()
 export class PlanningsService {
@@ -95,12 +119,14 @@ export class PlanningsService {
         latitude: dto.latitude,
         longitude: dto.longitude,
         kebutuhanTanah: dto.kebutuhanTanah ?? false,
-        sesuaiRTRW: dto.sesuaiRTRW,
-        nomorPerdaRTRW: dto.nomorPerdaRTRW,
-        sesuaiPolaSDA: dto.sesuaiPolaSDA,
-        nomorKepmenPUPR: dto.nomorKepmenPUPR,
-        sesuaiMasterplan: dto.sesuaiMasterplan,
-        polaRencana: dto.polaRencana,
+        wilayahSungaiId: dto.wilayahSungaiId,
+        kegiatanPrioritasId: dto.kegiatanPrioritasId,
+        skorEvaluasi: await skorDariItemIds(tx, dto.evaluasiItemIds ?? []),
+        evaluasi: dto.evaluasiItemIds?.length
+          ? {
+              create: dto.evaluasiItemIds.map((itemId) => ({ itemId })),
+            }
+          : undefined,
         tahunStudiLayak: dto.tahunStudiLayak,
         tahunDed: dto.tahunDed,
         tahunLarap: dto.tahunLarap,
@@ -118,11 +144,9 @@ export class PlanningsService {
                 komponenId: p.komponenId,
                 jenis: p.jenis as any,
                 masaPelaksanaan: p.masaPelaksanaan as any,
-                wilayahSungaiId: p.wilayahSungaiId,
                 dokLingStatus: p.dokLingStatus,
                 catatanPembina: p.catatanPembina,
                 catatanSspsda: p.catatanSspsda,
-                kegiatanPrioritasId: p.kegiatanPrioritasId,
                 pkpnId: p.pkpnId,
                 indikatorSasaranProgramId: p.indikatorSasaranProgramId,
                 indikatorSasaranKegiatanId: p.indikatorSasaranKegiatanId,
@@ -176,15 +200,24 @@ export class PlanningsService {
     const { status, page = 1, limit = 10, search, periodeId } = query;
     const skip = (page - 1) * limit;
 
-    const cacheKey = `plannings:list:${user.userId}:${user.role}:${status ?? ''}:${page}:${limit}:${search ?? ''}:${periodeId ?? ''}`;
+    const cacheKey = `plannings:list:${user.userId}:${user.role}:${user.kegiatanId ?? ''}:${status ?? ''}:${page}:${limit}:${search ?? ''}:${periodeId ?? ''}`;
     const cached = await this.redis.get(cacheKey);
     if (cached) return cached;
 
     const where: Prisma.PlanningWhereInput = {};
 
-    if (user.role !== 'ADMINISTRATOR' && user.role !== 'VERIFICATOR') {
+    // Verifikator (termasuk role turunannya, mis. VERIFIKATOR_7691) melihat
+    // semua proyek dalam cakupannya, bukan cuma buatannya sendiri.
+    if (
+      !LINTAS_KEGIATAN.includes(user.role) &&
+      roleEfektif(user) !== 'VERIFICATOR'
+    ) {
       where.createdById = user.userId;
     }
+    // Role yang terikat 1 kegiatan (mis. operator 7691) tidak boleh melihat
+    // proyek kegiatan lain, termasuk VERIFICATOR.
+    const scope = filterKegiatan(user);
+    if (scope) Object.assign(where, scope);
     if (status) where.status = status as any;
     if (periodeId) where.periodeId = Number(periodeId);
     if (search) where.projectName = { contains: search, mode: 'insensitive' };
@@ -211,22 +244,37 @@ export class PlanningsService {
 
   async findOne(id: string, user: any) {
     const cacheKey = `planning:${id}`;
-    const cached = await this.redis.get(cacheKey);
-    if (cached) return cached;
-
-    const planning = await this.prisma.planning.findUnique({
-      where: { id },
-      include: planningInclude,
-    });
+    // Cache dipakai sebagai sumber data, TAPI otorisasi di bawah tetap
+    // jalan untuk hasil cache — jangan pernah return lebih awal di sini.
+    const planning: any =
+      (await this.redis.get(cacheKey)) ??
+      (await this.prisma.planning.findUnique({
+        where: { id },
+        include: planningInclude,
+      }));
 
     if (!planning) throw new NotFoundException('Planning tidak ditemukan');
 
     if (
-      user.role !== 'ADMINISTRATOR' &&
-      user.role !== 'VERIFICATOR' &&
+      !LINTAS_KEGIATAN.includes(user.role) &&
+      roleEfektif(user) !== 'VERIFICATOR' &&
       planning.createdById !== user.userId
     ) {
       throw new ForbiddenException('Anda tidak memiliki akses ke planning ini');
+    }
+
+    // Role terikat kegiatan: proyek di luar kegiatannya tidak boleh dibuka
+    // walaupun dia yang membuat (mis. setelah role-nya dipindah).
+    if (
+      !LINTAS_KEGIATAN.includes(user.role) &&
+      user.kegiatanId &&
+      !planning.paket.some(
+        (pk) => pk.ro.kro.kegiatanId === user.kegiatanId,
+      )
+    ) {
+      throw new ForbiddenException(
+        'Proyek ini di luar kegiatan yang Anda tangani',
+      );
     }
 
     await this.redis.set(cacheKey, planning, 300);
@@ -276,13 +324,32 @@ export class PlanningsService {
   async update(id: string, dto: UpdatePlanningDto, user: any) {
     const planning = await this.prisma.planning.findUnique({ where: { id } });
     if (!planning) throw new NotFoundException('Planning tidak ditemukan');
-    if (user.role !== 'ADMINISTRATOR' && planning.createdById !== user.userId)
+    if (
+      !LINTAS_KEGIATAN.includes(user.role) &&
+      planning.createdById !== user.userId
+    )
       throw new ForbiddenException('Bukan planning milik anda');
+
+    // Tagging evaluasi: kirim array = ganti seluruh tagging & hitung ulang
+    // skornya. Tidak dikirim = tagging lama dibiarkan apa adanya. Ditulis
+    // sebagai nested write (bukan $transaction manual) — Prisma sudah
+    // menjalankan nested write dalam satu transaksi.
+    const gantiEvaluasi = Array.isArray(dto.evaluasiItemIds);
+    const skorBaru = gantiEvaluasi
+      ? await skorDariItemIds(this.prisma, dto.evaluasiItemIds!)
+      : undefined;
 
     const updated = await this.prisma.planning.update({
       where: { id },
       data: {
         // kodeProyek sengaja tidak diikutkan — permanen sejak dibuat.
+        skorEvaluasi: skorBaru,
+        evaluasi: gantiEvaluasi
+          ? {
+              deleteMany: {},
+              create: dto.evaluasiItemIds!.map((itemId) => ({ itemId })),
+            }
+          : undefined,
         balaiId: dto.balaiId,
         periodeId: dto.periodeId,
         projectName: dto.projectName,
@@ -292,12 +359,8 @@ export class PlanningsService {
         latitude: dto.latitude,
         longitude: dto.longitude,
         kebutuhanTanah: dto.kebutuhanTanah,
-        sesuaiRTRW: dto.sesuaiRTRW,
-        nomorPerdaRTRW: dto.nomorPerdaRTRW,
-        sesuaiPolaSDA: dto.sesuaiPolaSDA,
-        nomorKepmenPUPR: dto.nomorKepmenPUPR,
-        sesuaiMasterplan: dto.sesuaiMasterplan,
-        polaRencana: dto.polaRencana,
+        wilayahSungaiId: dto.wilayahSungaiId,
+        kegiatanPrioritasId: dto.kegiatanPrioritasId,
         tahunStudiLayak: dto.tahunStudiLayak,
         tahunDed: dto.tahunDed,
         tahunLarap: dto.tahunLarap,
@@ -314,7 +377,10 @@ export class PlanningsService {
   async remove(id: string, user: any) {
     const planning = await this.prisma.planning.findUnique({ where: { id } });
     if (!planning) throw new NotFoundException('Planning tidak ditemukan');
-    if (user.role !== 'ADMINISTRATOR' && planning.createdById !== user.userId) {
+    if (
+      !LINTAS_KEGIATAN.includes(user.role) &&
+      planning.createdById !== user.userId
+    ) {
       throw new ForbiddenException('Bukan planning milik anda');
     }
 

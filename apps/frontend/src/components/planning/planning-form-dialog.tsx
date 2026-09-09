@@ -12,6 +12,8 @@ import {
   FileCheck,
   Wallet,
   ScrollText,
+  Target,
+  ClipboardCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -37,7 +39,25 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import api from "@/lib/api";
-import { Balai, Periode, RO, Planning } from "@/types";
+import {
+  Balai,
+  Periode,
+  RO,
+  Planning,
+  KegiatanPrioritas,
+  EvaluasiItem,
+  KriteriaEvaluasi,
+} from "@/types";
+
+// Bobot & label kriteria evaluasi — cerminan BOBOT_KRITERIA di backend
+// (src/plannings/evaluasi-skor.ts). Skor final tetap dihitung backend;
+// angka di sini cuma untuk menampilkan progres ke user.
+const KRITERIA: { key: KriteriaEvaluasi; label: string; bobot: number }[] = [
+  { key: "URGENSITAS", label: "Urgensitas", bobot: 0.4 },
+  { key: "KESIAPAN_TEKNIS", label: "Kesiapan Teknis", bobot: 0.2 },
+  { key: "TEMATIK", label: "Tematik", bobot: 0.2 },
+  { key: "VALUASI", label: "Valuasi", bobot: 0.2 },
+];
 
 // Dipakai lewat setValueAs pada input number opsional: input kosong via
 // valueAsNumber jadi NaN, bukan undefined — z.number().optional() menolak
@@ -65,11 +85,9 @@ const schema = z.object({
     .optional(),
   sumberUsulanLainnya: z.string().optional(),
   kebutuhanTanah: z.boolean(),
-  sesuaiRTRW: z.string().optional(),
-  nomorPerdaRTRW: z.string().optional(),
-  sesuaiPolaSDA: z.string().optional(),
-  nomorKepmenPUPR: z.string().optional(),
-  sesuaiMasterplan: z.string().optional(),
+  wilayahSungaiId: z.string().optional(),
+  kegiatanPrioritasId: z.string().optional(),
+  evaluasiItemIds: z.array(z.string()),
   // StudiLayak/DED/LARAP — angka tahun polos sesuai DB.xlsx, bukan status
   tahunStudiLayak: z.number().optional(),
   tahunDed: z.number().optional(),
@@ -144,6 +162,12 @@ export function PlanningFormDialog({
   const [periodeList, setPeriodeList] = useState<Periode[]>([]);
   const [roList, setROList] = useState<RO[]>([]);
   const [roSearch, setRoSearch] = useState("");
+  const [wilayahSungaiList, setWilayahSungaiList] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const [wsSearch, setWsSearch] = useState("");
+  const [kpList, setKpList] = useState<KegiatanPrioritas[]>([]);
+  const [evaluasiItems, setEvaluasiItems] = useState<EvaluasiItem[]>([]);
   const [loadingMaster, setLoadingMaster] = useState(false);
   const isEdit = !!editData;
 
@@ -160,6 +184,7 @@ export function PlanningFormDialog({
     defaultValues: {
       kewenangan: "PUSAT",
       kebutuhanTanah: false,
+      evaluasiItemIds: [],
       paket: [],
     },
   });
@@ -177,11 +202,15 @@ export function PlanningFormDialog({
       api.get("/master/balai"),
       api.get("/master/periodes"),
       api.get("/master/ro"),
+      api.get("/master/wilayah-sungai"),
+      api.get("/master/kegiatan-prioritas"),
     ])
-      .then(([b, p, r]) => {
+      .then(([b, p, r, ws, kp]) => {
         setBalaiList(b.data);
         setPeriodeList(p.data);
         setROList(r.data);
+        setWilayahSungaiList(ws.data);
+        setKpList(kp.data);
       })
       .finally(() => setLoadingMaster(false));
   }, [open]);
@@ -196,11 +225,9 @@ export function PlanningFormDialog({
         sumberUsulanProyek: editData.sumberUsulanProyek,
         sumberUsulanLainnya: editData.sumberUsulanLainnya || "",
         kebutuhanTanah: editData.kebutuhanTanah,
-        sesuaiRTRW: editData.sesuaiRTRW || "",
-        nomorPerdaRTRW: editData.nomorPerdaRTRW || "",
-        sesuaiPolaSDA: editData.sesuaiPolaSDA || "",
-        nomorKepmenPUPR: editData.nomorKepmenPUPR || "",
-        sesuaiMasterplan: editData.sesuaiMasterplan || "",
+        wilayahSungaiId: editData.wilayahSungaiId || "",
+        kegiatanPrioritasId: editData.kegiatanPrioritasId || "",
+        evaluasiItemIds: (editData.evaluasi ?? []).map((e) => e.itemId),
         tahunStudiLayak: editData.tahunStudiLayak,
         tahunDed: editData.tahunDed,
         tahunLarap: editData.tahunLarap,
@@ -210,10 +237,52 @@ export function PlanningFormDialog({
       reset({
         kewenangan: "PUSAT",
         kebutuhanTanah: false,
+        evaluasiItemIds: [],
         paket: [],
       });
     }
   }, [editData, open]);
+
+  // Daftar item evaluasi mengikuti kegiatan proyek: diambil dari RO paket
+  // pertama (form baru) atau dari paket yang sudah tersimpan (mode edit).
+  // Tiap kegiatan punya template sendiri di referensi 1.xlsx.
+  const roIdPaketPertama = watch("paket.0.roId");
+  const kegiatanId =
+    roList.find((r) => r.id === roIdPaketPertama)?.kro.kegiatan.id ??
+    editData?.paket?.[0]?.ro?.kro?.kegiatan?.id;
+
+  useEffect(() => {
+    if (!open || !kegiatanId) {
+      setEvaluasiItems([]);
+      return;
+    }
+    api
+      .get<EvaluasiItem[]>("/master/evaluasi-item", { params: { kegiatanId } })
+      .then((r) => setEvaluasiItems(r.data))
+      .catch(() => setEvaluasiItems([]));
+  }, [open, kegiatanId]);
+
+  const evaluasiDipilih = watch("evaluasiItemIds") ?? [];
+  const toggleEvaluasi = (id: string) =>
+    setValue(
+      "evaluasiItemIds",
+      evaluasiDipilih.includes(id)
+        ? evaluasiDipilih.filter((x) => x !== id)
+        : [...evaluasiDipilih, id],
+      { shouldDirty: true },
+    );
+
+  // Skor pratinjau — rumus sama dengan hitungSkorEvaluasi() di backend:
+  // per kriteria, score terpilih / total score kriteria x bobot kriteria.
+  const skorPratinjau = KRITERIA.reduce((total, k) => {
+    const perKriteria = evaluasiItems.filter((i) => i.kriteria === k.key);
+    const maks = perKriteria.reduce((a, i) => a + i.score, 0);
+    if (!maks) return total;
+    const dapat = perKriteria
+      .filter((i) => evaluasiDipilih.includes(i.id))
+      .reduce((a, i) => a + i.score, 0);
+    return total + (dapat / maks) * k.bobot;
+  }, 0);
 
   const onSubmit = async (data: FormData) => {
     try {
@@ -341,11 +410,19 @@ export function PlanningFormDialog({
                           )
                           .map((b) => (
                             <SelectItem key={b.id} value={b.id.toString()}>
-                              <span className="font-medium">
-                                {b.shortName}
-                              </span>
-                              <span className="text-muted-foreground ml-2">
-                                — {b.name}
+                              {b.shortName && (
+                                <span className="font-medium">
+                                  {b.shortName}
+                                </span>
+                              )}
+                              <span
+                                className={
+                                  b.shortName
+                                    ? "text-muted-foreground ml-2"
+                                    : "font-medium"
+                                }
+                              >
+                                {b.shortName ? `— ${b.name}` : b.name}
                               </span>
                             </SelectItem>
                           ))}
@@ -492,75 +569,46 @@ export function PlanningFormDialog({
                 <SectionHeader
                   icon={FileCheck}
                   title="Kesesuaian Proyek"
-                  description="Keterkaitan proyek dengan rencana tata ruang dan pengelolaan SDA"
+                  description="Wilayah sungai lokasi proyek dan kebutuhan tanahnya"
                 />
 
                 <div className="grid grid-cols-2 gap-5 pl-12">
                   <div className="space-y-2">
-                    <Label>Sesuai RTRW/RDTR</Label>
+                    <Label>Wilayah Sungai</Label>
                     <Select
-                      value={watch("sesuaiRTRW") || ""}
-                      onValueChange={(v) => setValue("sesuaiRTRW", v)}
+                      value={watch("wilayahSungaiId") || NONE}
+                      onValueChange={(v) =>
+                        setValue("wilayahSungaiId", v === NONE ? "" : v)
+                      }
+                      onOpenChange={(o) => o && setWsSearch("")}
                     >
                       <SelectTrigger className="h-10">
-                        <SelectValue placeholder="Pilih status" />
+                        <SelectValue placeholder="Pilih wilayah sungai" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Sesuai">Sesuai</SelectItem>
-                        <SelectItem value="Tidak Sesuai">
-                          Tidak Sesuai
-                        </SelectItem>
-                        <SelectItem value="Dalam Proses">
-                          Dalam Proses
-                        </SelectItem>
+                        <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+                        {wilayahSungaiList.length > 20 && (
+                          <SelectSearchBox
+                            value={wsSearch}
+                            onChange={setWsSearch}
+                            placeholder="Cari wilayah sungai..."
+                          />
+                        )}
+                        {wilayahSungaiList
+                          .filter((w) =>
+                            !wsSearch
+                              ? true
+                              : w.name
+                                  .toLowerCase()
+                                  .includes(wsSearch.toLowerCase()),
+                          )
+                          .map((w) => (
+                            <SelectItem key={w.id} value={w.id}>
+                              {w.name}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>No. Perda RTRW</Label>
-                    <Input
-                      className="h-10"
-                      placeholder="Perda No. ... Tahun ..."
-                      {...register("nomorPerdaRTRW")}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Sesuai Pola/Rencana SDA</Label>
-                    <Select
-                      value={watch("sesuaiPolaSDA") || ""}
-                      onValueChange={(v) => setValue("sesuaiPolaSDA", v)}
-                    >
-                      <SelectTrigger className="h-10">
-                        <SelectValue placeholder="Pilih status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Sesuai">Sesuai</SelectItem>
-                        <SelectItem value="Tidak Sesuai">
-                          Tidak Sesuai
-                        </SelectItem>
-                        <SelectItem value="Dalam Proses">
-                          Dalam Proses
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>No. Kepmen PUPR</Label>
-                    <Input
-                      className="h-10"
-                      placeholder="Kepmen PUPR no. ..."
-                      {...register("nomorKepmenPUPR")}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Sesuai Masterplan</Label>
-                    <Input
-                      className="h-10"
-                      placeholder="Masterplan ..."
-                      {...register("sesuaiMasterplan")}
-                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Kebutuhan Tanah</Label>
@@ -576,6 +624,46 @@ export function PlanningFormDialog({
                       <SelectContent>
                         <SelectItem value="tidak">Tidak Ada</SelectItem>
                         <SelectItem value="ya">Ada</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              {/* === PN / PP / KP === pengganti section "Major Project"
+                  lama. Sumbernya master PN.PP.KP (referensi 1.xlsx sheet
+                  PNPPKP); dulu ada di form Paket, sekarang di proyek karena
+                  1 proyek = 1 Kegiatan Prioritas. */}
+              <div className="space-y-5">
+                <SectionHeader
+                  icon={Target}
+                  title="PN / PP / KP"
+                  description="Kegiatan Prioritas RPJMN yang didukung proyek ini"
+                />
+
+                <div className="pl-12">
+                  <div className="space-y-2">
+                    <Label>Kegiatan Prioritas (PN.PP.KP)</Label>
+                    <Select
+                      value={watch("kegiatanPrioritasId") || NONE}
+                      onValueChange={(v) =>
+                        setValue("kegiatanPrioritasId", v === NONE ? "" : v)
+                      }
+                    >
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Pilih kegiatan prioritas" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+                        {kpList.map((kp) => (
+                          <SelectItem key={kp.id} value={kp.id}>
+                            <span className="font-mono text-[10px] mr-1">
+                              {kp.programPrioritas.prioritasNasional.code}.
+                              {kp.programPrioritas.code}.{kp.code}
+                            </span>
+                            {kp.name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -746,9 +834,12 @@ export function PlanningFormDialog({
                                     )
                                     .map((r) => (
                                     <SelectItem key={r.id} value={r.id}>
+                                      {/* Kode lengkap Kegiatan · KRO · RO —
+                                          sama dengan dropdown RO di form Paket
+                                          (paket-form-dialog.tsx). */}
                                       <span className="font-medium">
-                                        {r.kro.kegiatan.program.code} ·{" "}
-                                        {r.kro.code} · {r.code}
+                                        {r.kro.kegiatan.code} · {r.kro.code} ·{" "}
+                                        {r.code}
                                       </span>
                                       <span className="text-muted-foreground ml-2 text-xs">
                                         — {r.name}
@@ -923,6 +1014,75 @@ export function PlanningFormDialog({
                   </div>
                 </div>
               )}
+
+              {/* === EVALUASI === tagging checkbox multi criteria analysis.
+                  Ditaruh SETELAH Paket karena daftarnya ikut kegiatan dari RO
+                  paket pertama (referensi 1.xlsx sheet "evaluasi
+                  Irwa/supan/benda/atab"); skor final dihitung ulang di backend
+                  saat simpan, angka di sini pratinjau. */}
+              <div className="space-y-5">
+                <SectionHeader
+                  icon={ClipboardCheck}
+                  title="Evaluasi"
+                  description="Tagging multi criteria analysis — centang yang sesuai dengan proyek"
+                />
+
+                <div className="pl-12 space-y-4">
+                  {evaluasiItems.length === 0 ? (
+                    <div className="rounded-xl border-2 border-dashed p-6 text-center text-muted-foreground text-xs">
+                      {kegiatanId
+                        ? "Belum ada item evaluasi untuk kegiatan ini."
+                        : "Pilih RO pada paket dulu — daftar evaluasi mengikuti kegiatannya."}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-4 py-2.5">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Skor Evaluasi
+                        </span>
+                        <span className="text-sm font-bold">
+                          {(skorPratinjau * 100).toFixed(1)}%
+                        </span>
+                      </div>
+
+                      {KRITERIA.map((k) => {
+                        const items = evaluasiItems.filter(
+                          (i) => i.kriteria === k.key,
+                        );
+                        if (!items.length) return null;
+                        return (
+                          <div key={k.key} className="space-y-2">
+                            <p className="text-xs font-semibold text-muted-foreground">
+                              {k.label} ({k.bobot * 100}%)
+                            </p>
+                            <div className="rounded-xl border divide-y">
+                              {items.map((item) => (
+                                <label
+                                  key={item.id}
+                                  className="flex items-start gap-2.5 px-3.5 py-2.5 cursor-pointer hover:bg-accent/40"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                                    checked={evaluasiDipilih.includes(item.id)}
+                                    onChange={() => toggleEvaluasi(item.id)}
+                                  />
+                                  <span className="text-xs leading-snug">
+                                    {item.name}
+                                  </span>
+                                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                                    {item.score}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+                </div>
+              </div>
             </>
           )}
         </SheetBody>

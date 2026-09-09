@@ -66,6 +66,13 @@ export class UsersController {
     return this.usersService.setStatus(id, dto);
   }
 
+  @ApiOperation({ summary: 'Hapus banyak user sekaligus (ADMINISTRATOR)' })
+  @Roles('ADMINISTRATOR')
+  @Post('bulk-delete')
+  bulkRemove(@Body('ids') ids: string[], @CurrentUser() user: any) {
+    return this.usersService.bulkRemove(ids, user.userId);
+  }
+
   @ApiOperation({ summary: 'Hapus user (ADMINISTRATOR)' })
   @Roles('ADMINISTRATOR')
   @Delete(':id')

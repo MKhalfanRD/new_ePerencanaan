@@ -38,11 +38,6 @@ export class CreatePaketDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  wilayahSungaiId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   dokLingStatus?: string;
 
   @ApiPropertyOptional()
@@ -57,7 +52,6 @@ export class CreatePaketDto {
 
   // Indikator RENJA — semuanya FK ke master data, dikonfirmasi dari
   // referensi 1.xlsx (lihat docs-planning/fitur-paket/04-rekonsiliasi-referensi.md)
-  @ApiPropertyOptional() @IsOptional() @IsString() kegiatanPrioritasId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() pkpnId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() indikatorSasaranProgramId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() indikatorSasaranKegiatanId?: string;

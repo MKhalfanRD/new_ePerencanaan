@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
+import { punyaRole } from "@/lib/role";
 import { Planning, PaginatedResponse } from "@/types";
 import { statusConfig } from "@/components/shared/status-config";
 
@@ -64,7 +65,7 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const isSatker = user?.role === "SATKER";
+  const isSatker = punyaRole(user, "SATKER");
 
   // Periode aktif diturunkan dari data yang sudah ada (tidak nambah request) —
   // setiap Planning bawa objek `periode` lengkap dgn flag isActive.

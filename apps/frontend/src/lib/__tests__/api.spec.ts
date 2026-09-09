@@ -117,7 +117,7 @@ describe("lib/api", () => {
     expect(localStorage.getItem("access_token")).toBe("token-lama");
   });
 
-  it("baseURL memakai NEXT_PUBLIC_API_URL jika di-set, fallback ke localhost:3000", async () => {
+  it("baseURL memakai NEXT_PUBLIC_API_URL jika di-set, fallback ke localhost:3010", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_URL", "https://api.eperencanaan.example");
     const { default: api } = await import("@/lib/api");
     expect(api.defaults.baseURL).toBe("https://api.eperencanaan.example");

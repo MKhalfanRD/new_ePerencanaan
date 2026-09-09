@@ -14,6 +14,9 @@ import { AlokasiModule } from './alokasi/alokasi.module';
 import { PaketModule } from './paket/paket.module';
 import { ImportModule } from './import/import.module';
 import { WilayahModule } from './wilayah/wilayah.module';
+import { ActivityLogModule } from './activity-log/activity-log.module';
+import { ActivityLogInterceptor } from './activity-log/activity-log.interceptor';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -28,8 +31,13 @@ import { WilayahModule } from './wilayah/wilayah.module';
     PaketModule,
     ImportModule,
     WilayahModule,
+    ActivityLogModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // Catat semua mutasi (POST/PATCH/PUT/DELETE) ke activity_logs.
+    { provide: APP_INTERCEPTOR, useClass: ActivityLogInterceptor },
+  ],
 })
 export class AppModule {}

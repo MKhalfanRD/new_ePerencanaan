@@ -79,11 +79,9 @@ const schema = z.object({
   komponenId: z.string().optional(),
   jenis: z.enum(["FISIK", "NON_FISIK"]),
   masaPelaksanaan: z.enum(["SINGLE_YEAR", "MULTI_YEAR"]),
-  wilayahSungaiId: z.string().optional(),
   dokLingStatus: z.string().optional(),
   catatanPembina: z.string().optional(),
   catatanSspsda: z.string().optional(),
-  kegiatanPrioritasId: z.string().optional(),
   pkpnId: z.string().optional(),
   indikatorSasaranProgramId: z.string().optional(),
   indikatorSasaranKegiatanId: z.string().optional(),
@@ -118,20 +116,15 @@ export function PaketFormDialog({
   const [loadingMaster, setLoadingMaster] = useState(false);
   const [roList, setROList] = useState<RO[]>([]);
   const [komponenList, setKomponenList] = useState<Komponen[]>([]);
-  const [wilayahSungaiList, setWilayahSungaiList] = useState<WilayahSungaiOpt[]>([]);
 
   // Teks pencarian per dropdown yang berpotensi > 20 opsi.
   const [roSearch, setRoSearch] = useState("");
   const [komponenSearch, setKomponenSearch] = useState("");
-  const [wilayahSearch, setWilayahSearch] = useState("");
   const [ispSearch, setIspSearch] = useState("");
   const [iskSearch, setIskSearch] = useState("");
   const [indikatorRoSearch, setIndikatorRoSearch] = useState("");
   const [pkpnList, setPkpnList] = useState<PkpnOpt[]>([]);
   const [tematikList, setTematikList] = useState<TematikOpt[]>([]);
-  const [kegiatanPrioritasList, setKegiatanPrioritasList] = useState<
-    KegiatanPrioritasOpt[]
-  >([]);
   const [sasaranProgramList, setSasaranProgramList] = useState<
     SasaranProgramOpt[]
   >([]);
@@ -163,20 +156,16 @@ export function PaketFormDialog({
     Promise.all([
       api.get("/master/ro"),
       api.get("/master/komponen"),
-      api.get("/master/wilayah-sungai"),
       api.get("/master/pkpn"),
       api.get("/master/tematik-renja"),
-      api.get("/master/kegiatan-prioritas"),
       api.get("/master/sasaran-program"),
       api.get("/master/sasaran-kegiatan"),
     ])
-      .then(([ro, komponen, ws, pkpn, tematik, kp, sp, sk]) => {
+      .then(([ro, komponen, pkpn, tematik, sp, sk]) => {
         setROList(ro.data);
         setKomponenList(komponen.data);
-        setWilayahSungaiList(ws.data);
         setPkpnList(pkpn.data);
         setTematikList(tematik.data);
-        setKegiatanPrioritasList(kp.data);
         setSasaranProgramList(sp.data);
         setSasaranKegiatanList(sk.data);
       })
@@ -191,11 +180,9 @@ export function PaketFormDialog({
         komponenId: editData.komponenId || "",
         jenis: editData.jenis,
         masaPelaksanaan: editData.masaPelaksanaan,
-        wilayahSungaiId: editData.wilayahSungaiId || "",
         dokLingStatus: editData.dokLingStatus || "",
         catatanPembina: editData.catatanPembina || "",
         catatanSspsda: editData.catatanSspsda || "",
-        kegiatanPrioritasId: editData.kegiatanPrioritasId || "",
         pkpnId: editData.pkpnId || "",
         indikatorSasaranProgramId: editData.indikatorSasaranProgramId || "",
         indikatorSasaranKegiatanId: editData.indikatorSasaranKegiatanId || "",
@@ -257,11 +244,9 @@ export function PaketFormDialog({
     const payload = {
       ...data,
       komponenId: data.komponenId || undefined,
-      wilayahSungaiId: data.wilayahSungaiId || undefined,
       dokLingStatus: data.dokLingStatus || undefined,
       catatanPembina: data.catatanPembina || undefined,
       catatanSspsda: data.catatanSspsda || undefined,
-      kegiatanPrioritasId: data.kegiatanPrioritasId || undefined,
       pkpnId: data.pkpnId || undefined,
       indikatorSasaranProgramId: data.indikatorSasaranProgramId || undefined,
       indikatorSasaranKegiatanId: data.indikatorSasaranKegiatanId || undefined,
@@ -378,8 +363,7 @@ export function PaketFormDialog({
                         .map((r) => (
                           <SelectItem key={r.id} value={r.id}>
                             <span className="font-medium">
-                              {r.kro.kegiatan.program.code} · {r.kro.code} ·{" "}
-                              {r.code}
+                              {r.kro.kegiatan.code} · {r.kro.code} · {r.code}
                             </span>
                             <span className="text-muted-foreground ml-2 text-xs">
                               — {r.name}
@@ -478,47 +462,12 @@ export function PaketFormDialog({
                 </div>
               </div>
 
-              {/* === KESESUAIAN & WILAYAH === */}
+              {/* === DOKUMEN LINGKUNGAN ===
+                  Wilayah Sungai pindah ke form Proyek (bagian "Kesesuaian
+                  Proyek") — 1 proyek 1 wilayah sungai, bukan per paket. */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  <MapPinned size={13} /> Kesesuaian & Wilayah Sungai
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">Wilayah Sungai</Label>
-                  <Select
-                    value={watch("wilayahSungaiId") || NONE}
-                    onValueChange={(v) =>
-                      setValue("wilayahSungaiId", v === NONE ? "" : v)
-                    }
-                    onOpenChange={(o) => o && setWilayahSearch("")}
-                  >
-                    <SelectTrigger className="w-full h-9 text-xs">
-                      <SelectValue placeholder="Pilih wilayah sungai (opsional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                      {wilayahSungaiList.length > 20 && (
-                        <SelectSearchBox
-                          value={wilayahSearch}
-                          onChange={setWilayahSearch}
-                          placeholder="Cari wilayah sungai..."
-                        />
-                      )}
-                      {wilayahSungaiList
-                        .filter((w) =>
-                          !wilayahSearch
-                            ? true
-                            : w.name
-                                .toLowerCase()
-                                .includes(wilayahSearch.toLowerCase()),
-                        )
-                        .map((w) => (
-                          <SelectItem key={w.id} value={w.id}>
-                            {w.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                  <MapPinned size={13} /> Dokumen Lingkungan
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs">Dokumen Lingkungan</Label>
@@ -538,43 +487,14 @@ export function PaketFormDialog({
                 <AccordionItem value="indikator">
                   <AccordionTrigger>
                     <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                      <Target size={13} /> Indikator RENJA — PN, PP, KP, PKPN,
-                      SP/ISP, SK/ISK, IRO (opsional)
+                      <Target size={13} /> Indikator RENJA — PKPN, SP/ISP,
+                      SK/ISK, IRO (opsional)
                     </span>
                   </AccordionTrigger>
                   <AccordionContent>
                     <div className="space-y-3">
-                      <div className="space-y-2">
-                        <Label className="text-xs">
-                          Kegiatan Prioritas (PN.PP.KP)
-                        </Label>
-                        <Select
-                          value={watch("kegiatanPrioritasId") || NONE}
-                          onValueChange={(v) =>
-                            setValue(
-                              "kegiatanPrioritasId",
-                              v === NONE ? "" : v,
-                            )
-                          }
-                        >
-                          <SelectTrigger className="w-full h-9 text-xs">
-                            <SelectValue placeholder="Pilih (opsional)" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                            {kegiatanPrioritasList.map((kp) => (
-                              <SelectItem key={kp.id} value={kp.id}>
-                                <span className="font-mono text-[10px] mr-1">
-                                  {kp.programPrioritas.prioritasNasional.code}.
-                                  {kp.programPrioritas.code}.{kp.code}
-                                </span>
-                                {kp.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
+                      {/* PN/PP/KP pindah ke form Proyek — 1 proyek = 1
+                          Kegiatan Prioritas, bukan per paket. */}
                       <div className="space-y-2">
                         <Label className="text-xs">PKPN</Label>
                         <Select

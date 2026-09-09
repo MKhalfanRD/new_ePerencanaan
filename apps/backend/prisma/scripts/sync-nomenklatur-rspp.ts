@@ -28,6 +28,9 @@ interface ParsedRow {
     name: string;
     satuan?: string;
   };
+  // Kolom ke-6 "Komponen" ("300 Penyusunan NSPK") — anak dari RO terakhir
+  // di atasnya (sel RO di-merge, jadi baris komponen kolom RO-nya kosong).
+  komponen?: { code: string; name: string };
 }
 
 // "7691.CBG Prasarana Bidang SDA dan Irigasi" -> { code: "7691.CBG", name: "Prasarana..." }
@@ -45,7 +48,8 @@ function splitCodeName(cell: string): { code: string; name: string } {
 }
 
 function parseRow(row: any[]): ParsedRow {
-  const [programCell, kegiatanCell, kroCell, roCell, satuanCell] = row;
+  const [programCell, kegiatanCell, kroCell, roCell, satuanCell, komponenCell] =
+    row;
   const result: ParsedRow = {};
 
   if (programCell) {
@@ -78,6 +82,9 @@ function parseRow(row: any[]): ParsedRow {
       satuan: satuanCell ? String(satuanCell).trim() : undefined,
     };
   }
+  if (komponenCell) {
+    result.komponen = splitCodeName(String(komponenCell));
+  }
   return result;
 }
 
@@ -93,10 +100,12 @@ async function main() {
   });
 
   let currentProgramCode = '';
+  let currentRoId = '';
   let programCount = 0;
   let kegiatanCount = 0;
   let kroCount = 0;
   let roCount = 0;
+  let komponenCount = 0;
 
   // Baris 0 adalah header ("Program","Kegiatan","KRO","RO", ...).
   for (let i = 1; i < rows.length; i++) {
@@ -160,12 +169,35 @@ async function main() {
           satuan: parsed.ro.satuan || null,
         },
       });
+      currentRoId = parsed.ro.id;
       roCount++;
+    }
+
+    if (parsed.komponen) {
+      if (!currentRoId) {
+        throw new Error(
+          `Komponen "${parsed.komponen.code}" di baris ${i + 1} tanpa RO induk`,
+        );
+      }
+      // Komponen tidak punya id resmi di Excel — id deterministik "<roId>.<code>"
+      // supaya upsert idempotent (kolom (roId, code) tidak diberi unique index).
+      const komponenId = `${currentRoId}.${parsed.komponen.code}`;
+      await prisma.komponen.upsert({
+        where: { id: komponenId },
+        update: { code: parsed.komponen.code, name: parsed.komponen.name },
+        create: {
+          id: komponenId,
+          roId: currentRoId,
+          code: parsed.komponen.code,
+          name: parsed.komponen.name,
+        },
+      });
+      komponenCount++;
     }
   }
 
   console.log(
-    `✅ Sinkron dari referensi 1.xlsx (sheet RSPP): ${programCount} program, ${kegiatanCount} kegiatan, ${kroCount} KRO, ${roCount} RO.`,
+    `✅ Sinkron dari referensi 1.xlsx (sheet RSPP): ${programCount} program, ${kegiatanCount} kegiatan, ${kroCount} KRO, ${roCount} RO, ${komponenCount} komponen.`,
   );
 }
 

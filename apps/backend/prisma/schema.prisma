@@ -51,6 +51,13 @@ enum JenisPaket {
   NON_FISIK
 }
 
+enum KriteriaEvaluasi {
+  URGENSITAS
+  KESIAPAN_TEKNIS
+  TEMATIK
+  VALUASI
+}
+
 enum SumberUsulanProyek {
   PEMERINTAH_DAERAH
   KEMENTERIAN_LEMBAGA
@@ -68,6 +75,18 @@ model Role {
   code        String  @unique @db.VarChar(50)
   name        String  @db.VarChar(100)
   description String?
+
+  // Cakupan kegiatan role ini (mis. "7691"). Diisi = role cuma boleh
+  // melihat/mengelola proyek yang paketnya ada di kegiatan tsb. Kosong =
+  // lintas kegiatan, dan itu HANYA sah untuk SUPER_ADMIN & ADMINISTRATOR
+  // (lihat kegiatanScopeOf() di plannings.service.ts).
+  kegiatanId String?   @db.VarChar(10)
+  kegiatan   Kegiatan? @relation(fields: [kegiatanId], references: [id])
+
+  // Template izin yang dipinjam role ini (lihat src/auth/role.ts). Kosong =
+  // izinnya dicocokkan dari `code` sendiri. Tanpa ini, role baru dari UI
+  // ditolak semua @Roles() karena kodenya tidak ada di daftar dekorator.
+  baseRole String? @db.VarChar(50)
 
   users User[]
 
@@ -99,7 +118,8 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  plannings Planning[]
+  plannings    Planning[]
+  activityLogs ActivityLog[]
 
   @@map("users")
 }
@@ -171,6 +191,8 @@ model Kegiatan {
 
   kroList         KRO[]
   sasaranKegiatan SasaranKegiatan[]
+  roles           Role[]
+  evaluasiItem    EvaluasiItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -280,7 +302,7 @@ model KegiatanPrioritas {
   code               String           @unique @db.VarChar(15)
   name               String           @db.VarChar(255)
 
-  paket Paket[]
+  plannings Planning[]
 
   @@index([programPrioritasId])
   @@map("kegiatan_prioritas")
@@ -363,6 +385,49 @@ model IndikatorSasaranKegiatan {
 }
 
 // =============================================
+// MASTER: Evaluasi (Multi Criteria Analysis)
+// =============================================
+// Sumber: referensi 1.xlsx sheet "evaluasi Irwa/supan/benda/atab". Empat
+// kriteria dengan bobot tetap (Urgensitas 40%, Kesiapan Teknis 20%,
+// Tematik 20%, Valuasi 20%); daftar itemnya beda per kegiatan, makanya
+// jadi tabel master, bukan enum. Bobot per item = score / total score
+// kriteria * bobot kriteria (lihat hitungSkorEvaluasi()).
+
+model EvaluasiItem {
+  id         String   @id @default(cuid())
+  kegiatanId String   @db.VarChar(10)
+  kegiatan   Kegiatan @relation(fields: [kegiatanId], references: [id])
+
+  kriteria KriteriaEvaluasi
+  urutan   Int              @db.SmallInt
+  name     String           @db.Text
+  // Bobot mentah item ini di dalam kriterianya (kolom "Score" di excel).
+  score    Int              @default(1) @db.SmallInt
+
+  plannings PlanningEvaluasi[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kegiatanId, kriteria])
+  @@map("evaluasi_item")
+}
+
+model PlanningEvaluasi {
+  planningId String
+  planning   Planning @relation(fields: [planningId], references: [id], onDelete: Cascade)
+
+  itemId String
+  item   EvaluasiItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  keterangan String? @db.Text
+
+  @@id([planningId, itemId])
+  @@index([itemId])
+  @@map("planning_evaluasi")
+}
+
+// =============================================
 // MASTER: Wilayah Sungai
 // =============================================
 
@@ -372,7 +437,7 @@ model WilayahSungai {
   // Kode WS resmi (kolom "Kd_WS" di referensi master, mis. "01.01.A3").
   code String? @unique @db.VarChar(20)
 
-  paket Paket[]
+  plannings Planning[]
 
   @@map("wilayah_sungai")
 }
@@ -390,8 +455,8 @@ model WilayahSungai {
 // yang sudah dipakai di Balai/Planning/LokasiAlokasi (String @db.VarChar(10)).
 
 model WilayahProvince {
-  id   String @id @db.VarChar(10)
-  name String @db.VarChar(150)
+  id            String  @id @db.VarChar(10)
+  name          String  @db.VarChar(150)
   // Kode di file referensi master Kementerian (BEDA skema dari kode
   // Kemendagri/emsifa di atas — jangan disamakan). Cuma dipakai sebagai
   // kunci pencocokan kalau file referensi ini disinkronkan ulang di masa
@@ -404,9 +469,9 @@ model WilayahProvince {
 }
 
 model WilayahRegency {
-  id         String @id @db.VarChar(10)
-  name       String @db.VarChar(150)
-  provinceId String @db.VarChar(10)
+  id            String  @id @db.VarChar(10)
+  name          String  @db.VarChar(150)
+  provinceId    String  @db.VarChar(10)
   // lihat komentar kodeReferensi di WilayahProvince
   kodeReferensi String? @unique @db.VarChar(10)
 
@@ -418,9 +483,9 @@ model WilayahRegency {
 }
 
 model WilayahDistrict {
-  id        String @id @db.VarChar(10)
-  name      String @db.VarChar(150)
-  regencyId String @db.VarChar(10)
+  id            String  @id @db.VarChar(10)
+  name          String  @db.VarChar(150)
+  regencyId     String  @db.VarChar(10)
   // lihat komentar kodeReferensi di WilayahProvince
   kodeReferensi String? @unique @db.VarChar(10)
 
@@ -440,6 +505,36 @@ model WilayahVillage {
 
   @@index([districtId])
   @@map("wilayah_villages")
+}
+
+// =============================================
+// LOG AKTIVITAS
+// =============================================
+// Diisi otomatis oleh ActivityLogInterceptor untuk setiap mutasi
+// (POST/PATCH/PUT/DELETE) yang sukses. Dibaca HANYA oleh SUPER_ADMIN.
+
+model ActivityLog {
+  id String @id @default(cuid())
+
+  userId   String?
+  user     User?   @relation(fields: [userId], references: [id])
+  username String  @db.VarChar(50)
+  roleCode String? @db.VarChar(50)
+
+  method     String  @db.VarChar(10)
+  path       String  @db.VarChar(255)
+  entity     String? @db.VarChar(50)
+  entityId   String? @db.VarChar(60)
+  statusCode Int     @db.SmallInt
+  ip         String? @db.VarChar(45)
+  // Ringkasan payload (tanpa password/token) — untuk menjawab "apa yang diubah".
+  meta       Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("activity_logs")
 }
 
 // =============================================
@@ -464,13 +559,16 @@ model Planning {
   latitude   Float?
   longitude  Float?
 
-  kebutuhanTanah   Boolean @default(false)
-  sesuaiRTRW       String? @db.VarChar(50)
-  nomorPerdaRTRW   String? @db.VarChar(100)
-  sesuaiPolaSDA    String? @db.VarChar(50)
-  nomorKepmenPUPR  String? @db.VarChar(100)
-  sesuaiMasterplan String? @db.VarChar(255)
-  polaRencana      String? @db.VarChar(100)
+  // Kesesuaian proyek cuma dua hal: wilayah sungai & kebutuhan tanah.
+  // Kolom RTRW/Pola SDA/Masterplan dibuang — tidak dipakai di form.
+  kebutuhanTanah Boolean @default(false)
+
+  wilayahSungaiId String?
+  wilayahSungai   WilayahSungai? @relation(fields: [wilayahSungaiId], references: [id])
+
+  // PN.PP.KP menempel di proyek, bukan di paket (1 proyek = 1 KP).
+  kegiatanPrioritasId String?
+  kegiatanPrioritas   KegiatanPrioritas? @relation(fields: [kegiatanPrioritasId], references: [id])
 
   // StudiLayak/DED/LARAP di DB.xlsx cuma angka tahun polos, tanpa status
   // terpisah — jadi field langsung, bukan lewat KriteriaDokumen generic
@@ -485,6 +583,10 @@ model Planning {
   status  PlanningStatus @default(DRAFT)
   catatan String?        @db.Text
 
+  // Hasil evaluasi MCA — 0..1, dihitung ulang tiap kali tagging evaluasi
+  // disimpan (jangan diisi manual dari client).
+  skorEvaluasi Decimal? @db.Decimal(6, 4)
+
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
 
@@ -492,7 +594,8 @@ model Planning {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  paket Paket[]
+  paket    Paket[]
+  evaluasi PlanningEvaluasi[]
 
   @@index([balaiId])
   @@index([status])
@@ -522,9 +625,6 @@ model Paket {
   jenis           JenisPaket
   masaPelaksanaan MasaPelaksanaan
 
-  wilayahSungaiId String?
-  wilayahSungai   WilayahSungai? @relation(fields: [wilayahSungaiId], references: [id])
-
   dokLingStatus String? @db.VarChar(50)
 
   catatanPembina String? @db.Text
@@ -533,9 +633,6 @@ model Paket {
   // Indikator RENJA — dikonfirmasi lewat referensi 1.xlsx (lihat
   // docs-planning/fitur-paket/04-rekonsiliasi-referensi.md): PN/PP/KP,
   // SP/ISP, SK/ISK adalah hierarki master data, bukan teks bebas.
-  kegiatanPrioritasId String?
-  kegiatanPrioritas   KegiatanPrioritas? @relation(fields: [kegiatanPrioritasId], references: [id])
-
   pkpnId String?
   pkpn   Pkpn?   @relation(fields: [pkpnId], references: [id])
 

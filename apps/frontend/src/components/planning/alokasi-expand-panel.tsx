@@ -28,36 +28,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
+import { punyaRole } from "@/lib/role";
 import { LokasiFormDialog } from "../map/lokasi-form-dialog";
 
-const formatRupiah = (val: number | string) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(Number(val));
-
-// Format ringkas ala mockup drawer ("Rp 12,0 M" / "Rp 500 jt") — dipakai di
-// total & grid sumber dana supaya angka besar tetap gampang dipindai,
-// bukan string panjang penuh (mis. "Rp8.000.000.000").
-const formatRupiahShort = (val: number | string) => {
-  const num = Number(val);
-  if (num >= 1_000_000_000) {
-    const m = (num / 1_000_000_000).toLocaleString("id-ID", {
-      minimumFractionDigits: 1,
-      maximumFractionDigits: 1,
-    });
-    return `Rp ${m} M`;
-  }
-  if (num >= 1_000_000) {
-    const jt = (num / 1_000_000).toLocaleString("id-ID", {
-      maximumFractionDigits: 0,
-    });
-    return `Rp ${jt} jt`;
-  }
-  if (num === 0) return "-";
-  return formatRupiah(num);
-};
+import { formatRupiah, formatRupiahShort } from "@/lib/format-rupiah";
 
 interface AlokasiDetail {
   id: string;
@@ -126,6 +100,10 @@ interface Props {
   /** Buka form Edit Alokasi (Sheet lapis-2) — dipanggil dari tombol "Edit"
    * di footer panel ini, bukan lagi dari ikon di baris ter-collapse. */
   onEdit?: () => void;
+  /** `updatedAt` alokasi versi parent. Panel ini fetch detailnya sendiri,
+   * jadi tanpa penanda versi isinya tetap data lama setelah alokasi diedit
+   * dari Sheet lapis-2. */
+  version?: string;
 }
 
 /**
@@ -146,6 +124,7 @@ export function AlokasiExpandPanel({
   onNavigateToList,
   onSubDrawerOpenChange,
   onEdit,
+  version,
 }: Props) {
   const { user } = useAuthStore();
   const [data, setData] = useState<AlokasiDetail | null>(null);
@@ -157,7 +136,7 @@ export function AlokasiExpandPanel({
   const [deleteLokasiId, setDeleteLokasiId] = useState<string | null>(null);
   const [deletingLokasi, setDeletingLokasi] = useState(false);
 
-  const canManage = user?.role === "SATKER" || user?.role === "ADMINISTRATOR";
+  const canManage = punyaRole(user, "SATKER", "ADMINISTRATOR");
 
   const fetchData = async () => {
     setLoading(true);
@@ -173,7 +152,7 @@ export function AlokasiExpandPanel({
 
   useEffect(() => {
     if (alokasiId) fetchData();
-  }, [alokasiId]);
+  }, [alokasiId, version]);
 
   // Lapor ke parent tiap kali Sheet lapis-2 (Form Lokasi) buka/tutup.
   useEffect(() => {
@@ -229,11 +208,11 @@ export function AlokasiExpandPanel({
           titik lokasi. */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Kode KRO & RO sengaja tidak ditampilkan — nomenklatur cukup
+              sampai Kegiatan. */}
           {[
             data.paket.ro.kro.kegiatan.program.code,
             data.paket.ro.kro.kegiatan.code,
-            data.paket.ro.kro.code,
-            data.paket.ro.code,
           ].map((code, i, arr) => (
             <div key={i} className="flex items-center gap-1.5">
               <span className="text-xs font-mono bg-background border px-2 py-0.5 rounded text-muted-foreground">
@@ -264,7 +243,9 @@ export function AlokasiExpandPanel({
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             Sumber Dana
           </p>
-          <p className="text-sm font-bold">{formatRupiahShort(data.total)}</p>
+          <p className="text-sm font-bold" title={formatRupiah(data.total)}>
+            {formatRupiahShort(data.total)}
+          </p>
         </div>
         <div className="grid grid-cols-5 gap-2">
           {sumberDana.map((s) => (
@@ -275,7 +256,10 @@ export function AlokasiExpandPanel({
               <p className="text-[9.5px] font-bold text-muted-foreground">
                 {s.label}
               </p>
-              <p className="text-[11.5px] font-bold truncate">
+              <p
+                className="text-[11.5px] font-bold truncate"
+                title={s.value > 0 ? formatRupiah(s.value) : undefined}
+              >
                 {s.value > 0 ? formatRupiahShort(s.value) : "-"}
               </p>
             </div>

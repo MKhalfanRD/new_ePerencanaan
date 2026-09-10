@@ -511,6 +511,31 @@ export function PlanningDetailSheet({
 
                       {isPaketExpanded && (
                         <div className="p-3.5 space-y-3">
+                          {(pk.catatanPembina || pk.catatanSspsda) && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {pk.catatanPembina && (
+                                <div className="rounded-lg border bg-muted/30 p-3">
+                                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                                    Catatan Pembina
+                                  </p>
+                                  <p className="text-xs whitespace-pre-wrap">
+                                    {pk.catatanPembina}
+                                  </p>
+                                </div>
+                              )}
+                              {pk.catatanSspsda && (
+                                <div className="rounded-lg border bg-muted/30 p-3">
+                                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                                    Catatan SSPSDA
+                                  </p>
+                                  <p className="text-xs whitespace-pre-wrap">
+                                    {pk.catatanSspsda}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {canManagePaket && (
                             <div className="flex justify-end">
                               <Button

@@ -132,6 +132,12 @@ export function PaketFormDialog({
     SasaranKegiatanOpt[]
   >([]);
 
+  // Filter cascade nomenklatur (Program > Kegiatan > KRO). State lokal, bukan
+  // field form — cuma mempersempit daftar RO.
+  const [filterProgramId, setFilterProgramId] = useState("");
+  const [filterKegiatanId, setFilterKegiatanId] = useState("");
+  const [filterKroId, setFilterKroId] = useState("");
+
   const {
     register,
     handleSubmit,
@@ -192,6 +198,10 @@ export function PaketFormDialog({
         fkw: editData.fkw,
         mpa: editData.mpa,
       });
+      // Pra-isi cascade dari RO paket yang diedit.
+      setFilterProgramId(editData.ro.kro.kegiatan.program.id);
+      setFilterKegiatanId(editData.ro.kro.kegiatan.id);
+      setFilterKroId(editData.ro.kro.id);
     } else {
       reset({
         jenis: "FISIK",
@@ -200,6 +210,9 @@ export function PaketFormDialog({
         fkw: false,
         mpa: false,
       });
+      setFilterProgramId("");
+      setFilterKegiatanId("");
+      setFilterKroId("");
     }
   }, [editData, open]);
 
@@ -208,6 +221,73 @@ export function PaketFormDialog({
     () => roList.find((r) => r.id === selectedRoId),
     [roList, selectedRoId],
   );
+
+  // Reset field turunan RO kalau RO diganti ke RO lain (bukan saat load awal edit)
+  const handleRoChange = (roId: string) => {
+    setValue("roId", roId);
+    setValue("komponenId", "");
+    setValue("indikatorRoId", "");
+    setValue("indikatorSasaranProgramId", "");
+    setValue("indikatorSasaranKegiatanId", "");
+  };
+
+  // Cascade nomenklatur: Program > Kegiatan > KRO > RO. Opsi diturunkan dari
+  // roList (yang sudah bawa r.kro.kegiatan.program lengkap); field yang
+  // disimpan tetap roId. State filter-nya di-declare di atas.
+  const byCode = <T extends { code: string }>(a: T, b: T) =>
+    a.code.localeCompare(b.code);
+
+  const programOptions = useMemo(() => {
+    const m = new Map<string, RO["kro"]["kegiatan"]["program"]>();
+    for (const r of roList) m.set(r.kro.kegiatan.program.id, r.kro.kegiatan.program);
+    return [...m.values()].sort(byCode);
+  }, [roList]);
+
+  const kegiatanOptions = useMemo(() => {
+    const m = new Map<string, RO["kro"]["kegiatan"]>();
+    for (const r of roList) {
+      if (filterProgramId && r.kro.kegiatan.program.id !== filterProgramId) continue;
+      m.set(r.kro.kegiatan.id, r.kro.kegiatan);
+    }
+    return [...m.values()].sort(byCode);
+  }, [roList, filterProgramId]);
+
+  const kroOptions = useMemo(() => {
+    const m = new Map<string, RO["kro"]>();
+    for (const r of roList) {
+      if (filterProgramId && r.kro.kegiatan.program.id !== filterProgramId) continue;
+      if (filterKegiatanId && r.kro.kegiatan.id !== filterKegiatanId) continue;
+      m.set(r.kro.id, r.kro);
+    }
+    return [...m.values()].sort(byCode);
+  }, [roList, filterProgramId, filterKegiatanId]);
+
+  const roOptions = useMemo(
+    () =>
+      roList.filter(
+        (r) =>
+          (!filterProgramId || r.kro.kegiatan.program.id === filterProgramId) &&
+          (!filterKegiatanId || r.kro.kegiatan.id === filterKegiatanId) &&
+          (!filterKroId || r.kro.id === filterKroId),
+      ),
+    [roList, filterProgramId, filterKegiatanId, filterKroId],
+  );
+
+  const pickProgram = (id: string) => {
+    setFilterProgramId(id);
+    setFilterKegiatanId("");
+    setFilterKroId("");
+    handleRoChange("");
+  };
+  const pickKegiatan = (id: string) => {
+    setFilterKegiatanId(id);
+    setFilterKroId("");
+    handleRoChange("");
+  };
+  const pickKro = (id: string) => {
+    setFilterKroId(id);
+    handleRoChange("");
+  };
 
   const komponenOptions = useMemo(
     () => komponenList.filter((k) => k.roId === selectedRoId),
@@ -230,15 +310,6 @@ export function PaketFormDialog({
       .filter((sk) => sk.kegiatanId === kegiatanId)
       .flatMap((sk) => sk.indikator.map((i) => ({ ...i, skName: sk.name })));
   }, [sasaranKegiatanList, selectedRO]);
-
-  // Reset field turunan RO kalau RO diganti ke RO lain (bukan saat load awal edit)
-  const handleRoChange = (roId: string) => {
-    setValue("roId", roId);
-    setValue("komponenId", "");
-    setValue("indikatorRoId", "");
-    setValue("indikatorSasaranProgramId", "");
-    setValue("indikatorSasaranKegiatanId", "");
-  };
 
   const onSubmit = async (data: FormData) => {
     const payload = {
@@ -331,6 +402,68 @@ export function PaketFormDialog({
                   </div>
                 )}
 
+                {/* Cascade nomenklatur: Program > Kegiatan > KRO mempersempit
+                    daftar RO. Opsional — boleh langsung pilih RO. */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Program</Label>
+                    <Select
+                      value={filterProgramId || NONE}
+                      onValueChange={(v) => pickProgram(v === NONE ? "" : v)}
+                    >
+                      <SelectTrigger className="w-full h-9 text-xs">
+                        <SelectValue placeholder="Semua program" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>Semua program</SelectItem>
+                        {programOptions.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.code} — {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Kegiatan</Label>
+                    <Select
+                      value={filterKegiatanId || NONE}
+                      onValueChange={(v) => pickKegiatan(v === NONE ? "" : v)}
+                    >
+                      <SelectTrigger className="w-full h-9 text-xs">
+                        <SelectValue placeholder="Semua kegiatan" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>Semua kegiatan</SelectItem>
+                        {kegiatanOptions.map((k) => (
+                          <SelectItem key={k.id} value={k.id}>
+                            {k.code} — {k.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">KRO</Label>
+                    <Select
+                      value={filterKroId || NONE}
+                      onValueChange={(v) => pickKro(v === NONE ? "" : v)}
+                    >
+                      <SelectTrigger className="w-full h-9 text-xs">
+                        <SelectValue placeholder="Semua KRO" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>Semua KRO</SelectItem>
+                        {kroOptions.map((k) => (
+                          <SelectItem key={k.id} value={k.id}>
+                            {k.code} — {k.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <Label className="text-xs">
                     RO (Rincian Output){" "}
@@ -345,14 +478,14 @@ export function PaketFormDialog({
                       <SelectValue placeholder="Pilih RO" />
                     </SelectTrigger>
                     <SelectContent>
-                      {roList.length > 20 && (
+                      {roOptions.length > 20 && (
                         <SelectSearchBox
                           value={roSearch}
                           onChange={setRoSearch}
                           placeholder="Cari RO..."
                         />
                       )}
-                      {roList
+                      {roOptions
                         .filter(
                           (r) =>
                             !roSearch ||

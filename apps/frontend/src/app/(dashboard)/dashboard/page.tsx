@@ -108,13 +108,18 @@ export default function DashboardPage() {
     const totalRencana = sum(rencana, "total");
     const totalRealisasi = sum(realisasi, "total");
 
+    // Persentase asli (tidak di-cap) supaya over-budget kelihatan — mis.
+    // realisasi 10x rencana = 1000%, bukan disamarkan jadi 100% hijau.
+    const persenRealisasi =
+      totalRencana > 0
+        ? Math.round((totalRealisasi / totalRencana) * 100)
+        : 0;
+
     return {
       totalRencana,
       totalRealisasi,
-      persenRealisasi:
-        totalRencana > 0
-          ? Math.min(100, Math.round((totalRealisasi / totalRencana) * 100))
-          : 0,
+      persenRealisasi,
+      overBudget: totalRealisasi > totalRencana,
       sumberDana: [
         { label: "RM", value: sum(rencana, "rm") },
         { label: "RMP", value: sum(rencana, "rmp") },
@@ -269,7 +274,11 @@ export default function DashboardPage() {
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
                   Total Realisasi
                 </p>
-                <p className="text-xl font-bold mt-1 text-emerald-700">
+                <p
+                  className={`text-xl font-bold mt-1 ${
+                    anggaran.overBudget ? "text-amber-600" : "text-emerald-700"
+                  }`}
+                >
                   {loading ? "—" : formatRupiahShort(anggaran.totalRealisasi)}
                 </p>
               </div>
@@ -280,15 +289,27 @@ export default function DashboardPage() {
                 <p className="text-xs text-muted-foreground font-medium">
                   Progres realisasi thd rencana
                 </p>
-                <p className="text-xs font-semibold text-slate-900">
-                  {loading ? "—" : `${anggaran.persenRealisasi}%`}
+                <p
+                  className={`text-xs font-semibold ${
+                    anggaran.overBudget ? "text-amber-600" : "text-slate-900"
+                  }`}
+                >
+                  {loading
+                    ? "—"
+                    : `${anggaran.persenRealisasi}%${
+                        anggaran.overBudget ? " · melebihi rencana" : ""
+                      }`}
                 </p>
               </div>
               <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-emerald-500 transition-all"
+                  className={`h-full rounded-full transition-all ${
+                    anggaran.overBudget ? "bg-amber-500" : "bg-emerald-500"
+                  }`}
                   style={{
-                    width: `${loading ? 0 : anggaran.persenRealisasi}%`,
+                    width: `${
+                      loading ? 0 : Math.min(100, anggaran.persenRealisasi)
+                    }%`,
                   }}
                 />
               </div>

@@ -67,6 +67,25 @@ export default function DashboardPage() {
 
   const isSatker = punyaRole(user, "SATKER");
 
+  // Tahun yang bisa dipilih di Ringkasan Anggaran — dari data alokasi yang ada.
+  const tahunTersedia = useMemo(() => {
+    const s = new Set<number>();
+    for (const p of plannings)
+      for (const a of alokasiOf(p)) s.add(a.tahun);
+    return Array.from(s).sort((a, b) => a - b);
+  }, [plannings]);
+
+  // Default: tahun berjalan. Kalau datanya belum termuat / tahun ini belum
+  // punya alokasi, jatuh ke tahun terbaru yang ada.
+  const [tahunAnggaran, setTahunAnggaran] = useState<number | "semua">(
+    new Date().getFullYear(),
+  );
+  useEffect(() => {
+    if (tahunAnggaran === "semua" || tahunTersedia.length === 0) return;
+    if (!tahunTersedia.includes(tahunAnggaran))
+      setTahunAnggaran(tahunTersedia[tahunTersedia.length - 1]);
+  }, [tahunTersedia, tahunAnggaran]);
+
   // Periode aktif diturunkan dari data yang sudah ada (tidak nambah request) —
   // setiap Planning bawa objek `periode` lengkap dgn flag isActive.
   const periodeAktif = useMemo(() => {
@@ -97,7 +116,9 @@ export default function DashboardPage() {
   // Rencana vs realisasi, plus rincian per sumber dana — meniru grid 5-kolom
   // flat yang sudah dipakai di alokasi-expand-panel.tsx supaya konsisten.
   const anggaran = useMemo(() => {
-    const semuaAlokasi = plannings.flatMap(alokasiOf);
+    const semuaAlokasi = plannings
+      .flatMap(alokasiOf)
+      .filter((a) => tahunAnggaran === "semua" || a.tahun === tahunAnggaran);
     const rencana = semuaAlokasi.filter((a) => a.status === "RENCANA");
     const realisasi = semuaAlokasi.filter((a) => a.status === "REALISASI");
     const sum = (
@@ -128,7 +149,7 @@ export default function DashboardPage() {
         { label: "KPBU", value: sum(rencana, "kpbu") },
       ],
     };
-  }, [plannings]);
+  }, [plannings, tahunAnggaran]);
 
   // Rencana anggaran per tahun, utk bar chart flat sederhana (CSS murni,
   // tanpa dependency chart baru).
@@ -259,12 +280,37 @@ export default function DashboardPage() {
               <Wallet size={16} className="text-blue-600" />
               Ringkasan Rencana Anggaran
             </CardTitle>
+            {tahunTersedia.length > 0 && (
+              <div className="flex flex-wrap gap-1 pt-2">
+                {[("semua" as const), ...tahunTersedia].map((th) => {
+                  const aktif = tahunAnggaran === th;
+                  return (
+                    <button
+                      key={th}
+                      type="button"
+                      onClick={() => setTahunAnggaran(th)}
+                      className={`rounded-md px-2 py-0.5 text-xs font-medium transition-colors ${
+                        aktif
+                          ? "bg-blue-600 text-white"
+                          : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {th === "semua"
+                        ? "Semua"
+                        : th === new Date().getFullYear()
+                          ? `${th} (berjalan)`
+                          : th}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <div className="rounded-lg border p-3">
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-                  Total Rencana
+                  Rencana
                 </p>
                 <p className="text-xl font-bold mt-1 text-slate-900">
                   {loading ? "—" : formatRupiahShort(anggaran.totalRencana)}
@@ -272,7 +318,7 @@ export default function DashboardPage() {
               </div>
               <div className="rounded-lg border p-3">
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-                  Total Realisasi
+                  Realisasi
                 </p>
                 <p
                   className={`text-xl font-bold mt-1 ${
@@ -287,7 +333,7 @@ export default function DashboardPage() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <p className="text-xs text-muted-foreground font-medium">
-                  Progres realisasi thd rencana
+                  Realisasi terhadap rencana
                 </p>
                 <p
                   className={`text-xs font-semibold ${

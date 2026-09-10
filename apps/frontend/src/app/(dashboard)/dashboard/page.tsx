@@ -67,6 +67,10 @@ export default function DashboardPage() {
 
   const isSatker = punyaRole(user, "SATKER");
 
+  // Semua Alokasi lintas Paket milik satu Planning — dipakai berulang di
+  // bawah, jadi 1 helper alih-alih guard `?? []` berulang tiap tempat.
+  const alokasiOf = (p: Planning) => (p.paket ?? []).flatMap((pk) => pk.alokasi);
+
   // Tahun yang bisa dipilih di Ringkasan Anggaran — dari data alokasi yang ada.
   const tahunTersedia = useMemo(() => {
     const s = new Set<number>();
@@ -98,10 +102,6 @@ export default function DashboardPage() {
     for (const p of plannings) base[p.status] = (base[p.status] ?? 0) + 1;
     return base;
   }, [plannings]);
-
-  // Semua Alokasi lintas Paket milik satu Planning — dipakai berulang di
-  // bawah, jadi 1 helper alih-alih guard `?? []` berulang tiap tempat.
-  const alokasiOf = (p: Planning) => (p.paket ?? []).flatMap((pk) => pk.alokasi);
 
   const totalLokasi = useMemo(
     () =>

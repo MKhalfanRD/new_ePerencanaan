@@ -1,7 +1,9 @@
 "use client";
 
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Upload, Download, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import * as XLSX from "xlsx";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,6 +28,12 @@ interface Column<T> {
   key: string;
   label: string;
   render?: (item: T) => React.ReactNode;
+  /** Nilai mentah dipakai untuk Export Excel (bukan render() yang bisa
+   * berupa JSX/Badge). Default: item[key] apa adanya. */
+  exportValue?: (item: T) => string | number | boolean | undefined;
+  /** Kolom ini dilewati saat Import Excel (mis. field turunan/relasi yang
+   * cuma informasional, bukan input). Default: ikut diimpor. */
+  skipImport?: boolean;
 }
 
 interface Props<T extends { id: string | number }> {
@@ -39,6 +47,16 @@ interface Props<T extends { id: string | number }> {
   onBulkDelete?: (ids: (string | number)[]) => Promise<void>;
   searchable?: boolean;
   searchKeys?: (keyof T)[];
+  /** Aktifkan tombol "Export Excel" — 1 sheet datar dari `columns`
+   * (exportValue kalau ada, else item[key] apa adanya). */
+  exportable?: boolean;
+  /**
+   * Aktifkan tombol "Import Excel". Baris dari sheet pertama dibaca
+   * berdasarkan header = `label` kolom, lalu dipetakan balik ke `key` dan
+   * diserahkan ke pemanggil (baris mentah, string) — pemanggil yang tahu
+   * cara upsert-nya (cocokkan by kode/id, panggil create atau update).
+   */
+  onImport?: (rows: Record<string, string>[]) => Promise<void>;
 }
 
 export function MasterTable<T extends { id: string | number }>({
@@ -52,6 +70,8 @@ export function MasterTable<T extends { id: string | number }>({
   onBulkDelete,
   searchable = true,
   searchKeys = [],
+  exportable = false,
+  onImport,
 }: Props<T>) {
   const [search, setSearch] = useState("");
   const [deleteId, setDeleteId] = useState<string | number | null>(null);
@@ -59,6 +79,59 @@ export function MasterTable<T extends { id: string | number }>({
   const [selected, setSelected] = useState<Set<string | number>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExport = () => {
+    const rows = data.map((item) =>
+      Object.fromEntries(
+        columns.map((c) => [
+          c.label,
+          c.exportValue ? c.exportValue(item) : ((item as any)[c.key] ?? ""),
+        ]),
+      ),
+    );
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(rows.length ? rows : [{}]),
+      title.slice(0, 31),
+    );
+    XLSX.writeFile(
+      wb,
+      `${title.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.xlsx`,
+    );
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !onImport) return;
+    setImporting(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json<Record<string, any>>(ws, {
+        defval: "",
+      });
+      const labelToKey = new Map(
+        columns.filter((c) => !c.skipImport).map((c) => [c.label, c.key]),
+      );
+      const rows = raw.map((r) =>
+        Object.fromEntries(
+          Object.entries(r)
+            .filter(([label]) => labelToKey.has(label))
+            .map(([label, v]) => [labelToKey.get(label), String(v ?? "").trim()]),
+        ),
+      );
+      await onImport(rows);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || "Gagal impor file");
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const filtered =
     search && searchKeys.length > 0
@@ -164,6 +237,35 @@ export function MasterTable<T extends { id: string | number }>({
             >
               <Trash2 size={14} className="mr-1.5" />
               Hapus ({selected.size})
+            </Button>
+          )}
+          {onImport && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleImportFile}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={importing}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {importing ? (
+                  <Loader2 size={14} className="mr-1.5 animate-spin" />
+                ) : (
+                  <Upload size={14} className="mr-1.5" />
+                )}
+                Import Excel
+              </Button>
+            </>
+          )}
+          {exportable && (
+            <Button size="sm" variant="outline" onClick={handleExport}>
+              <Download size={14} className="mr-1.5" /> Export Excel
             </Button>
           )}
           <Button size="sm" onClick={onAdd}>

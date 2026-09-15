@@ -5,7 +5,6 @@ import {
   Plus,
   Search,
   FileText,
-  Eye,
   Trash2,
   CheckCheck,
   ChevronDown,
@@ -94,8 +93,6 @@ export default function PlanningsPage() {
   const [showImport, setShowImport] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  // Cuma 2 tampilan: "proyek" (default, status APPROVED) & "draft" (punya sendiri)
-  const [view, setView] = useState<"proyek" | "draft">("proyek");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -132,7 +129,6 @@ export default function PlanningsPage() {
       const params = new URLSearchParams({
         page: String(page),
         limit: "100",
-        status: view === "draft" ? "DRAFT" : "APPROVED",
         ...(search && { search }),
       });
       const res = await api.get<PaginatedResponse<Planning>>(
@@ -158,7 +154,7 @@ export default function PlanningsPage() {
 
   useEffect(() => {
     fetchPlannings();
-  }, [page, view]);
+  }, [page]);
   useEffect(() => {
     const timeout = setTimeout(() => {
       setPage(1);
@@ -182,19 +178,18 @@ export default function PlanningsPage() {
     }
   };
 
-  // Export selalu ambil SEMUA proyek pada tampilan aktif (Proyek/Draft),
-  // bukan cuma halaman/hasil filter yang sedang tampil di layar.
+  // Export selalu ambil SEMUA proyek (semua status), bukan cuma
+  // halaman/hasil filter yang sedang tampil di layar.
   const handleExportExcel = async () => {
     setExporting(true);
     try {
       // Backend membatasi limit maks 100/request — tarik semua halaman.
-      const status = view === "draft" ? "DRAFT" : "APPROVED";
       const all: Planning[] = [];
       let page = 1;
       let totalPages = 1;
       do {
         const res = await api.get<PaginatedResponse<Planning>>("/plannings", {
-          params: { page, limit: 100, status },
+          params: { page, limit: 100 },
         });
         all.push(...res.data.data);
         totalPages = res.data.meta.totalPages;
@@ -218,7 +213,8 @@ export default function PlanningsPage() {
     }
   };
 
-  const canApprove = () => view === "draft" && punyaRole(user, "ADMINISTRATOR");
+  const canApprove = (p: Planning) =>
+    p.status === "DRAFT" && punyaRole(user, "ADMINISTRATOR");
 
   const canDelete = (p: Planning) =>
     punyaRole(user, "ADMINISTRATOR") || p.createdBy.id === user?.id;
@@ -483,20 +479,7 @@ export default function PlanningsPage() {
   const renderActions = (p: Planning) => (
     <TooltipProvider delayDuration={300}>
       <div className="flex items-center gap-1 shrink-0">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setDetailData(p)}
-            >
-              <Eye size={14} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Lihat Detail</TooltipContent>
-        </Tooltip>
-        {canApprove() && (
+        {canApprove(p) && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -583,37 +566,6 @@ export default function PlanningsPage() {
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
             />
-          </div>
-          {/* 2 tampilan saja: Proyek (default, sudah disetujui) & Draft (punya sendiri) */}
-          <div className="inline-flex items-center rounded-lg border bg-muted/40 p-0.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                setView("proyek");
-                setPage(1);
-              }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                view === "proyek"
-                  ? "bg-background shadow-sm text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Proyek
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setView("draft");
-                setPage(1);
-              }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                view === "draft"
-                  ? "bg-background shadow-sm text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Draft
-            </button>
           </div>
         </div>
 
@@ -984,8 +936,12 @@ export default function PlanningsPage() {
                                           </div>
                                         </div>
 
+                                        {/* Row proyek cuma nilai total di kiri —
+                                            per-tahun sudah ada di row Balai/Kegiatan
+                                            di atas & row Paket di bawah, jadi di sini
+                                            tidak diulang. */}
                                         <div className="hidden md:flex items-center gap-4 shrink-0">
-                                          <div className="w-24 shrink-0 text-right border-r pr-3">
+                                          <div className="w-24 shrink-0 text-right">
                                             <p className="text-xs font-bold">
                                               {formatRupiahShort(total.rencana)}
                                             </p>
@@ -994,9 +950,6 @@ export default function PlanningsPage() {
                                               total.rencana,
                                             )}
                                           </div>
-                                          {groups.years.map((year) =>
-                                            renderYearCell(year, byYear[year]),
-                                          )}
                                         </div>
 
                                         <div

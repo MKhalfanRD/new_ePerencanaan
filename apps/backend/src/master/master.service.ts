@@ -92,12 +92,31 @@ export class MasterService {
       orderBy: { nama: 'asc' },
     });
   }
+  /** Metode evaluasi (dulu enum KriteriaEvaluasi) — bobotnya dipakai
+   * hitungSkorEvaluasi() di plannings.service. */
+  getMetodeEvaluasi() {
+    return this.prisma.metodeEvaluasi.findMany({
+      orderBy: { urutan: 'asc' },
+    });
+  }
+  createMetodeEvaluasi(dto: any) {
+    return this.prisma.metodeEvaluasi.create({ data: dto });
+  }
+  updateMetodeEvaluasi(id: string, dto: any) {
+    return this.prisma.metodeEvaluasi.update({ where: { id }, data: dto });
+  }
+  async deleteMetodeEvaluasi(id: string) {
+    await this.prisma.metodeEvaluasi.delete({ where: { id } });
+    return { message: 'Metode evaluasi berhasil dihapus' };
+  }
+
   /** Item evaluasi (MCA). Difilter per kegiatan supaya form proyek cuma
    * menarik daftar yang relevan, bukan seluruh master. */
   getEvaluasiItem(kegiatanId?: string) {
     return this.prisma.evaluasiItem.findMany({
       where: kegiatanId ? { kegiatanId } : undefined,
-      orderBy: [{ kriteria: 'asc' }, { urutan: 'asc' }],
+      include: { metode: true, kegiatan: true },
+      orderBy: [{ metode: { urutan: 'asc' } }, { name: 'asc' }],
     });
   }
   // Indikator RENJA (lihat docs-planning/fitur-paket/04-rekonsiliasi-referensi.md)
@@ -370,6 +389,28 @@ export class MasterService {
       message: `${result.count} Komponen berhasil dihapus`,
       count: result.count,
     };
+  }
+
+  // ========== EVALUASI ITEM (poin per metode) ==========
+  createEvaluasiItem(dto: any) {
+    return this.prisma.evaluasiItem.create({
+      data: dto,
+      include: { metode: true },
+    });
+  }
+  updateEvaluasiItem(id: string, dto: any) {
+    return this.prisma.evaluasiItem.update({
+      where: { id },
+      data: dto,
+      include: { metode: true },
+    });
+  }
+  async deleteEvaluasiItem(id: string) {
+    await this.prisma.evaluasiItem.delete({ where: { id } });
+    return { message: 'Item evaluasi berhasil dihapus' };
+  }
+  bulkDeleteEvaluasiItem(ids: string[]) {
+    return this.bulkDelete(this.prisma.evaluasiItem, ids, 'Item evaluasi');
   }
 
   // ========== PRIORITAS NASIONAL (PN) ==========

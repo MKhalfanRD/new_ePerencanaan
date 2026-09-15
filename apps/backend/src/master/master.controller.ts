@@ -125,6 +125,12 @@ export class MasterController {
     return this.masterService.getEvaluasiItem(kegiatanId);
   }
 
+  @ApiOperation({ summary: 'Daftar metode evaluasi (dengan bobot)' })
+  @Get('metode-evaluasi')
+  getMetodeEvaluasi() {
+    return this.masterService.getMetodeEvaluasi();
+  }
+
   @ApiOperation({ summary: 'Daftar semua Role' })
   @Get('roles')
   getRoles() {
@@ -587,5 +593,56 @@ export class MasterController {
   @Post('wilayah-sungai/bulk-delete')
   bulkDeleteWilayahSungai(@Body('ids') ids: string[]) {
     return this.masterService.bulkDeleteWilayahSungai(ids);
+  }
+
+  // ========== CRUD METODE EVALUASI ==========
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('metode-evaluasi')
+  createMetodeEvaluasi(@Body() dto: any) {
+    return this.masterService.createMetodeEvaluasi(dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Patch('metode-evaluasi/:id')
+  updateMetodeEvaluasi(@Param('id') id: string, @Body() dto: any) {
+    return this.masterService.updateMetodeEvaluasi(id, dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Delete('metode-evaluasi/:id')
+  deleteMetodeEvaluasi(@Param('id') id: string) {
+    return this.masterService.deleteMetodeEvaluasi(id);
+  }
+
+  // ========== CRUD EVALUASI ITEM (poin per metode) ==========
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('evaluasi-item')
+  createEvaluasiItem(@Body() dto: any) {
+    return this.masterService.createEvaluasiItem(dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Patch('evaluasi-item/:id')
+  updateEvaluasiItem(@Param('id') id: string, @Body() dto: any) {
+    return this.masterService.updateEvaluasiItem(id, dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Delete('evaluasi-item/:id')
+  deleteEvaluasiItem(@Param('id') id: string) {
+    return this.masterService.deleteEvaluasiItem(id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('evaluasi-item/bulk-delete')
+  bulkDeleteEvaluasiItem(@Body('ids') ids: string[]) {
+    return this.masterService.bulkDeleteEvaluasiItem(ids);
   }
 }

@@ -51,13 +51,6 @@ enum JenisPaket {
   NON_FISIK
 }
 
-enum KriteriaEvaluasi {
-  URGENSITAS
-  KESIAPAN_TEKNIS
-  TEMATIK
-  VALUASI
-}
-
 enum SumberUsulanProyek {
   PEMERINTAH_DAERAH
   KEMENTERIAN_LEMBAGA
@@ -133,6 +126,10 @@ model Balai {
   name      String  @db.VarChar(150)
   shortName String? @db.VarChar(100)
   code      String? @unique @db.VarChar(10)
+  // Kalau false, SATKER balai ini tidak bisa membuat paket baru (dicek oleh
+  // ADMINISTRATOR di master data Balai). ADMINISTRATOR sendiri tidak terkena
+  // batasan ini.
+  isActive  Boolean @default(true)
 
   latitude  Float?
   longitude Float?
@@ -387,29 +384,48 @@ model IndikatorSasaranKegiatan {
 // =============================================
 // MASTER: Evaluasi (Multi Criteria Analysis)
 // =============================================
-// Sumber: referensi 1.xlsx sheet "evaluasi Irwa/supan/benda/atab". Empat
-// kriteria dengan bobot tetap (Urgensitas 40%, Kesiapan Teknis 20%,
-// Tematik 20%, Valuasi 20%); daftar itemnya beda per kegiatan, makanya
-// jadi tabel master, bukan enum. Bobot per item = score / total score
-// kriteria * bobot kriteria (lihat hitungSkorEvaluasi()).
+// Sumber: referensi 1.xlsx sheet "evaluasi Irwa/supan/benda/atab". Metode
+// (dulu enum tetap Urgensitas/Kesiapan Teknis/Tematik/Valuasi, bobot
+// 40/20/20/20 hardcoded) sekarang jadi master data juga, supaya bobotnya
+// bisa diubah admin tanpa ubah kode. Poin/item per metode tetap beda per
+// kegiatan. Bobot per item = score / total score metode * bobot metode
+// (lihat hitungSkorEvaluasi()).
+
+model MetodeEvaluasi {
+  id     String @id @default(cuid())
+  name   String @db.VarChar(150)
+  // Bobot metode ini terhadap skor total, 0..1 (mis. 0.4 = 40%). Tidak
+  // divalidasi harus total 1 di semua metode — itu urusan admin saat
+  // mengisi, biar fleksibel kalau metode ditambah/dihapus.
+  bobot  Float
+  urutan Int    @default(0) @db.SmallInt
+
+  item EvaluasiItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("metode_evaluasi")
+}
 
 model EvaluasiItem {
   id         String   @id @default(cuid())
   kegiatanId String   @db.VarChar(10)
   kegiatan   Kegiatan @relation(fields: [kegiatanId], references: [id])
 
-  kriteria KriteriaEvaluasi
-  urutan   Int              @db.SmallInt
-  name     String           @db.Text
-  // Bobot mentah item ini di dalam kriterianya (kolom "Score" di excel).
-  score    Int              @default(1) @db.SmallInt
+  metodeId String
+  metode   MetodeEvaluasi @relation(fields: [metodeId], references: [id])
+
+  name  String @db.Text
+  // Bobot mentah item ini di dalam metodenya (kolom "Score" di excel).
+  score Int    @default(1) @db.SmallInt
 
   plannings PlanningEvaluasi[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([kegiatanId, kriteria])
+  @@index([kegiatanId, metodeId])
   @@map("evaluasi_item")
 }
 
@@ -573,9 +589,10 @@ model Planning {
   // StudiLayak/DED/LARAP di DB.xlsx cuma angka tahun polos, tanpa status
   // terpisah — jadi field langsung, bukan lewat KriteriaDokumen generic
   // (dibuang, lihat docs-planning/audit-restrukturisasi-db-xlsx.md §3.3).
-  tahunStudiLayak Int? @db.SmallInt
-  tahunDed        Int? @db.SmallInt
-  tahunLarap      Int? @db.SmallInt
+  tahunStudiLayak         Int? @db.SmallInt
+  tahunDed                Int? @db.SmallInt
+  tahunLarap              Int? @db.SmallInt
+  tahunDokumenLingkungan  Int? @db.SmallInt
 
   sumberUsulanProyek  SumberUsulanProyek?
   sumberUsulanLainnya String?             @db.Text

@@ -215,6 +215,11 @@ export class CreatePlanningDto {
   @IsInt()
   tahunLarap?: number;
 
+  @ApiPropertyOptional({ example: 2023 })
+  @IsOptional()
+  @IsInt()
+  tahunDokumenLingkungan?: number;
+
   @ApiPropertyOptional({
     enum: [
       'PEMERINTAH_DAERAH',
@@ -246,6 +251,13 @@ export class CreatePlanningDto {
   @IsArray()
   @IsString({ each: true })
   evaluasiItemIds?: string[];
+
+  // Keterangan per item yang dicentang (itemId -> teks bebas), cuma
+  // dipakai kalau itemnya ada di evaluasiItemIds. Dict polos, bukan
+  // divalidasi ketat — konsisten dengan dto `any` di master data.
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  evaluasiKeterangan?: Record<string, string>;
 
   // Relasi
   @ApiPropertyOptional({ type: [PaketDto] })

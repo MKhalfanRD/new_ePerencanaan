@@ -23,17 +23,33 @@ export interface KegiatanPrioritas {
   };
 }
 
-export type KriteriaEvaluasi =
-  | "URGENSITAS"
-  | "KESIAPAN_TEKNIS"
-  | "TEMATIK"
-  | "VALUASI";
+/** Tree PN > PP > KP lengkap dari satu request, dipakai untuk select
+ * berjenjang (pilih PN dulu, lalu PP-nya, lalu KP-nya). */
+export interface PrioritasNasional {
+  id: string;
+  code: string;
+  name: string;
+  programPrioritas: {
+    id: string;
+    code: string;
+    name: string;
+    kegiatanPrioritas: { id: string; code: string; name: string }[];
+  }[];
+}
+
+export interface MetodeEvaluasi {
+  id: string;
+  name: string;
+  /** 0..1, mis. 0.4 = 40% */
+  bobot: number;
+  urutan: number;
+}
 
 export interface EvaluasiItem {
   id: string;
   kegiatanId: string;
-  kriteria: KriteriaEvaluasi;
-  urutan: number;
+  metodeId: string;
+  metode?: MetodeEvaluasi;
   name: string;
   score: number;
 }
@@ -45,6 +61,8 @@ export interface Balai {
   code?: string;
   latitude?: number;
   longitude?: number;
+  /** Kalau false, SATKER balai ini tidak bisa membuat paket baru. */
+  isActive: boolean;
 }
 
 export interface Periode {
@@ -196,6 +214,7 @@ export interface Planning {
   tahunStudiLayak?: number;
   tahunDed?: number;
   tahunLarap?: number;
+  tahunDokumenLingkungan?: number;
   sumberUsulanProyek?: SumberUsulanProyek;
   sumberUsulanLainnya?: string;
   paket: Paket[];

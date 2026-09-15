@@ -14,15 +14,16 @@
  * sheet (Irwa punya kolom "ada/tidak ada" tambahan), makanya dicari dari
  * baris header, bukan di-hardcode.
  *
- * Bobot kriteria (40/20/20/20) TIDAK disimpan di DB — konstanta di
- * src/plannings/evaluasi-skor.ts.
+ * Bobot metode (40/20/20/20) ada di tabel master `metode_evaluasi`
+ * (lihat migration 20260915010000_metode_evaluasi_master), bukan konstanta
+ * di kode lagi — kalau id metode berubah, sesuaikan MERODE_ID di bawah.
  *
  * Cara pakai:
  *   1. npx prisma migrate dev
  *   2. npx ts-node prisma/scripts/seed-evaluasi-referensi1.ts
  *      (tambah --dry untuk cuma menampilkan hasil parsing, tanpa tulis DB)
  */
-import { PrismaClient, KriteriaEvaluasi } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import * as path from 'path';
 import * as XLSX from 'xlsx';
 
@@ -38,8 +39,17 @@ const SHEET_KEGIATAN: Record<string, string> = {
   'evaluasi atab': '7694',
 };
 
+/** Id metode_evaluasi seed bawaan migrasi — cuma label untuk log, kolom
+ * DB-nya `metodeId`. */
+const METODE_ID: Record<string, string> = {
+  URGENSITAS: 'metode_urgensitas',
+  KESIAPAN_TEKNIS: 'metode_kesiapan_teknis',
+  TEMATIK: 'metode_tematik',
+  VALUASI: 'metode_valuasi',
+};
+
 /** Blok kriteria: kolom awal tiap kriteria di sheet, urut kiri ke kanan. */
-const BLOK: { kriteria: KriteriaEvaluasi; col: number }[] = [
+const BLOK: { kriteria: keyof typeof METODE_ID; col: number }[] = [
   { kriteria: 'URGENSITAS', col: 0 },
   { kriteria: 'KESIAPAN_TEKNIS', col: 5 },
   { kriteria: 'TEMATIK', col: 10 },
@@ -63,8 +73,7 @@ export function parseSheet(rows: Row[]) {
   const header = rows[headerIdx];
 
   const items: {
-    kriteria: KriteriaEvaluasi;
-    urutan: number;
+    metodeId: string;
     name: string;
     score: number;
   }[] = [];
@@ -80,16 +89,13 @@ export function parseSheet(rows: Row[]) {
     }
     if (scoreCol < 0) throw new Error(`Kolom Score ${kriteria} tidak ketemu`);
 
-    let urutan = 0;
     for (let r = headerIdx + 1; r < rows.length; r++) {
       const nama = teks(rows[r]?.[col]);
       if (!nama || penutup(nama)) break;
       // "dst.." di sheet supan/benda/atab cuma placeholder, bukan item nyata.
       if (/^dst\.*$/i.test(nama)) continue;
-      urutan++;
       items.push({
-        kriteria,
-        urutan,
+        metodeId: METODE_ID[kriteria],
         name: bersihkan(nama),
         score: Number(rows[r][scoreCol]) || 1,
       });
@@ -117,7 +123,7 @@ async function main() {
     if (DRY) {
       console.log(`\n=== ${sheet} (kegiatan ${kodeKegiatan}) — ${items.length} item`);
       for (const i of items) {
-        console.log(`  [${i.kriteria}] ${i.urutan}. ${i.name} (score ${i.score})`);
+        console.log(`  [${i.metodeId}] ${i.name} (score ${i.score})`);
       }
       continue;
     }

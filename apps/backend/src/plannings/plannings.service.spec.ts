@@ -63,6 +63,7 @@ describe('PlanningsService', () => {
 
     it('total alokasi dihitung otomatis dari rm+rmp+pln+sbsn+kpbu (field kosong dianggap 0)', async () => {
       prisma.planning.create.mockResolvedValue(buildPlanning() as any);
+      prisma.balai.findUnique.mockResolvedValue({ isActive: true } as any);
 
       await service.create(
         {

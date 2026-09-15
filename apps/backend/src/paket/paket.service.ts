@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreatePaketDto } from './dto/create-paket.dto';
@@ -41,11 +45,19 @@ export class PaketService {
     await this.redis.delByPrefix('plannings:list:');
   }
 
-  async create(dto: CreatePaketDto) {
+  async create(dto: CreatePaketDto, userRole?: string) {
     const planning = await this.prisma.planning.findUnique({
       where: { id: dto.planningId },
+      include: { balai: { select: { isActive: true } } },
     });
     if (!planning) throw new NotFoundException('Planning tidak ditemukan');
+    // ADMINISTRATOR tidak terkena batasan — flag ini cuma membatasi SATKER
+    // balai yang dinonaktifkan admin.
+    if (!planning.balai?.isActive && userRole !== 'ADMINISTRATOR') {
+      throw new ForbiddenException(
+        'Balai ini sedang dinonaktifkan oleh admin, tidak bisa membuat paket baru',
+      );
+    }
 
     const result = await this.prisma.$transaction(async (tx) => {
       // Kode Proyek seharusnya sudah ada dari saat proyek dibuat — fallback

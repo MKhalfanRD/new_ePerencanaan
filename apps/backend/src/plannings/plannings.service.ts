@@ -100,7 +100,19 @@ export class PlanningsService {
     private redis: RedisService,
   ) {}
 
-  async create(dto: CreatePlanningDto, userId: string) {
+  async create(dto: CreatePlanningDto, userId: string, userRole?: string) {
+    if (dto.paket?.length && userRole !== 'ADMINISTRATOR') {
+      const balai = await this.prisma.balai.findUnique({
+        where: { id: dto.balaiId },
+        select: { isActive: true },
+      });
+      if (!balai?.isActive) {
+        throw new ForbiddenException(
+          'Balai ini sedang dinonaktifkan oleh admin, tidak bisa membuat paket baru',
+        );
+      }
+    }
+
     const planning = await this.prisma.$transaction(async (tx) => {
       // Kode Proyek & Kode Paket digenerate otomatis, tidak lagi diisi
       // manual — lihat src/common/kode-generator.ts.
@@ -124,12 +136,16 @@ export class PlanningsService {
         skorEvaluasi: await skorDariItemIds(tx, dto.evaluasiItemIds ?? []),
         evaluasi: dto.evaluasiItemIds?.length
           ? {
-              create: dto.evaluasiItemIds.map((itemId) => ({ itemId })),
+              create: dto.evaluasiItemIds.map((itemId) => ({
+                itemId,
+                keterangan: dto.evaluasiKeterangan?.[itemId] || undefined,
+              })),
             }
           : undefined,
         tahunStudiLayak: dto.tahunStudiLayak,
         tahunDed: dto.tahunDed,
         tahunLarap: dto.tahunLarap,
+        tahunDokumenLingkungan: dto.tahunDokumenLingkungan,
         sumberUsulanProyek: dto.sumberUsulanProyek as any,
         sumberUsulanLainnya: dto.sumberUsulanLainnya,
         status: 'APPROVED',
@@ -347,7 +363,10 @@ export class PlanningsService {
         evaluasi: gantiEvaluasi
           ? {
               deleteMany: {},
-              create: dto.evaluasiItemIds!.map((itemId) => ({ itemId })),
+              create: dto.evaluasiItemIds!.map((itemId) => ({
+                itemId,
+                keterangan: dto.evaluasiKeterangan?.[itemId] || undefined,
+              })),
             }
           : undefined,
         balaiId: dto.balaiId,
@@ -364,6 +383,7 @@ export class PlanningsService {
         tahunStudiLayak: dto.tahunStudiLayak,
         tahunDed: dto.tahunDed,
         tahunLarap: dto.tahunLarap,
+        tahunDokumenLingkungan: dto.tahunDokumenLingkungan,
         sumberUsulanProyek: dto.sumberUsulanProyek as any,
         sumberUsulanLainnya: dto.sumberUsulanLainnya,
       },

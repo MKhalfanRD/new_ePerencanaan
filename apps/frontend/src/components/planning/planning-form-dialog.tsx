@@ -44,20 +44,10 @@ import {
   Periode,
   RO,
   Planning,
-  KegiatanPrioritas,
+  PrioritasNasional,
   EvaluasiItem,
-  KriteriaEvaluasi,
+  MetodeEvaluasi,
 } from "@/types";
-
-// Bobot & label kriteria evaluasi — cerminan BOBOT_KRITERIA di backend
-// (src/plannings/evaluasi-skor.ts). Skor final tetap dihitung backend;
-// angka di sini cuma untuk menampilkan progres ke user.
-const KRITERIA: { key: KriteriaEvaluasi; label: string; bobot: number }[] = [
-  { key: "URGENSITAS", label: "Urgensitas", bobot: 0.4 },
-  { key: "KESIAPAN_TEKNIS", label: "Kesiapan Teknis", bobot: 0.2 },
-  { key: "TEMATIK", label: "Tematik", bobot: 0.2 },
-  { key: "VALUASI", label: "Valuasi", bobot: 0.2 },
-];
 
 // Dipakai lewat setValueAs pada input number opsional: input kosong via
 // valueAsNumber jadi NaN, bukan undefined — z.number().optional() menolak
@@ -92,6 +82,7 @@ const schema = z.object({
   tahunStudiLayak: z.number().optional(),
   tahunDed: z.number().optional(),
   tahunLarap: z.number().optional(),
+  tahunDokumenLingkungan: z.number().optional(),
   // 1 proyek bisa punya banyak Paket — RO/jenis/masa pelaksanaan sekarang
   // menempel di Paket, bukan di Planning (lihat docs-planning/fitur-paket).
   // Form dasar ini: 1 baris = 1 paket dengan 1 alokasi tahun berjalan.
@@ -166,8 +157,17 @@ export function PlanningFormDialog({
     { id: string; name: string }[]
   >([]);
   const [wsSearch, setWsSearch] = useState("");
-  const [kpList, setKpList] = useState<KegiatanPrioritas[]>([]);
+  const [pnList, setPnList] = useState<PrioritasNasional[]>([]);
+  // Select berjenjang PN -> PP -> KP: cuma KP (kegiatanPrioritasId) yang
+  // sebenarnya tersimpan di form; PN/PP di sini cuma state UI buat
+  // menyaring opsi di bawahnya.
+  const [selectedPnId, setSelectedPnId] = useState("");
+  const [selectedPpId, setSelectedPpId] = useState("");
+  const [metodeList, setMetodeList] = useState<MetodeEvaluasi[]>([]);
   const [evaluasiItems, setEvaluasiItems] = useState<EvaluasiItem[]>([]);
+  const [evaluasiKeterangan, setEvaluasiKeterangan] = useState<
+    Record<string, string>
+  >({});
   const [loadingMaster, setLoadingMaster] = useState(false);
   const isEdit = !!editData;
 
@@ -203,14 +203,16 @@ export function PlanningFormDialog({
       api.get("/master/periodes"),
       api.get("/master/ro"),
       api.get("/master/wilayah-sungai"),
-      api.get("/master/kegiatan-prioritas"),
+      api.get("/master/prioritas-nasional"),
+      api.get("/master/metode-evaluasi"),
     ])
-      .then(([b, p, r, ws, kp]) => {
+      .then(([b, p, r, ws, pn, me]) => {
         setBalaiList(b.data);
         setPeriodeList(p.data);
         setROList(r.data);
         setWilayahSungaiList(ws.data);
-        setKpList(kp.data);
+        setPnList(pn.data);
+        setMetodeList(me.data);
       })
       .finally(() => setLoadingMaster(false));
   }, [open]);
@@ -231,15 +233,31 @@ export function PlanningFormDialog({
         tahunStudiLayak: editData.tahunStudiLayak,
         tahunDed: editData.tahunDed,
         tahunLarap: editData.tahunLarap,
+        tahunDokumenLingkungan: editData.tahunDokumenLingkungan,
         paket: [],
       });
+      setEvaluasiKeterangan(
+        Object.fromEntries(
+          (editData.evaluasi ?? [])
+            .filter((e) => e.keterangan)
+            .map((e) => [e.itemId, e.keterangan as string]),
+        ),
+      );
+      setSelectedPnId(
+        editData.kegiatanPrioritas?.programPrioritas.prioritasNasional.id ??
+          "",
+      );
+      setSelectedPpId(editData.kegiatanPrioritas?.programPrioritas.id ?? "");
     } else {
+      setSelectedPnId("");
+      setSelectedPpId("");
       reset({
         kewenangan: "PUSAT",
         kebutuhanTanah: false,
         evaluasiItemIds: [],
         paket: [],
       });
+      setEvaluasiKeterangan({});
     }
   }, [editData, open]);
 
@@ -263,25 +281,35 @@ export function PlanningFormDialog({
   }, [open, kegiatanId]);
 
   const evaluasiDipilih = watch("evaluasiItemIds") ?? [];
-  const toggleEvaluasi = (id: string) =>
+  const toggleEvaluasi = (id: string) => {
+    const checked = evaluasiDipilih.includes(id);
     setValue(
       "evaluasiItemIds",
-      evaluasiDipilih.includes(id)
+      checked
         ? evaluasiDipilih.filter((x) => x !== id)
         : [...evaluasiDipilih, id],
       { shouldDirty: true },
     );
+    // Uncentang → keterangannya ikut dibuang, bukan cuma disembunyikan.
+    if (checked) {
+      setEvaluasiKeterangan((prev) => {
+        const { [id]: _drop, ...rest } = prev;
+        return rest;
+      });
+    }
+  };
 
   // Skor pratinjau — rumus sama dengan hitungSkorEvaluasi() di backend:
-  // per kriteria, score terpilih / total score kriteria x bobot kriteria.
-  const skorPratinjau = KRITERIA.reduce((total, k) => {
-    const perKriteria = evaluasiItems.filter((i) => i.kriteria === k.key);
-    const maks = perKriteria.reduce((a, i) => a + i.score, 0);
+  // per metode, score terpilih / total score metode x bobot metode
+  // (bobot dari master data, bukan konstanta lagi).
+  const skorPratinjau = metodeList.reduce((total, m) => {
+    const perMetode = evaluasiItems.filter((i) => i.metodeId === m.id);
+    const maks = perMetode.reduce((a, i) => a + i.score, 0);
     if (!maks) return total;
-    const dapat = perKriteria
+    const dapat = perMetode
       .filter((i) => evaluasiDipilih.includes(i.id))
       .reduce((a, i) => a + i.score, 0);
-    return total + (dapat / maks) * k.bobot;
+    return total + (dapat / maks) * m.bobot;
   }, 0);
 
   const onSubmit = async (data: FormData) => {
@@ -289,12 +317,16 @@ export function PlanningFormDialog({
       if (isEdit) {
         // Paket dikelola terpisah dari drawer detail, bukan lewat form ini.
         const { paket, ...rest } = data;
-        await api.patch(`/plannings/${editData!.id}`, rest);
+        await api.patch(`/plannings/${editData!.id}`, {
+          ...rest,
+          evaluasiKeterangan,
+        });
         toast.success("Proyek berhasil diperbarui");
       } else {
         // 1 baris form = 1 Paket dengan 1 Alokasi tahun berjalan.
         const payload = {
           ...data,
+          evaluasiKeterangan,
           paket: data.paket.map((p) => ({
             name: p.name,
             roId: p.roId,
@@ -424,6 +456,11 @@ export function PlanningFormDialog({
                               >
                                 {b.shortName ? `— ${b.name}` : b.name}
                               </span>
+                              {!b.isActive && (
+                                <span className="text-destructive ml-2 text-xs">
+                                  (nonaktif)
+                                </span>
+                              )}
                             </SelectItem>
                           ))}
                       </SelectContent>
@@ -433,6 +470,17 @@ export function PlanningFormDialog({
                         {errors.balaiId.message}
                       </p>
                     )}
+                    {(() => {
+                      const selectedBalai = balaiList.find(
+                        (b) => b.id === watch("balaiId"),
+                      );
+                      return selectedBalai && !selectedBalai.isActive ? (
+                        <p className="text-destructive text-xs">
+                          Balai ini dinonaktifkan admin — tidak bisa membuat
+                          paket baru untuk proyek ini.
+                        </p>
+                      ) : null;
+                    })()}
                   </div>
 
                   <div className="space-y-2">
@@ -641,25 +689,90 @@ export function PlanningFormDialog({
                   description="Kegiatan Prioritas RPJMN yang didukung proyek ini"
                 />
 
-                <div className="pl-12">
+                <div className="pl-12 grid grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label>Kegiatan Prioritas (PN.PP.KP)</Label>
+                    <Label>Prioritas Nasional (PN)</Label>
+                    <Select
+                      value={selectedPnId || NONE}
+                      onValueChange={(v) => {
+                        const id = v === NONE ? "" : v;
+                        setSelectedPnId(id);
+                        setSelectedPpId("");
+                        setValue("kegiatanPrioritasId", "");
+                      }}
+                    >
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Pilih PN" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+                        {pnList.map((pn) => (
+                          <SelectItem key={pn.id} value={pn.id}>
+                            <span className="font-mono text-[10px] mr-1">
+                              {pn.code}
+                            </span>
+                            {pn.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Program Prioritas (PP)</Label>
+                    <Select
+                      value={selectedPpId || NONE}
+                      onValueChange={(v) => {
+                        const id = v === NONE ? "" : v;
+                        setSelectedPpId(id);
+                        setValue("kegiatanPrioritasId", "");
+                      }}
+                      disabled={!selectedPnId}
+                    >
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Pilih PN dulu" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+                        {(
+                          pnList.find((pn) => pn.id === selectedPnId)
+                            ?.programPrioritas ?? []
+                        ).map((pp) => (
+                          <SelectItem key={pp.id} value={pp.id}>
+                            <span className="font-mono text-[10px] mr-1">
+                              {pp.code}
+                            </span>
+                            {pp.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Kegiatan Prioritas (KP)</Label>
                     <Select
                       value={watch("kegiatanPrioritasId") || NONE}
                       onValueChange={(v) =>
                         setValue("kegiatanPrioritasId", v === NONE ? "" : v)
                       }
+                      disabled={!selectedPpId}
                     >
                       <SelectTrigger className="h-10">
-                        <SelectValue placeholder="Pilih kegiatan prioritas" />
+                        <SelectValue placeholder="Pilih PP dulu" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                        {kpList.map((kp) => (
+                        {(
+                          pnList
+                            .find((pn) => pn.id === selectedPnId)
+                            ?.programPrioritas.find(
+                              (pp) => pp.id === selectedPpId,
+                            )?.kegiatanPrioritas ?? []
+                        ).map((kp) => (
                           <SelectItem key={kp.id} value={kp.id}>
                             <span className="font-mono text-[10px] mr-1">
-                              {kp.programPrioritas.prioritasNasional.code}.
-                              {kp.programPrioritas.code}.{kp.code}
+                              {kp.code}
                             </span>
                             {kp.name}
                           </SelectItem>
@@ -675,10 +788,10 @@ export function PlanningFormDialog({
                 <SectionHeader
                   icon={ScrollText}
                   title="Tahapan Dokumen"
-                  description="Tahun penyelesaian studi kelayakan, DED, dan LARAP (kosongkan kalau belum ada)"
+                  description="Tahun penyelesaian studi kelayakan, DED, LARAP, dan dokumen lingkungan (kosongkan kalau belum ada)"
                 />
 
-                <div className="grid grid-cols-3 gap-5 pl-12">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-5 pl-12">
                   <div className="space-y-2">
                     <Label className="text-xs">Studi Kelayakan</Label>
                     <Input
@@ -708,6 +821,17 @@ export function PlanningFormDialog({
                       placeholder="Tahun"
                       className="h-9 text-xs"
                       {...register("tahunLarap", {
+                        setValueAs: toOptionalNumber,
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Dokumen Lingkungan</Label>
+                    <Input
+                      type="number"
+                      placeholder="Tahun"
+                      className="h-9 text-xs"
+                      {...register("tahunDokumenLingkungan", {
                         setValueAs: toOptionalNumber,
                       })}
                     />
@@ -808,6 +932,10 @@ export function PlanningFormDialog({
                                   const ro = roList.find((r) => r.id === v);
                                   setValue(
                                     `paket.${i}.outputUnit`,
+                                    ro?.satuan || "",
+                                  );
+                                  setValue(
+                                    `paket.${i}.outcomeUnit`,
                                     ro?.satuan || "",
                                   );
                                 }}
@@ -963,7 +1091,7 @@ export function PlanningFormDialog({
                             {/* Output & Outcome */}
                             <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-2">
-                                <Label className="text-xs">Output Target</Label>
+                                <Label className="text-xs">Volume RO</Label>
                                 <div className="flex gap-2">
                                   <Input
                                     type="number"
@@ -988,7 +1116,7 @@ export function PlanningFormDialog({
                               </div>
                               <div className="space-y-2">
                                 <Label className="text-xs">
-                                  Outcome Target
+                                  Indikator RO
                                 </Label>
                                 <div className="flex gap-2">
                                   <Input
@@ -1000,8 +1128,14 @@ export function PlanningFormDialog({
                                     })}
                                   />
                                   <Input
-                                    className="h-9 text-xs w-24 shrink-0"
+                                    className={`h-9 text-xs w-24 shrink-0 ${
+                                      watch(`paket.${i}.outcomeUnit`)
+                                        ? "bg-muted"
+                                        : ""
+                                    }`}
                                     placeholder="Satuan"
+                                    readOnly={!!watch(`paket.${i}.outcomeUnit`)}
+                                    title="Satuan mengikuti RO"
                                     {...register(`paket.${i}.outcomeUnit`)}
                                   />
                                 </div>
@@ -1045,36 +1179,56 @@ export function PlanningFormDialog({
                         </span>
                       </div>
 
-                      {KRITERIA.map((k) => {
+                      {metodeList.map((m) => {
                         const items = evaluasiItems.filter(
-                          (i) => i.kriteria === k.key,
+                          (i) => i.metodeId === m.id,
                         );
                         if (!items.length) return null;
                         return (
-                          <div key={k.key} className="space-y-2">
+                          <div key={m.id} className="space-y-2">
                             <p className="text-xs font-semibold text-muted-foreground">
-                              {k.label} ({k.bobot * 100}%)
+                              {m.name} ({m.bobot * 100}%)
                             </p>
                             <div className="rounded-xl border divide-y">
-                              {items.map((item) => (
-                                <label
-                                  key={item.id}
-                                  className="flex items-start gap-2.5 px-3.5 py-2.5 cursor-pointer hover:bg-accent/40"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-                                    checked={evaluasiDipilih.includes(item.id)}
-                                    onChange={() => toggleEvaluasi(item.id)}
-                                  />
-                                  <span className="text-xs leading-snug">
-                                    {item.name}
-                                  </span>
-                                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
-                                    {item.score}
-                                  </span>
-                                </label>
-                              ))}
+                              {items.map((item) => {
+                                const dicentang = evaluasiDipilih.includes(
+                                  item.id,
+                                );
+                                return (
+                                  <div
+                                    key={item.id}
+                                    className="px-3.5 py-2.5 hover:bg-accent/40"
+                                  >
+                                    <label className="flex items-start gap-2.5 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                                        checked={dicentang}
+                                        onChange={() => toggleEvaluasi(item.id)}
+                                      />
+                                      <span className="text-xs leading-snug">
+                                        {item.name}
+                                      </span>
+                                      <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                                        {item.score}
+                                      </span>
+                                    </label>
+                                    {dicentang && (
+                                      <Input
+                                        className="mt-2 h-8 text-xs"
+                                        placeholder="Keterangan (opsional)"
+                                        value={evaluasiKeterangan[item.id] ?? ""}
+                                        onChange={(e) =>
+                                          setEvaluasiKeterangan((prev) => ({
+                                            ...prev,
+                                            [item.id]: e.target.value,
+                                          }))
+                                        }
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         );

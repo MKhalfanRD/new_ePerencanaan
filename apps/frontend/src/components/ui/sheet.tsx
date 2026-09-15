@@ -49,10 +49,10 @@ function SheetOverlay({
 
 /**
  * SheetContent — modal terpusat (bekas panel geser, sekarang tampil seperti
- * Dialog biasa). layer="1" cuma menentukan lebar maksimal (~660px, dipakai
- * untuk Detail Proyek), layer="2" lebih sempit (~440px, form Alokasi/Lokasi).
- * Menumpuk seperti dialog-di-atas-dialog biasa — tidak ada lagi efek
- * "terdorong" (lihat `sheetPushedProps`).
+ * Dialog biasa), lebar 70% layar. `layer` cuma dipertahankan sebagai
+ * data-attribute (tidak lagi mengubah lebar) supaya call site lama tidak
+ * perlu diubah. Menumpuk seperti dialog-di-atas-dialog biasa — tidak ada lagi
+ * efek "terdorong" (lihat `sheetPushedProps`).
  */
 function SheetContent({
   className,
@@ -73,8 +73,7 @@ function SheetContent({
         data-layer={layer}
         className={cn(
           "fixed top-1/2 left-1/2 z-50 flex max-h-[85vh] w-full -translate-x-1/2 -translate-y-1/2 flex-col gap-0 overflow-hidden rounded-xl bg-popover text-sm text-popover-foreground ring-1 ring-foreground/10 outline-none duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
-          layer === "1" && "max-w-[660px]",
-          layer === "2" && "max-w-[440px]",
+          "w-[70vw] max-w-[70vw]",
           "max-sm:max-w-[calc(100%-2rem)]",
           className,
         )}

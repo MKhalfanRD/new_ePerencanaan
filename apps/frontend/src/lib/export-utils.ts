@@ -119,6 +119,7 @@ export function exportPlanningDetailToExcel(p: Planning) {
     { Tahapan: "Studi Kelayakan", Tahun: p.tahunStudiLayak || "-" },
     { Tahapan: "DED", Tahun: p.tahunDed || "-" },
     { Tahapan: "LARAP", Tahun: p.tahunLarap || "-" },
+    { Tahapan: "Dokumen Lingkungan", Tahun: p.tahunDokumenLingkungan || "-" },
   ];
   const wsDokumen = XLSX.utils.json_to_sheet(dokumenRows);
   wsDokumen["!cols"] = [{ wch: 20 }, { wch: 10 }];
@@ -143,10 +144,10 @@ export function exportPlanningDetailToExcel(p: Planning) {
         "SBSN (Rp)": Number(a.sbsn),
         "KPBU (Rp)": Number(a.kpbu),
         "Total (Rp)": Number(a.total),
-        "Output Target": a.outputTarget || "-",
-        "Output Unit": a.outputUnit || "-",
-        "Outcome Target": a.outcomeTarget || "-",
-        "Outcome Unit": a.outcomeUnit || "-",
+        "Volume RO": a.outputTarget || "-",
+        "Volume Unit": a.outputUnit || "-",
+        "Indikator RO": a.outcomeTarget || "-",
+        "Indikator Unit": a.outcomeUnit || "-",
         Catatan: a.catatan || "-",
       }));
     const wsAlokasi = XLSX.utils.json_to_sheet(alokasiRows);
@@ -292,6 +293,7 @@ export function exportPlanningDetailToPDF(p: Planning) {
         ["Studi Kelayakan", p.tahunStudiLayak || "-"],
         ["DED", p.tahunDed || "-"],
         ["LARAP", p.tahunLarap || "-"],
+        ["Dokumen Lingkungan", p.tahunDokumenLingkungan || "-"],
       ],
       styles: { fontSize: 8 },
       headStyles: { fillColor: [30, 41, 59] },

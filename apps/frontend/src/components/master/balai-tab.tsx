@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,7 @@ interface Balai {
   code?: string;
   latitude?: number;
   longitude?: number;
+  isActive: boolean;
 }
 
 const schema = z.object({
@@ -35,6 +37,7 @@ const schema = z.object({
   code: z.string().optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
+  isActive: z.boolean().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -57,6 +60,8 @@ export function BalaiTab() {
     try {
       const res = await api.get("/master/balai");
       setData(res.data);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal memuat data Balai");
     } finally {
       setLoading(false);
     }
@@ -68,7 +73,7 @@ export function BalaiTab() {
 
   const openAdd = () => {
     setEditData(null);
-    reset({});
+    reset({ isActive: true });
     setShowForm(true);
   };
   const openEdit = (item: Balai) => {
@@ -113,6 +118,47 @@ export function BalaiTab() {
     }
   };
 
+  // Import: baris dicocokkan ke balai yang sudah ada lewat "id" (kode
+  // numerik balai, manual) — kalau ketemu di-update, kalau tidak dibuat
+  // baru. Baris tanpa id yang valid dilewati (bukan error, biar sisanya
+  // tetap masuk).
+  const onImportRows = async (rows: Record<string, string>[]) => {
+    let created = 0;
+    let updated = 0;
+    let dilewati = 0;
+    for (const row of rows) {
+      const id = Number(row.id);
+      if (!id) {
+        dilewati++;
+        continue;
+      }
+      const payload = {
+        name: row.name,
+        shortName: row.shortName || undefined,
+        code: row.code || undefined,
+        latitude: row.latitude ? Number(row.latitude) : undefined,
+        longitude: row.longitude ? Number(row.longitude) : undefined,
+        isActive: !/^(tidak|nonaktif|0|false)$/i.test(row.isActive || ""),
+      };
+      try {
+        if (data.some((b) => b.id === id)) {
+          await api.patch(`/master/balai/${id}`, payload);
+          updated++;
+        } else {
+          await api.post("/master/balai", { id, ...payload });
+          created++;
+        }
+      } catch {
+        dilewati++;
+      }
+    }
+    toast.success(
+      `Import selesai: ${created} ditambah, ${updated} diperbarui` +
+        (dilewati ? `, ${dilewati} dilewati` : ""),
+    );
+    fetch();
+  };
+
   return (
     <>
       <MasterTable
@@ -124,17 +170,33 @@ export function BalaiTab() {
           { key: "name", label: "Nama Balai" },
           { key: "shortName", label: "Singkatan" },
           { key: "code", label: "Kode" },
+          { key: "latitude", label: "Latitude" },
+          { key: "longitude", label: "Longitude" },
           {
-            key: "koordinat",
-            label: "Koordinat",
+            key: "isActive",
+            label: "Status",
             render: (item) =>
-              item.latitude ? `${item.latitude}, ${item.longitude}` : "—",
+              item.isActive ? (
+                <Badge variant="outline" className="text-[10px]">
+                  Aktif
+                </Badge>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] text-destructive border-destructive/40"
+                >
+                  Nonaktif
+                </Badge>
+              ),
+            exportValue: (item) => (item.isActive ? "Ya" : "Tidak"),
           },
         ]}
         onAdd={openAdd}
         onEdit={openEdit}
         onDelete={onDelete}
         onBulkDelete={onBulkDelete}
+        onImport={onImportRows}
+        exportable
         searchKeys={["name", "shortName", "code"]}
       />
 
@@ -217,6 +279,14 @@ export function BalaiTab() {
                 />
               </div>
             </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-primary"
+                {...register("isActive")}
+              />
+              Balai aktif (boleh membuat paket)
+            </label>
             <DialogFooter className="pt-3">
               <Button
                 type="button"

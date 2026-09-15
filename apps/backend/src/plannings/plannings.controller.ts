@@ -37,7 +37,7 @@ export class PlanningsController {
   @Roles('SATKER', 'ADMINISTRATOR')
   @Post()
   create(@Body() dto: CreatePlanningDto, @CurrentUser() user: any) {
-    return this.planningsService.create(dto, user.userId);
+    return this.planningsService.create(dto, user.userId, user.role);
   }
 
   @ApiOperation({ summary: 'Daftar planning dengan pagination & filter' })

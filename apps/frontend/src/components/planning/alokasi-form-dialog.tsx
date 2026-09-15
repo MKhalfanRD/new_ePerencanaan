@@ -136,7 +136,7 @@ export function AlokasiFormDialog({
         outcomeTarget: editData.outcomeTarget
           ? Number(editData.outcomeTarget)
           : undefined,
-        outcomeUnit: editData.outcomeUnit || "",
+        outcomeUnit: roSatuan || editData.outcomeUnit || "",
         catatan: editData.catatan || "",
       });
     } else {
@@ -149,6 +149,7 @@ export function AlokasiFormDialog({
         sbsn: 0,
         kpbu: 0,
         outputUnit: roSatuan || "",
+        outcomeUnit: roSatuan || "",
       });
     }
   }, [editData, open, roSatuan]);
@@ -272,7 +273,7 @@ export function AlokasiFormDialog({
               {/* Output & Outcome — stacked karena panel sempit */}
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Output Target</Label>
+                  <Label>Volume RO</Label>
                   <div className="flex gap-2">
                     <Input
                       type="number"
@@ -295,7 +296,7 @@ export function AlokasiFormDialog({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Outcome Target</Label>
+                  <Label>Indikator RO</Label>
                   <div className="flex gap-2">
                     <Input
                       type="number"
@@ -306,8 +307,10 @@ export function AlokasiFormDialog({
                       })}
                     />
                     <Input
-                      className="h-10 w-24 shrink-0"
+                      className={`h-10 w-24 shrink-0 ${roSatuan ? "bg-muted" : ""}`}
                       placeholder="Satuan"
+                      readOnly={!!roSatuan}
+                      title={roSatuan ? "Satuan mengikuti RO" : undefined}
                       {...register("outcomeUnit")}
                     />
                   </div>

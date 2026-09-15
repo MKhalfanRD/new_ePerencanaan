@@ -40,6 +40,10 @@ export function WilayahSungaiTab() {
     try {
       const res = await api.get("/master/wilayah-sungai");
       setData(res.data);
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.message || "Gagal memuat data Wilayah Sungai",
+      );
     } finally {
       setLoading(false);
     }
@@ -96,6 +100,34 @@ export function WilayahSungaiTab() {
     }
   };
 
+  // Import: id-nya cuid (bukan sesuatu yang diketik user), jadi baris
+  // dicocokkan ke data yang sudah ada lewat nama (case-insensitive) —
+  // ketemu di-update, tidak ketemu dibuat baru.
+  const onImportRows = async (rows: Record<string, string>[]) => {
+    let created = 0;
+    let updated = 0;
+    for (const row of rows) {
+      const name = row.name?.trim();
+      if (!name) continue;
+      const existing = data.find(
+        (d) => d.name.toLowerCase() === name.toLowerCase(),
+      );
+      try {
+        if (existing) {
+          await api.patch(`/master/wilayah-sungai/${existing.id}`, { name });
+          updated++;
+        } else {
+          await api.post("/master/wilayah-sungai", { name });
+          created++;
+        }
+      } catch {
+        // dilewati, lanjut baris berikutnya
+      }
+    }
+    toast.success(`Import selesai: ${created} ditambah, ${updated} diperbarui`);
+    fetch();
+  };
+
   return (
     <>
       <MasterTable
@@ -107,6 +139,8 @@ export function WilayahSungaiTab() {
         onEdit={openEdit}
         onDelete={onDelete}
         onBulkDelete={onBulkDelete}
+        onImport={onImportRows}
+        exportable
         searchKeys={["name"]}
       />
 

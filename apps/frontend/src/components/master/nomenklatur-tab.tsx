@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
   ChevronDown,
@@ -10,6 +10,7 @@ import {
   Plus,
   Search,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ import {
 import { cn } from "@/lib/utils";
 import api from "@/lib/api";
 import { exportMasterToExcel } from "@/lib/export-master-excel";
+import { parseNomenklaturSheet } from "@/lib/import-master-excel";
 
 /**
  * Master nomenklatur dalam SATU halaman: Program > Kegiatan > KRO > RO,
@@ -100,6 +102,8 @@ export function NomenklaturTab() {
   const [pilih, setPilih] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkMenghapus, setBulkMenghapus] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const keyOf = (level: Level, id: string | number) => `${level}::${id}`;
   const togglePilih = (level: Level, id: string | number) =>
@@ -146,6 +150,115 @@ export function NomenklaturTab() {
   useEffect(() => {
     fetchAll();
   }, []);
+
+  // Import Excel: sheet "Nomenklatur" dalam format outline yang sama
+  // seperti hasil Export Excel (lihat lib/import-master-excel.ts). Upsert
+  // berjenjang Program -> Kegiatan -> KRO -> RO -> Komponen, satu level
+  // harus selesai duluan karena level bawahnya butuh id induknya.
+  // Program/Kegiatan/KRO/RO id-nya manual (= kodenya) jadi tinggal dicek ke
+  // list yang sudah dimuat; Komponen id-nya cuid, dicocokkan lewat
+  // (roId, code).
+  const handleImportFile = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImporting(true);
+    let programCount = 0;
+    let kegiatanCount = 0;
+    let kroCount = 0;
+    let roCount = 0;
+    let komponenCount = 0;
+    try {
+      const buf = await file.arrayBuffer();
+      const parsed = parseNomenklaturSheet(buf);
+
+      const programIds = new Set(programs.map((p) => p.id));
+      for (const p of parsed.programs) {
+        if (programIds.has(p.id)) {
+          await api.patch(`${ENDPOINT.Program}/${p.id}`, {
+            code: p.code,
+            name: p.name,
+          });
+        } else {
+          await api.post(ENDPOINT.Program, p);
+          programIds.add(p.id);
+        }
+        programCount++;
+      }
+
+      const kegiatanIds = new Set(kegiatan.map((k) => k.id));
+      for (const k of parsed.kegiatan) {
+        if (kegiatanIds.has(k.id)) {
+          await api.patch(`${ENDPOINT.Kegiatan}/${k.id}`, {
+            code: k.code,
+            name: k.name,
+          });
+        } else {
+          await api.post(ENDPOINT.Kegiatan, k);
+          kegiatanIds.add(k.id);
+        }
+        kegiatanCount++;
+      }
+
+      const kroIds = new Set(kroList.map((k) => k.id));
+      for (const k of parsed.kro) {
+        if (kroIds.has(k.id)) {
+          await api.patch(`${ENDPOINT.KRO}/${k.id}`, {
+            code: k.code,
+            name: k.name,
+          });
+        } else {
+          await api.post(ENDPOINT.KRO, k);
+          kroIds.add(k.id);
+        }
+        kroCount++;
+      }
+
+      const roIds = new Set(roList.map((r) => r.id));
+      for (const r of parsed.ro) {
+        if (roIds.has(r.id)) {
+          await api.patch(`${ENDPOINT.RO}/${r.id}`, {
+            code: r.code,
+            name: r.name,
+            satuan: r.satuan,
+          });
+        } else {
+          await api.post(ENDPOINT.RO, r);
+          roIds.add(r.id);
+        }
+        roCount++;
+      }
+
+      const komponenExisting = [...komponenList];
+      for (const k of parsed.komponen) {
+        const existing = komponenExisting.find(
+          (x) => x.roId === k.roId && x.code === k.code,
+        );
+        if (existing) {
+          await api.patch(`${ENDPOINT.Komponen}/${existing.id}`, {
+            code: k.code,
+            name: k.name,
+          });
+        } else {
+          await api.post(ENDPOINT.Komponen, k);
+        }
+        komponenCount++;
+      }
+
+      toast.success(
+        `Import selesai: ${programCount} Program, ${kegiatanCount} Kegiatan, ${kroCount} KRO, ${roCount} RO, ${komponenCount} Komponen`,
+      );
+      fetchAll();
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.message || err.message || "Gagal impor file",
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const toggle = (id: string) =>
     setExpanded((prev) => {
@@ -351,6 +464,25 @@ export function NomenklaturTab() {
         </div>
         <Button variant="outline" onClick={() => bukaTambah("Program")}>
           <Plus size={14} className="mr-1.5" /> Program
+        </Button>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          className="hidden"
+          onChange={handleImportFile}
+        />
+        <Button
+          variant="outline"
+          disabled={importing}
+          onClick={() => importInputRef.current?.click()}
+        >
+          {importing ? (
+            <Loader2 size={14} className="mr-1.5 animate-spin" />
+          ) : (
+            <Upload size={14} className="mr-1.5" />
+          )}
+          Import Excel
         </Button>
         <Button
           onClick={() =>

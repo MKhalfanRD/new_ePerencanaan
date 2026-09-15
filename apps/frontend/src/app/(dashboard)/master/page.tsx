@@ -1,12 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, FolderTree, Droplets } from "lucide-react";
+import {
+  Building2,
+  FolderTree,
+  Droplets,
+  ClipboardCheck,
+  Target,
+  Tags,
+  Flag,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { BalaiTab } from "@/components/master/balai-tab";
 import { NomenklaturTab } from "@/components/master/nomenklatur-tab";
 import { WilayahSungaiTab } from "@/components/master/wilayah-sungai-tab";
+import { EvaluasiTab } from "@/components/master/evaluasi-tab";
+import { PnppkpTab } from "@/components/master/pnppkp-tab";
+import { TaggingRenjaTab } from "@/components/master/tagging-renja-tab";
+import { SasaranTab } from "@/components/master/sasaran-tab";
 
 // Program/Kegiatan/KRO/RO/IRO/Komponen/Tahun jadi SATU halaman
 // ("Nomenklatur") — tab "Periode" lama dilebur ke sana sebagai bagian
@@ -15,6 +27,10 @@ const tabs = [
   { id: "nomenklatur", label: "Nomenklatur", icon: FolderTree },
   { id: "balai", label: "Balai", icon: Building2 },
   { id: "wilayah-sungai", label: "Wilayah Sungai", icon: Droplets },
+  { id: "evaluasi", label: "Evaluasi", icon: ClipboardCheck },
+  { id: "pnppkp", label: "PN / PP / KP", icon: Target },
+  { id: "tagging-renja", label: "Tagging RENJA", icon: Tags },
+  { id: "sasaran", label: "Sasaran SP / SK", icon: Flag },
 ];
 
 export default function MasterPage() {
@@ -53,6 +69,10 @@ export default function MasterPage() {
         {activeTab === "balai" && <BalaiTab />}
         {activeTab === "nomenklatur" && <NomenklaturTab />}
         {activeTab === "wilayah-sungai" && <WilayahSungaiTab />}
+        {activeTab === "evaluasi" && <EvaluasiTab />}
+        {activeTab === "pnppkp" && <PnppkpTab />}
+        {activeTab === "tagging-renja" && <TaggingRenjaTab />}
+        {activeTab === "sasaran" && <SasaranTab />}
       </div>
     </div>
   );

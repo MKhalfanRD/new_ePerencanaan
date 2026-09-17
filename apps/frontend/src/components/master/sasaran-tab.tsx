@@ -378,9 +378,6 @@ export function SasaranTab() {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold">Sasaran Program (SP / ISP)</h3>
-            <p className="text-xs text-muted-foreground">
-              Dikelompokkan per Program — expand SP untuk lihat indikatornya (ISP).
-            </p>
           </div>
           <Button size="sm" variant="outline" onClick={exportSpSide}>
             <Download size={14} className="mr-1.5" /> Export Excel
@@ -534,9 +531,6 @@ export function SasaranTab() {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold">Sasaran Kegiatan (SK / ISK)</h3>
-            <p className="text-xs text-muted-foreground">
-              Dikelompokkan per Kegiatan — expand SK untuk lihat indikatornya (ISK).
-            </p>
           </div>
           <Button size="sm" variant="outline" onClick={exportSkSide}>
             <Download size={14} className="mr-1.5" /> Export Excel

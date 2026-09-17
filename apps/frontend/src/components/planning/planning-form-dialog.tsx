@@ -701,17 +701,17 @@ export function PlanningFormDialog({
                         setValue("kegiatanPrioritasId", "");
                       }}
                     >
-                      <SelectTrigger className="h-10">
+                      <SelectTrigger className="h-10 w-full min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
                         <SelectValue placeholder="Pilih PN" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value={NONE}>— Tidak ada —</SelectItem>
                         {pnList.map((pn) => (
                           <SelectItem key={pn.id} value={pn.id}>
-                            <span className="font-mono text-[10px] mr-1">
+                            <span className="font-mono text-[10px] mr-1 shrink-0">
                               {pn.code}
                             </span>
-                            {pn.name}
+                            <span className="min-w-0 truncate">{pn.name}</span>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -729,7 +729,7 @@ export function PlanningFormDialog({
                       }}
                       disabled={!selectedPnId}
                     >
-                      <SelectTrigger className="h-10">
+                      <SelectTrigger className="h-10 w-full min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
                         <SelectValue placeholder="Pilih PN dulu" />
                       </SelectTrigger>
                       <SelectContent>
@@ -739,10 +739,10 @@ export function PlanningFormDialog({
                             ?.programPrioritas ?? []
                         ).map((pp) => (
                           <SelectItem key={pp.id} value={pp.id}>
-                            <span className="font-mono text-[10px] mr-1">
+                            <span className="font-mono text-[10px] mr-1 shrink-0">
                               {pp.code}
                             </span>
-                            {pp.name}
+                            <span className="min-w-0 truncate">{pp.name}</span>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -758,7 +758,7 @@ export function PlanningFormDialog({
                       }
                       disabled={!selectedPpId}
                     >
-                      <SelectTrigger className="h-10">
+                      <SelectTrigger className="h-10 w-full min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
                         <SelectValue placeholder="Pilih PP dulu" />
                       </SelectTrigger>
                       <SelectContent>
@@ -771,10 +771,10 @@ export function PlanningFormDialog({
                             )?.kegiatanPrioritas ?? []
                         ).map((kp) => (
                           <SelectItem key={kp.id} value={kp.id}>
-                            <span className="font-mono text-[10px] mr-1">
+                            <span className="font-mono text-[10px] mr-1 shrink-0">
                               {kp.code}
                             </span>
-                            {kp.name}
+                            <span className="min-w-0 truncate">{kp.name}</span>
                           </SelectItem>
                         ))}
                       </SelectContent>

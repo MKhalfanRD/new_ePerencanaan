@@ -25,8 +25,6 @@ interface Balai {
   name: string;
   shortName?: string;
   code?: string;
-  latitude?: number;
-  longitude?: number;
   isActive: boolean;
 }
 
@@ -35,8 +33,6 @@ const schema = z.object({
   name: z.string().min(1, "Nama wajib diisi"),
   shortName: z.string().optional(),
   code: z.string().optional(),
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -136,8 +132,6 @@ export function BalaiTab() {
         name: row.name,
         shortName: row.shortName || undefined,
         code: row.code || undefined,
-        latitude: row.latitude ? Number(row.latitude) : undefined,
-        longitude: row.longitude ? Number(row.longitude) : undefined,
         isActive: !/^(tidak|nonaktif|0|false)$/i.test(row.isActive || ""),
       };
       try {
@@ -170,8 +164,6 @@ export function BalaiTab() {
           { key: "name", label: "Nama Balai" },
           { key: "shortName", label: "Singkatan" },
           { key: "code", label: "Kode" },
-          { key: "latitude", label: "Latitude" },
-          { key: "longitude", label: "Longitude" },
           {
             key: "isActive",
             label: "Status",
@@ -256,28 +248,6 @@ export function BalaiTab() {
                 placeholder="BWSS1"
                 {...register("shortName")}
               />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Latitude</Label>
-                <Input
-                  className="h-10"
-                  type="number"
-                  step="any"
-                  placeholder="-6.123"
-                  {...register("latitude", { valueAsNumber: true })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Longitude</Label>
-                <Input
-                  className="h-10"
-                  type="number"
-                  step="any"
-                  placeholder="106.123"
-                  {...register("longitude", { valueAsNumber: true })}
-                />
-              </div>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input

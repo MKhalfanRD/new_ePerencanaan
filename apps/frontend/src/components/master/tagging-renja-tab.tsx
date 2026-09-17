@@ -128,7 +128,7 @@ function FlatMasterTable({
   m: ReturnType<typeof useFlatMaster>;
 }) {
   return (
-    <>
+    <div className="space-y-3">
       <MasterTable
         title={title}
         data={m.data}
@@ -169,7 +169,7 @@ function FlatMasterTable({
           </form>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }
 

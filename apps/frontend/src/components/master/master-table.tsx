@@ -211,6 +211,7 @@ export function MasterTable<T extends { id: string | number }>({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
+          <span className="font-semibold text-foreground">{title}</span> ·{" "}
           {data.length} data
           {selected.size > 0 && ` · ${selected.size} dipilih`}
         </p>

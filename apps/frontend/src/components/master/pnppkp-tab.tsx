@@ -468,12 +468,9 @@ export function PnppkpTab() {
     <div className="space-y-4">
       <div>
         <h3 className="text-sm font-semibold">Prioritas Nasional (PN / PP / KP)</h3>
-        <p className="text-xs text-muted-foreground">
-          Expand PN untuk lihat PP-nya, expand PP untuk lihat KP-nya.
-        </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-muted/30 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-card shadow-sm px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-semibold text-muted-foreground w-8">
             PN

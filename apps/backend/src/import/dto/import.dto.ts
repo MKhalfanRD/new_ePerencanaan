@@ -32,7 +32,7 @@ export class BalaiResolutionDto {
   createNew?: boolean;
 }
 
-export class PlanningResolutionDto {
+export class ProyekResolutionDto {
   @ApiProperty({ description: 'KodeProyek (atau key fallback) dari Excel' })
   @IsString()
   groupKey: string;
@@ -58,15 +58,15 @@ export class CommitImportDto {
   balaiResolutions: BalaiResolutionDto[];
 
   @ApiPropertyOptional({
-    type: [PlanningResolutionDto],
+    type: [ProyekResolutionDto],
     description:
       'Keputusan untuk proyek yang sudah ada (skip/replace). Default: skip semua jika tidak dikirim',
   })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => PlanningResolutionDto)
-  planningResolutions?: PlanningResolutionDto[];
+  @Type(() => ProyekResolutionDto)
+  proyekResolutions?: ProyekResolutionDto[];
 
   // DB.xlsx tidak punya kolom Tahun/Status Rencana-Realisasi (satu file =
   // satu snapshot anggaran) — jadi dipilih sekali untuk seluruh batch import,

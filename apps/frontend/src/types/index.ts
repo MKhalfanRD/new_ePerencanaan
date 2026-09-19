@@ -107,7 +107,7 @@ export interface Komponen {
 
 export interface Paket {
   id: string;
-  planningId: string;
+  proyekId: string;
   kodePaket?: string;
   name: string;
   roId: string;
@@ -117,31 +117,9 @@ export interface Paket {
   jenis: "FISIK" | "NON_FISIK";
   masaPelaksanaan: "SINGLE_YEAR" | "MULTI_YEAR";
   dokLingStatus?: string;
-  catatanPembina?: string;
-  catatanSspsda?: string;
-  pkpnId?: string;
-  pkpn?: { id: string; name: string };
-  indikatorSasaranProgramId?: string;
-  indikatorSasaranProgram?: {
-    id: string;
-    name: string;
-    satuan?: string;
-    sasaranProgram: { id: string; name: string };
-  };
-  indikatorSasaranKegiatanId?: string;
-  indikatorSasaranKegiatan?: {
-    id: string;
-    name: string;
-    satuan?: string;
-    sasaranKegiatan: { id: string; name: string };
-  };
   indikatorRoId?: string;
   indikatorRo?: { id: string; nama: string; satuan: string };
-  tematikRenjaId?: string;
-  tematikRenja?: { id: string; name: string };
-  fkb: boolean;
-  fkw: boolean;
-  mpa: boolean;
+  // Untuk ranking prioritas antar paket — algoritma penilaian menyusul.
   score?: string;
   alokasi: Alokasi[];
 }
@@ -164,7 +142,7 @@ export interface Alokasi {
   catatan?: string;
   updatedAt: string;
   lokasi: LokasiAlokasi[];
-  // Hadir kalau di-include dari endpoint alokasi (bukan dari nested Planning.paket[].alokasi)
+  // Hadir kalau di-include dari endpoint alokasi (bukan dari nested Proyek.paket[].alokasi)
   paket?: Paket;
 }
 
@@ -193,7 +171,16 @@ export type SumberUsulanProyek =
   | "TINDAK_LANJUT_RENAKSI"
   | "LAINNYA";
 
-export interface Planning {
+export interface DokumenPendukung {
+  id: string;
+  fileName: string;
+  filePath: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+}
+
+export interface Proyek {
   id: string;
   kodeProyek?: string;
   projectName: string;
@@ -205,18 +192,54 @@ export interface Planning {
   kebutuhanTanah: boolean;
   wilayahSungaiId?: string;
   wilayahSungai?: { id: string; name: string };
-  kegiatanPrioritasId?: string;
-  kegiatanPrioritas?: KegiatanPrioritas;
-  /** Skor MCA 0..1, dihitung backend dari tagging evaluasi. */
-  skorEvaluasi?: string | null;
-  evaluasi?: { itemId: string; keterangan?: string; item: EvaluasiItem }[];
-  // StudiLayak/DED/LARAP — angka tahun polos sesuai DB.xlsx
+
+  // === Dasar Pelaksanaan ===
+  sumberUsulanProyek?: SumberUsulanProyek;
+  sumberUsulanLainnya?: string;
+  justifikasiProyek?: string;
+
+  // === Kriteria Teknis === StudiLayak/DED/LARAP — angka tahun polos sesuai DB.xlsx
   tahunStudiLayak?: number;
   tahunDed?: number;
   tahunLarap?: number;
   tahunDokumenLingkungan?: number;
-  sumberUsulanProyek?: SumberUsulanProyek;
-  sumberUsulanLainnya?: string;
+
+  // === Tagging === RPJMN (PN>PP>KP), RENSTRA (SP/ISP, SK/ISK), RENJA (Tematik, PKPN)
+  kegiatanPrioritasId?: string;
+  kegiatanPrioritas?: KegiatanPrioritas;
+  pkpnId?: string;
+  pkpn?: { id: string; name: string };
+  indikatorSasaranProgramId?: string;
+  indikatorSasaranProgram?: {
+    id: string;
+    name: string;
+    satuan?: string;
+    sasaranProgram: { id: string; name: string };
+  };
+  indikatorSasaranKegiatanId?: string;
+  indikatorSasaranKegiatan?: {
+    id: string;
+    name: string;
+    satuan?: string;
+    sasaranKegiatan: { id: string; name: string };
+  };
+  tematikRenjaId?: string;
+  tematikRenja?: { id: string; name: string };
+  fkb: boolean;
+  fkw: boolean;
+  mpa: boolean;
+  taggingDinamis: string[];
+
+  // === Dokumen & Catatan ===
+  dokumenPendukung?: DokumenPendukung[];
+  catatanPembina?: string;
+  catatanSspsda?: string;
+
+  /** Skor MCA 0..1, dideteksi & dihitung otomatis oleh backend — TIDAK
+   * pernah diisi manual dari form. */
+  skorEvaluasi?: string | null;
+  evaluasi?: { itemId: string; keterangan?: string; item: EvaluasiItem }[];
+
   paket: Paket[];
   createdBy: {
     id: string;

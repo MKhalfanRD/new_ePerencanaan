@@ -8,7 +8,7 @@ import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
-import { PlanningsModule } from './plannings/plannings.module';
+import { ProyekModule } from './proyek/proyek.module';
 import { MasterModule } from './master/master.module';
 import { AlokasiModule } from './alokasi/alokasi.module';
 import { PaketModule } from './paket/paket.module';
@@ -25,7 +25,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
     AuthModule,
     UsersModule,
     PrismaModule,
-    PlanningsModule,
+    ProyekModule,
     MasterModule,
     AlokasiModule,
     PaketModule,

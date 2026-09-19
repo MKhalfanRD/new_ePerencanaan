@@ -11,7 +11,7 @@ type Tx = Prisma.TransactionClient | PrismaClient;
 export async function generateKodeProyek(tx: Tx): Promise<string> {
   const yy = String(new Date().getFullYear() % 100).padStart(2, '0');
   const prefix = `PR${yy}`;
-  const last = await tx.planning.findFirst({
+  const last = await tx.proyek.findFirst({
     where: { kodeProyek: { startsWith: prefix } },
     orderBy: { kodeProyek: 'desc' },
     select: { kodeProyek: true },

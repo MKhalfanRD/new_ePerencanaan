@@ -53,7 +53,7 @@ export class AlokasiController {
   // Route generik berbasis :id
   // ============================================
 
-  @ApiOperation({ summary: 'Tambah alokasi ke planning' })
+  @ApiOperation({ summary: 'Tambah alokasi ke proyek' })
   @Roles('SATKER', 'ADMINISTRATOR')
   @Post()
   create(@Body() dto: CreateAlokasiDto) {

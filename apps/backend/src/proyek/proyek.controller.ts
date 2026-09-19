@@ -7,14 +7,23 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { randomUUID } from 'crypto';
+import { extname, join } from 'path';
+import { mkdirSync } from 'fs';
 import {
   ApiTags,
   ApiBearerAuth,
   ApiOperation,
   ApiQuery,
   ApiParam,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -25,6 +34,7 @@ import { ProyekService } from './proyek.service';
 import { CreateProyekDto } from './dto/create-proyek.dto';
 import { UpdateProyekDto } from './dto/update-proyek.dto';
 import { QueryProyekDto } from './dto/query-proyek.dto';
+import { PreviewSkorDto } from './dto/preview-skor.dto';
 
 @ApiTags('Proyek')
 @ApiBearerAuth()
@@ -38,6 +48,16 @@ export class ProyekController {
   @Post()
   create(@Body() dto: CreateProyekDto, @CurrentUser() user: any) {
     return this.proyekService.create(dto, user.userId, user.role);
+  }
+
+  @ApiOperation({
+    summary:
+      'Preview skor evaluasi (tanpa menyimpan) — dipakai form untuk live update',
+  })
+  @Roles('SATKER', 'ADMINISTRATOR')
+  @Post('preview-skor')
+  previewSkor(@Body() dto: PreviewSkorDto) {
+    return this.proyekService.previewEvaluasi(dto);
   }
 
   @ApiOperation({ summary: 'Daftar proyek dengan pagination & filter' })
@@ -85,5 +105,54 @@ export class ProyekController {
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() user: any) {
     return this.proyekService.remove(id, user);
+  }
+
+  @ApiOperation({
+    summary: 'Upload dokumen pendukung ke proyek (maks 10 file sekaligus)',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        files: { type: 'array', items: { type: 'string', format: 'binary' } },
+      },
+    },
+  })
+  @Roles('SATKER', 'ADMINISTRATOR')
+  @Post(':id/dokumen')
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      storage: diskStorage({
+        destination: (req, _file, cb) => {
+          const dir = join(
+            process.cwd(),
+            'uploads',
+            'proyek',
+            String(req.params.id),
+          );
+          mkdirSync(dir, { recursive: true });
+          cb(null, dir);
+        },
+        filename: (_req, file, cb) => {
+          cb(null, `${randomUUID()}${extname(file.originalname)}`);
+        },
+      }),
+      limits: { fileSize: 20 * 1024 * 1024 },
+    }),
+  )
+  uploadDokumen(
+    @Param('id') id: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() user: any,
+  ) {
+    return this.proyekService.tambahDokumen(id, files, user.userId);
+  }
+
+  @ApiOperation({ summary: 'Hapus 1 dokumen pendukung' })
+  @Roles('SATKER', 'ADMINISTRATOR')
+  @Delete('dokumen/:docId')
+  removeDokumen(@Param('docId') docId: string) {
+    return this.proyekService.hapusDokumen(docId);
   }
 }

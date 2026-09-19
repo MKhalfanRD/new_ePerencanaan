@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { Planning } from "@/types";
+import { Proyek } from "@/types";
 
 /**
  * Export semua Proyek/Paket ke satu file Excel, dikelompokkan jadi 1 sheet
@@ -11,7 +11,11 @@ import { Planning } from "@/types";
 
 // Nama sheet Excel maks 31 char & tidak boleh karakter \/*?[]: — potong &
 // bersihkan supaya tiap Program+Kegiatan tetap unik & valid.
-function sheetName(programCode: string, kegiatanCode: string, used: Set<string>) {
+function sheetName(
+  programCode: string,
+  kegiatanCode: string,
+  used: Set<string>,
+) {
   let base = `${programCode}.${kegiatanCode}`.replace(/[\\/*?[\]:]/g, "-");
   if (base.length > 31) base = base.slice(0, 31);
   let name = base;
@@ -25,9 +29,9 @@ function sheetName(programCode: string, kegiatanCode: string, used: Set<string>)
   return name;
 }
 
-const paketOf = (p: Planning) => p.paket ?? [];
+const paketOf = (p: Proyek) => p.paket ?? [];
 
-export async function exportPlanningsToExcel(plannings: Planning[]) {
+export async function exportProyekToExcel(proyekList: Proyek[]) {
   const wb = new ExcelJS.Workbook();
   wb.creator = "ePerencanaan";
   wb.created = new Date();
@@ -52,10 +56,16 @@ export async function exportPlanningsToExcel(plannings: Planning[]) {
   };
   const groupMap = new Map<
     string,
-    { programCode: string; programName: string; kegiatanCode: string; kegiatanName: string; rows: Row[] }
+    {
+      programCode: string;
+      programName: string;
+      kegiatanCode: string;
+      kegiatanName: string;
+      rows: Row[];
+    }
   >();
 
-  for (const p of plannings) {
+  for (const p of proyekList) {
     balaiSet.set(p.balai.id, p.balai.name);
     for (const pk of paketOf(p)) {
       const ro = pk.ro;
@@ -82,12 +92,15 @@ export async function exportPlanningsToExcel(plannings: Planning[]) {
       const byYear = new Map<number, { rencana: number; realisasi: number }>();
       for (const a of pk.alokasi) {
         yearSet.add(a.tahun);
-        if (!byYear.has(a.tahun)) byYear.set(a.tahun, { rencana: 0, realisasi: 0 });
+        if (!byYear.has(a.tahun))
+          byYear.set(a.tahun, { rencana: 0, realisasi: 0 });
         const v = byYear.get(a.tahun)!;
         if (a.status === "RENCANA") v.rencana += Number(a.total);
         else v.realisasi += Number(a.total);
       }
-      for (const [tahun, v] of [...byYear.entries()].sort((a, b) => a[0] - b[0])) {
+      for (const [tahun, v] of [...byYear.entries()].sort(
+        (a, b) => a[0] - b[0],
+      )) {
         group.rows.push({
           balai: p.balai.name,
           kodeProyek: p.kodeProyek || "",

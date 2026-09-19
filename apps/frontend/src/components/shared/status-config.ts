@@ -10,7 +10,7 @@ export const statusConfig = {
   },
 } satisfies Record<string, { label: string; dotColor: DotColor }>;
 
-export type PlanningStatus = keyof typeof statusConfig;
+export type StatusProyek = keyof typeof statusConfig;
 
 export const dokumenStatusConfig = {
   TIDAK_PERLU: {

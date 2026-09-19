@@ -24,7 +24,7 @@ import { UpdatePaketDto } from './dto/update-paket.dto';
 export class PaketController {
   constructor(private readonly paketService: PaketService) {}
 
-  @ApiOperation({ summary: 'Tambah paket ke planning' })
+  @ApiOperation({ summary: 'Tambah paket ke proyek' })
   @Roles('SATKER', 'ADMINISTRATOR')
   @Post()
   create(@Body() dto: CreatePaketDto, @CurrentUser() user: any) {

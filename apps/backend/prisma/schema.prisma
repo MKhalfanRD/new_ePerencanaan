@@ -20,7 +20,7 @@ enum UserStatus {
   INACTIVE
 }
 
-enum PlanningStatus {
+enum StatusProyek {
   DRAFT
   APPROVED
 }
@@ -111,8 +111,9 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  plannings    Planning[]
-  activityLogs ActivityLog[]
+  proyek           Proyek[]
+  activityLogs     ActivityLog[]
+  dokumenPendukung DokumenPendukung[]
 
   @@map("users")
 }
@@ -137,8 +138,8 @@ model Balai {
   provinceId String? @db.VarChar(10)
   cityId     String? @db.VarChar(10)
 
-  users     User[]
-  plannings Planning[]
+  users  User[]
+  proyek Proyek[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -153,7 +154,7 @@ model Periode {
   label     String  @db.VarChar(20)
   isActive  Boolean @default(false)
 
-  plannings Planning[]
+  proyek Proyek[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -299,7 +300,7 @@ model KegiatanPrioritas {
   code               String           @unique @db.VarChar(15)
   name               String           @db.VarChar(255)
 
-  plannings Planning[]
+  proyek Proyek[]
 
   @@index([programPrioritasId])
   @@map("kegiatan_prioritas")
@@ -313,7 +314,7 @@ model Pkpn {
   id   String @id @default(cuid())
   name String @unique @db.VarChar(255)
 
-  paket Paket[]
+  proyek Proyek[]
 
   @@map("pkpn")
 }
@@ -322,7 +323,7 @@ model TematikRenja {
   id   String @id @default(cuid())
   name String @unique @db.VarChar(100)
 
-  paket Paket[]
+  proyek Proyek[]
 
   @@map("tematik_renja")
 }
@@ -350,7 +351,7 @@ model IndikatorSasaranProgram {
   name             String         @db.Text
   satuan           String?        @db.VarChar(50)
 
-  paket Paket[]
+  proyek Proyek[]
 
   @@index([sasaranProgramId])
   @@map("indikator_sasaran_program")
@@ -375,7 +376,7 @@ model IndikatorSasaranKegiatan {
   name              String          @db.Text
   satuan            String?         @db.VarChar(50)
 
-  paket Paket[]
+  proyek Proyek[]
 
   @@index([sasaranKegiatanId])
   @@map("indikator_sasaran_kegiatan")
@@ -420,7 +421,7 @@ model EvaluasiItem {
   // Bobot mentah item ini di dalam metodenya (kolom "Score" di excel).
   score Int    @default(1) @db.SmallInt
 
-  plannings PlanningEvaluasi[]
+  proyek ProyekEvaluasi[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -429,18 +430,18 @@ model EvaluasiItem {
   @@map("evaluasi_item")
 }
 
-model PlanningEvaluasi {
-  planningId String
-  planning   Planning @relation(fields: [planningId], references: [id], onDelete: Cascade)
+model ProyekEvaluasi {
+  proyekId String
+  proyek   Proyek @relation(fields: [proyekId], references: [id], onDelete: Cascade)
 
   itemId String
   item   EvaluasiItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   keterangan String? @db.Text
 
-  @@id([planningId, itemId])
+  @@id([proyekId, itemId])
   @@index([itemId])
-  @@map("planning_evaluasi")
+  @@map("proyek_evaluasi")
 }
 
 // =============================================
@@ -453,7 +454,7 @@ model WilayahSungai {
   // Kode WS resmi (kolom "Kd_WS" di referensi master, mis. "01.01.A3").
   code String? @unique @db.VarChar(20)
 
-  plannings Planning[]
+  proyek Proyek[]
 
   @@map("wilayah_sungai")
 }
@@ -554,10 +555,10 @@ model ActivityLog {
 }
 
 // =============================================
-// PLANNING UTAMA
+// PROYEK UTAMA
 // =============================================
 
-model Planning {
+model Proyek {
   id String @id @default(cuid())
 
   balaiId Int
@@ -582,26 +583,53 @@ model Planning {
   wilayahSungaiId String?
   wilayahSungai   WilayahSungai? @relation(fields: [wilayahSungaiId], references: [id])
 
-  // PN.PP.KP menempel di proyek, bukan di paket (1 proyek = 1 KP).
-  kegiatanPrioritasId String?
-  kegiatanPrioritas   KegiatanPrioritas? @relation(fields: [kegiatanPrioritasId], references: [id])
+  // Dasar pelaksanaan — tab "Dasar Pelaksanaan".
+  sumberUsulanProyek  SumberUsulanProyek?
+  sumberUsulanLainnya String?             @db.Text
+  justifikasiProyek   String?             @db.Text
 
   // StudiLayak/DED/LARAP di DB.xlsx cuma angka tahun polos, tanpa status
   // terpisah — jadi field langsung, bukan lewat KriteriaDokumen generic
   // (dibuang, lihat docs-planning/audit-restrukturisasi-db-xlsx.md §3.3).
-  tahunStudiLayak         Int? @db.SmallInt
-  tahunDed                Int? @db.SmallInt
-  tahunLarap              Int? @db.SmallInt
-  tahunDokumenLingkungan  Int? @db.SmallInt
+  tahunStudiLayak        Int? @db.SmallInt
+  tahunDed               Int? @db.SmallInt
+  tahunLarap             Int? @db.SmallInt
+  tahunDokumenLingkungan Int? @db.SmallInt
 
-  sumberUsulanProyek  SumberUsulanProyek?
-  sumberUsulanLainnya String?             @db.Text
+  // === TAGGING === pindah dari Paket ke sini (1 proyek = 1 set tagging,
+  // bukan per paket — lihat plan "Rombak Modal Proyek jadi 7 Tab").
+  kegiatanPrioritasId String? // RPJMN: PN.PP.KP, 1 proyek = 1 KP
+  kegiatanPrioritas   KegiatanPrioritas? @relation(fields: [kegiatanPrioritasId], references: [id])
 
-  status  PlanningStatus @default(DRAFT)
-  catatan String?        @db.Text
+  pkpnId String? // RENJA: PKPN
+  pkpn   Pkpn?   @relation(fields: [pkpnId], references: [id])
 
-  // Hasil evaluasi MCA — 0..1, dihitung ulang tiap kali tagging evaluasi
-  // disimpan (jangan diisi manual dari client).
+  indikatorSasaranProgramId String? // RENSTRA: SP/ISP
+  indikatorSasaranProgram   IndikatorSasaranProgram? @relation(fields: [indikatorSasaranProgramId], references: [id])
+
+  indikatorSasaranKegiatanId String? // RENSTRA: SK/ISK
+  indikatorSasaranKegiatan   IndikatorSasaranKegiatan? @relation(fields: [indikatorSasaranKegiatanId], references: [id])
+
+  tematikRenjaId String? // RENJA: Tematik
+  tematikRenja   TematikRenja? @relation(fields: [tematikRenjaId], references: [id])
+
+  fkb Boolean @default(false)
+  fkw Boolean @default(false)
+  mpa Boolean @default(false)
+
+  // Tagging Dinamis — daftar tag bebas, ditulis manual.
+  taggingDinamis String[] @default([])
+
+  // === DOKUMEN & CATATAN ===
+  catatanPembina String? @db.Text
+  catatanSspsda  String? @db.Text
+
+  status  StatusProyek @default(DRAFT)
+  catatan String?      @db.Text
+
+  // Hasil evaluasi MCA — 0..1, dihitung ulang otomatis dari deteksi
+  // tagging/kriteria teknis tiap kali proyek disimpan (jangan diisi manual
+  // dari client, lihat src/proyek/evaluasi-deteksi.ts).
   skorEvaluasi Decimal? @db.Decimal(6, 4)
 
   createdById String
@@ -611,14 +639,34 @@ model Planning {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  paket    Paket[]
-  evaluasi PlanningEvaluasi[]
+  paket            Paket[]
+  evaluasi         ProyekEvaluasi[]
+  dokumenPendukung DokumenPendukung[]
 
   @@index([balaiId])
   @@index([status])
   @@index([createdById])
   @@index([periodeId])
-  @@map("plannings")
+  @@map("proyek")
+}
+
+model DokumenPendukung {
+  id       String @id @default(cuid())
+  proyekId String
+  proyek   Proyek @relation(fields: [proyekId], references: [id], onDelete: Cascade)
+
+  fileName String @db.VarChar(255) // nama asli file
+  filePath String @db.VarChar(500) // path relatif di disk (mis. "proyek/<id>/<uuid>.pdf")
+  mimeType String @db.VarChar(100)
+  size     Int
+
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([proyekId])
+  @@map("dokumen_pendukung")
 }
 
 // =============================================
@@ -626,9 +674,9 @@ model Planning {
 // =============================================
 
 model Paket {
-  id         String   @id @default(cuid())
-  planningId String
-  planning   Planning @relation(fields: [planningId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  proyekId String
+  proyek   Proyek @relation(fields: [proyekId], references: [id], onDelete: Cascade)
 
   kodePaket String? @unique @db.VarChar(50)
   name      String  @db.VarChar(255)
@@ -644,30 +692,10 @@ model Paket {
 
   dokLingStatus String? @db.VarChar(50)
 
-  catatanPembina String? @db.Text
-  catatanSspsda  String? @db.Text
-
-  // Indikator RENJA — dikonfirmasi lewat referensi 1.xlsx (lihat
-  // docs-planning/fitur-paket/04-rekonsiliasi-referensi.md): PN/PP/KP,
-  // SP/ISP, SK/ISK adalah hierarki master data, bukan teks bebas.
-  pkpnId String?
-  pkpn   Pkpn?   @relation(fields: [pkpnId], references: [id])
-
-  indikatorSasaranProgramId String?
-  indikatorSasaranProgram   IndikatorSasaranProgram? @relation(fields: [indikatorSasaranProgramId], references: [id])
-
-  indikatorSasaranKegiatanId String?
-  indikatorSasaranKegiatan   IndikatorSasaranKegiatan? @relation(fields: [indikatorSasaranKegiatanId], references: [id])
-
+  // indikatorRoId tetap di sini (bukan pindah ke Proyek) — RO/indikatornya
+  // spesifik per paket, beda paket bisa beda RO.
   indikatorRoId String?
   indikatorRo   IndikatorRO? @relation(fields: [indikatorRoId], references: [id])
-
-  tematikRenjaId String?
-  tematikRenja   TematikRenja? @relation(fields: [tematikRenjaId], references: [id])
-
-  fkb Boolean @default(false)
-  fkw Boolean @default(false)
-  mpa Boolean @default(false)
 
   // Untuk ranking prioritas antar paket — algoritma penilaian menyusul,
   // sengaja nullable & tidak diisi lewat form dulu.
@@ -679,7 +707,7 @@ model Paket {
 
   alokasi Alokasi[]
 
-  @@index([planningId])
+  @@index([proyekId])
   @@index([roId])
   @@map("paket")
 }

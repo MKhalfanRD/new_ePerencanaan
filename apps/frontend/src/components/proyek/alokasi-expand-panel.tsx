@@ -51,7 +51,7 @@ interface AlokasiDetail {
   paket: {
     id: string;
     name: string;
-    planning: { id: string; projectName: string };
+    proyek: { id: string; projectName: string };
     ro: {
       id: string;
       name: string;
@@ -92,9 +92,9 @@ interface Props {
   onRefreshParent: () => void;
   /** Nama proyek — diteruskan ke breadcrumb Sheet lapis-2 (Form Lokasi). */
   projectName?: string;
-  /** Klik "Daftar Planning" di breadcrumb lapis-2 — kembali ke daftar. */
+  /** Klik "Daftar Proyek" di breadcrumb lapis-2 — kembali ke daftar. */
   onNavigateToList?: () => void;
-  /** Lapor ke parent (PlanningDetailSheet) saat Sheet lapis-2 di panel ini
+  /** Lapor ke parent (ProyekDetailSheet) saat Sheet lapis-2 di panel ini
    * buka/tutup, supaya Sheet lapis-1 tahu kapan pakai efek "pushed" (§Fase 3). */
   onSubDrawerOpenChange?: (isOpen: boolean) => void;
   /** Buka form Edit Alokasi (Sheet lapis-2) — dipanggil dari tombol "Edit"
@@ -473,7 +473,7 @@ export function AlokasiExpandPanel({
 
       {/* Form Tambah/Edit Lokasi — Sheet lapis-2 (Fase 4). Klik chip lokasi
           langsung membuka form ini (bukan popover/detail terpisah), sesuai
-          mockup-redesign-planning.html yang sudah disetujui. */}
+          mockup-redesign-proyek.html yang sudah disetujui. */}
       <LokasiFormDialog
         open={showLokasiForm}
         onClose={() => setShowLokasiForm(false)}

@@ -93,7 +93,7 @@ export class MasterService {
     });
   }
   /** Metode evaluasi (dulu enum KriteriaEvaluasi) — bobotnya dipakai
-   * hitungSkorEvaluasi() di plannings.service. */
+   * hitungSkorEvaluasi() di proyek.service. */
   getMetodeEvaluasi() {
     return this.prisma.metodeEvaluasi.findMany({
       orderBy: { urutan: 'asc' },

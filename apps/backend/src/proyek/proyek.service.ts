@@ -5,6 +5,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { unlink } from 'fs/promises';
+import { join } from 'path';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -15,6 +17,17 @@ import { generateKodeProyek } from '../common/kode-generator';
 import { hitungSkorEvaluasi } from './evaluasi-skor';
 import { deteksiEvaluasiItemIds, ValuasiRatios } from './evaluasi-deteksi';
 import { LINTAS_KEGIATAN, roleEfektif } from '../auth/role';
+import { PreviewSkorDto } from './dto/preview-skor.dto';
+
+/** Ringkasan dana/output/outcome satu paket — dipakai untuk rasio Valuasi
+ * (lihat hitungRasioValuasi). Diisi dari sumber yang beda-beda tergantung
+ * konteks: dto.paket[0] saat create, paket tersimpan saat update, atau
+ * body request saat preview. */
+interface PaketRingkas {
+  totalDana: number;
+  outputTarget: number;
+  outcomeTarget: number;
+}
 
 /** Lengkapi array alokasi nested-create dengan pasangan status (Rencana<->
  * Realisasi) bernilai 0 untuk tahun yang belum punya pasangannya — meniru
@@ -78,7 +91,7 @@ const proyekInclude = Prisma.validator<Prisma.ProyekInclude>()({
   indikatorSasaranKegiatan: true,
   tematikRenja: true,
   dokumenPendukung: true,
-  evaluasi: { include: { item: true } },
+  evaluasi: { include: { item: { include: { metode: true } } } },
 });
 
 /**
@@ -126,6 +139,7 @@ export class ProyekService {
       taggingDinamis?: string[] | null;
     },
     roIdPaketPertama: string | undefined,
+    paketSekarang?: PaketRingkas,
   ): Promise<{
     skorEvaluasi: number | null;
     itemIds: string[];
@@ -154,7 +168,11 @@ export class ProyekService {
         : null,
     ]);
 
-    const valuasi = await this.hitungRasioValuasi(tx, kegiatanId, roIdPaketPertama);
+    const valuasi = await this.hitungRasioValuasi(
+      tx,
+      kegiatanId,
+      paketSekarang,
+    );
 
     const { itemIds, keterangan } = deteksiEvaluasiItemIds(
       {
@@ -183,21 +201,17 @@ export class ProyekService {
    * kegiatan yang sama — dipakai 3 item Valuasi ("Rasio anggaran terhadap
    * output/outcome", "Rasio Output terhadap Outcome"). Item Valuasi lain
    * (multiguna, luas baku sawah, dst.) sengaja tidak dihitung — tidak ada
-   * data pendukungnya di skema saat ini. */
+   * data pendukungnya di skema saat ini.
+   *
+   * `paketSekarang` diterima langsung dari pemanggil (bukan di-query lewat
+   * roId di sini) — paket yang baru dibuat/di-preview belum tentu ada di DB,
+   * dan query by roId bisa nyasar ke paket proyek LAIN yang kebetulan pakai
+   * RO yang sama. */
   private async hitungRasioValuasi(
     tx: Prisma.TransactionClient,
     kegiatanId: string,
-    roId: string,
+    paketSekarang: PaketRingkas | undefined,
   ): Promise<ValuasiRatios> {
-    const paketSekarang = await tx.paket.findFirst({
-      where: { roId },
-      orderBy: { createdAt: Prisma.SortOrder.desc },
-      select: {
-        alokasi: {
-          select: { total: true, outputTarget: true, outcomeTarget: true },
-        },
-      },
-    });
     const paketLain = await tx.paket.findMany({
       where: { ro: { kro: { kegiatanId } }, deletedAt: null },
       select: {
@@ -234,19 +248,63 @@ export class ProyekService {
 
     const rata = (nilai: (number | null)[]) => {
       const valid = nilai.filter((n): n is number => n != null);
-      return valid.length ? valid.reduce((s, n) => s + n, 0) / valid.length : null;
+      return valid.length
+        ? valid.reduce((s, n) => s + n, 0) / valid.length
+        : null;
     };
 
     if (!paketSekarang) {
       return {};
     }
+    const { totalDana, outputTarget, outcomeTarget } = paketSekarang;
     return {
-      danaPerOutput: ratio(paketSekarang, 'outputTarget'),
-      danaPerOutcome: ratio(paketSekarang, 'outcomeTarget'),
-      outputPerOutcome: ratioOutputOutcome(paketSekarang),
+      danaPerOutput: outputTarget > 0 ? totalDana / outputTarget : null,
+      danaPerOutcome: outcomeTarget > 0 ? totalDana / outcomeTarget : null,
+      outputPerOutcome: outcomeTarget > 0 ? outputTarget / outcomeTarget : null,
       rataDanaPerOutput: rata(paketLain.map((p) => ratio(p, 'outputTarget'))),
       rataDanaPerOutcome: rata(paketLain.map((p) => ratio(p, 'outcomeTarget'))),
       rataOutputPerOutcome: rata(paketLain.map(ratioOutputOutcome)),
+    };
+  }
+
+  /** Preview skor evaluasi tanpa menyimpan apa pun — dipakai form Proyek
+   * (create maupun edit) supaya tab Evaluasi ter-update live. Reload
+   * EvaluasiItem untuk itemIds hasil deteksi supaya breakdown per-metode
+   * bisa ditampilkan tanpa proyek harus tersimpan dulu. */
+  async previewEvaluasi(dto: PreviewSkorDto) {
+    const paketSekarang: PaketRingkas | undefined =
+      dto.totalDana != null ||
+      dto.outputTarget != null ||
+      dto.outcomeTarget != null
+        ? {
+            totalDana: dto.totalDana ?? 0,
+            outputTarget: dto.outputTarget ?? 0,
+            outcomeTarget: dto.outcomeTarget ?? 0,
+          }
+        : undefined;
+
+    const { skorEvaluasi, itemIds, keterangan } = await this.hitungEvaluasi(
+      this.prisma,
+      dto,
+      dto.roId,
+      paketSekarang,
+    );
+
+    if (!itemIds.length) {
+      return { skorEvaluasi, items: [] };
+    }
+    const items = await this.prisma.evaluasiItem.findMany({
+      where: { id: { in: itemIds } },
+      include: { metode: true },
+    });
+    return {
+      skorEvaluasi,
+      items: items.map((i) => ({
+        id: i.id,
+        name: i.name,
+        metodeName: i.metode.name,
+        keterangan: keterangan[i.id],
+      })),
     };
   }
 
@@ -269,10 +327,25 @@ export class ProyekService {
       const kodeProyek = await generateKodeProyek(tx);
       const proyekPart = kodeProyek.slice(2);
 
+      const paket0 = dto.paket?.[0];
+      const alokasi0 = paket0?.alokasi?.[0];
+      const paketSekarang: PaketRingkas | undefined = alokasi0
+        ? {
+            totalDana:
+              (alokasi0.rm ?? 0) +
+              (alokasi0.rmp ?? 0) +
+              (alokasi0.pln ?? 0) +
+              (alokasi0.sbsn ?? 0) +
+              (alokasi0.kpbu ?? 0),
+            outputTarget: alokasi0.outputTarget ?? 0,
+            outcomeTarget: alokasi0.outcomeTarget ?? 0,
+          }
+        : undefined;
       const { skorEvaluasi, itemIds, keterangan } = await this.hitungEvaluasi(
         tx,
         dto,
-        dto.paket?.[0]?.roId,
+        paket0?.roId,
+        paketSekarang,
       );
 
       return tx.proyek.create({
@@ -496,7 +569,17 @@ export class ProyekService {
   async update(id: string, dto: UpdateProyekDto, user: any) {
     const proyek = await this.prisma.proyek.findUnique({
       where: { id },
-      include: { paket: { orderBy: { createdAt: Prisma.SortOrder.asc }, take: 1 } },
+      include: {
+        paket: {
+          orderBy: { createdAt: Prisma.SortOrder.asc },
+          take: 1,
+          include: {
+            alokasi: {
+              select: { total: true, outputTarget: true, outcomeTarget: true },
+            },
+          },
+        },
+      },
     });
     if (!proyek) throw new NotFoundException('Proyek tidak ditemukan');
     if (
@@ -505,59 +588,74 @@ export class ProyekService {
     )
       throw new ForbiddenException('Bukan proyek milik anda');
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      // Skor evaluasi dihitung ulang tiap kali proyek disimpan — tidak ada
-      // lagi "kirim = ganti, tidak dikirim = biarkan", karena field ini
-      // sudah tidak diterima dari client sama sekali (lihat evaluasi-deteksi.ts).
-      const { skorEvaluasi, itemIds, keterangan } = await this.hitungEvaluasi(
-        tx,
-        { ...proyek, ...dto },
-        proyek.paket?.[0]?.roId,
-      );
+    const paket0 = proyek.paket?.[0];
+    const paketSekarang: PaketRingkas | undefined = paket0
+      ? {
+          totalDana: paket0.alokasi.reduce((s, a) => s + Number(a.total), 0),
+          outputTarget: paket0.alokasi.reduce(
+            (s, a) => s + Number(a.outputTarget ?? 0),
+            0,
+          ),
+          outcomeTarget: paket0.alokasi.reduce(
+            (s, a) => s + Number(a.outcomeTarget ?? 0),
+            0,
+          ),
+        }
+      : undefined;
 
-      return tx.proyek.update({
-        where: { id },
-        data: {
-          // kodeProyek sengaja tidak diikutkan — permanen sejak dibuat.
-          skorEvaluasi,
-          evaluasi: {
-            deleteMany: {},
-            create: itemIds.map((itemId) => ({
-              itemId,
-              keterangan: keterangan[itemId] || undefined,
-            })),
-          },
-          balaiId: dto.balaiId,
-          periodeId: dto.periodeId,
-          projectName: dto.projectName,
-          kewenangan: dto.kewenangan as any,
-          provinceId: dto.provinceId,
-          cityId: dto.cityId,
-          latitude: dto.latitude,
-          longitude: dto.longitude,
-          kebutuhanTanah: dto.kebutuhanTanah,
-          wilayahSungaiId: dto.wilayahSungaiId,
-          kegiatanPrioritasId: dto.kegiatanPrioritasId,
-          tahunStudiLayak: dto.tahunStudiLayak,
-          tahunDed: dto.tahunDed,
-          tahunLarap: dto.tahunLarap,
-          tahunDokumenLingkungan: dto.tahunDokumenLingkungan,
-          sumberUsulanProyek: dto.sumberUsulanProyek as any,
-          sumberUsulanLainnya: dto.sumberUsulanLainnya,
-          justifikasiProyek: dto.justifikasiProyek,
-          pkpnId: dto.pkpnId,
-          indikatorSasaranProgramId: dto.indikatorSasaranProgramId,
-          indikatorSasaranKegiatanId: dto.indikatorSasaranKegiatanId,
-          tematikRenjaId: dto.tematikRenjaId,
-          fkb: dto.fkb,
-          fkw: dto.fkw,
-          mpa: dto.mpa,
-          taggingDinamis: dto.taggingDinamis,
-          catatanPembina: dto.catatanPembina,
-          catatanSspsda: dto.catatanSspsda,
+    // Skor evaluasi dihitung ulang tiap kali proyek disimpan — tidak ada
+    // lagi "kirim = ganti, tidak dikirim = biarkan", karena field ini sudah
+    // tidak diterima dari client sama sekali (lihat evaluasi-deteksi.ts).
+    // Bukan $transaction — cuma pembacaan sebelum satu nested-write .update().
+    const { skorEvaluasi, itemIds, keterangan } = await this.hitungEvaluasi(
+      this.prisma,
+      { ...proyek, ...dto },
+      paket0?.roId,
+      paketSekarang,
+    );
+
+    const updated = await this.prisma.proyek.update({
+      where: { id },
+      data: {
+        // kodeProyek sengaja tidak diikutkan — permanen sejak dibuat.
+        skorEvaluasi,
+        evaluasi: {
+          deleteMany: {},
+          create: itemIds.map((itemId) => ({
+            itemId,
+            keterangan: keterangan[itemId] || undefined,
+          })),
         },
-        include: proyekInclude,
-      });
+        balaiId: dto.balaiId,
+        periodeId: dto.periodeId,
+        projectName: dto.projectName,
+        kewenangan: dto.kewenangan as any,
+        provinceId: dto.provinceId,
+        cityId: dto.cityId,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        kebutuhanTanah: dto.kebutuhanTanah,
+        wilayahSungaiId: dto.wilayahSungaiId,
+        kegiatanPrioritasId: dto.kegiatanPrioritasId,
+        tahunStudiLayak: dto.tahunStudiLayak,
+        tahunDed: dto.tahunDed,
+        tahunLarap: dto.tahunLarap,
+        tahunDokumenLingkungan: dto.tahunDokumenLingkungan,
+        sumberUsulanProyek: dto.sumberUsulanProyek as any,
+        sumberUsulanLainnya: dto.sumberUsulanLainnya,
+        justifikasiProyek: dto.justifikasiProyek,
+        pkpnId: dto.pkpnId,
+        indikatorSasaranProgramId: dto.indikatorSasaranProgramId,
+        indikatorSasaranKegiatanId: dto.indikatorSasaranKegiatanId,
+        tematikRenjaId: dto.tematikRenjaId,
+        fkb: dto.fkb,
+        fkw: dto.fkw,
+        mpa: dto.mpa,
+        taggingDinamis: dto.taggingDinamis,
+        catatanPembina: dto.catatanPembina,
+        catatanSspsda: dto.catatanSspsda,
+      },
+      include: proyekInclude,
     });
 
     await this.invalidateCache(id);
@@ -577,6 +675,50 @@ export class ProyekService {
     await this.prisma.proyek.delete({ where: { id } });
     await this.invalidateCache(id);
     return { message: 'Proyek berhasil dihapus' };
+  }
+
+  async tambahDokumen(
+    proyekId: string,
+    files: Express.Multer.File[],
+    userId: string,
+  ) {
+    const proyek = await this.prisma.proyek.findUnique({
+      where: { id: proyekId },
+    });
+    if (!proyek) throw new NotFoundException('Proyek tidak ditemukan');
+    if (!files?.length) {
+      throw new BadRequestException('Tidak ada file yang diupload');
+    }
+
+    const created = await this.prisma.dokumenPendukung.createMany({
+      data: files.map((f) => ({
+        proyekId,
+        fileName: f.originalname,
+        // Path relatif terhadap folder uploads/ — disajikan statis di
+        // /uploads/... (lihat app.useStaticAssets di main.ts).
+        filePath: `proyek/${proyekId}/${f.filename}`,
+        mimeType: f.mimetype,
+        size: f.size,
+        uploadedById: userId,
+      })),
+    });
+
+    await this.invalidateCache(proyekId);
+    return created;
+  }
+
+  async hapusDokumen(docId: string) {
+    const dokumen = await this.prisma.dokumenPendukung.findUnique({
+      where: { id: docId },
+    });
+    if (!dokumen) throw new NotFoundException('Dokumen tidak ditemukan');
+
+    await this.prisma.dokumenPendukung.delete({ where: { id: docId } });
+    await unlink(join(process.cwd(), 'uploads', dokumen.filePath)).catch(
+      () => undefined, // file fisik sudah hilang duluan — bukan error fatal
+    );
+    await this.invalidateCache(dokumen.proyekId);
+    return { message: 'Dokumen berhasil dihapus' };
   }
 
   private async invalidateCache(id: string) {

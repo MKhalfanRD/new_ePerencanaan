@@ -1,11 +1,17 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { json, urlencoded } from 'express';
+import { join } from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Dokumen pendukung proyek — disimpan di disk lokal (uploads/), disajikan
+  // statis di /uploads/... . Lihat proyek.controller.ts untuk endpoint upload.
+  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
 
   // Naikkan limit body parser — diperlukan untuk payload besar (import Excel, resolusi massal)
   app.use(json({ limit: '20mb' }));

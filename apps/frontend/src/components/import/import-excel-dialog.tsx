@@ -51,7 +51,7 @@ interface UnmatchedBalai {
   excelName: string;
   suggestions: { id: number; name: string; score: number }[];
 }
-interface ExistingPlanning {
+interface ExistingProyek {
   groupKey: string;
   namaProyek: string;
   balaiName: string;
@@ -74,24 +74,24 @@ interface PreviewResult {
     totalRowsExcel: number;
     totalRowsValid: number;
     totalRowsError: number;
-    totalPlanning: number;
-    totalPlanningBaru: number;
-    totalPlanningDuplikat: number;
+    totalProyek: number;
+    totalProyekBaru: number;
+    totalProyekDuplikat: number;
     totalBalaiTerdeteksi: number;
     totalBalaiMatched: number;
     totalBalaiUnmatched: number;
   };
   matched: MatchedBalai[];
   unmatched: UnmatchedBalai[];
-  existingPlannings: ExistingPlanning[];
+  existingProyek: ExistingProyek[];
   parseErrors: ParseError[];
 }
 
 interface CommitResult {
   message: string;
-  createdPlanning: number;
-  updatedPlanning: number;
-  skippedPlanning: number;
+  createdProyek: number;
+  updatedProyek: number;
+  skippedProyek: number;
   createdPaket: number;
   skipped: number;
   commitErrors: ParseError[];
@@ -102,7 +102,7 @@ type Resolution = {
   useExistingBalaiId?: number;
   createNew?: boolean;
 };
-type PlanningAction = "skip" | "replace";
+type ProyekAction = "skip" | "replace";
 
 interface Props {
   open: boolean;
@@ -243,8 +243,8 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
   const [resolutions, setResolutions] = useState<Record<string, Resolution>>(
     {},
   );
-  const [planningActions, setPlanningActions] = useState<
-    Record<string, PlanningAction>
+  const [proyekActions, setProyekActions] = useState<
+    Record<string, ProyekAction>
   >({});
   const [duplicatePage, setDuplicatePage] = useState(1);
   const [duplicateSearch, setDuplicateSearch] = useState("");
@@ -260,7 +260,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
     setFile(null);
     setPreview(null);
     setResolutions({});
-    setPlanningActions({});
+    setProyekActions({});
     setDuplicatePage(1);
     setDuplicateSearch("");
     setResult(null);
@@ -304,12 +304,12 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
       }
       setResolutions(initialResolutions);
 
-      // Default semua planning duplikat: skip
-      const initialActions: Record<string, PlanningAction> = {};
-      for (const ep of res.data.existingPlannings) {
+      // Default semua proyek duplikat: skip
+      const initialActions: Record<string, ProyekAction> = {};
+      for (const ep of res.data.existingProyek) {
         initialActions[ep.groupKey] = "skip";
       }
-      setPlanningActions(initialActions);
+      setProyekActions(initialActions);
 
       setStep("balai");
     } catch (err: any) {
@@ -334,7 +334,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
   };
 
   const handleNextFromBalai = () => {
-    if (preview && preview.existingPlannings.length > 0) {
+    if (preview && preview.existingProyek.length > 0) {
       setStep("duplicate");
     } else {
       handleCommit();
@@ -345,7 +345,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
     if (!preview) return;
     setCommitting(true);
     try {
-      const planningResolutions = Object.entries(planningActions).map(
+      const proyekResolutions = Object.entries(proyekActions).map(
         ([groupKey, action]) => ({
           groupKey,
           action,
@@ -355,7 +355,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
       const res = await api.post<CommitResult>("/import/commit", {
         sessionId: preview.sessionId,
         balaiResolutions: Object.values(resolutions),
-        planningResolutions,
+        proyekResolutions,
         tahun: Number(importTahun),
         status: importStatus,
       });
@@ -373,19 +373,18 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
     handleClose();
   };
 
-  const setAllPlanningAction = (action: PlanningAction) => {
+  const setAllProyekAction = (action: ProyekAction) => {
     if (!preview) return;
-    const newActions: Record<string, PlanningAction> = {};
-    for (const ep of preview.existingPlannings)
-      newActions[ep.groupKey] = action;
-    setPlanningActions(newActions);
+    const newActions: Record<string, ProyekAction> = {};
+    for (const ep of preview.existingProyek) newActions[ep.groupKey] = action;
+    setProyekActions(newActions);
   };
 
-  const filteredExistingPlannings = useMemo(() => {
+  const filteredExistingProyeks = useMemo(() => {
     if (!preview) return [];
-    if (!duplicateSearch.trim()) return preview.existingPlannings;
+    if (!duplicateSearch.trim()) return preview.existingProyek;
     const q = duplicateSearch.toLowerCase();
-    return preview.existingPlannings.filter(
+    return preview.existingProyek.filter(
       (ep) =>
         ep.namaProyek.toLowerCase().includes(q) ||
         ep.balaiName.toLowerCase().includes(q),
@@ -393,17 +392,17 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
   }, [preview, duplicateSearch]);
 
   const duplicateTotalPages = Math.ceil(
-    filteredExistingPlannings.length / duplicatePerPage,
+    filteredExistingProyeks.length / duplicatePerPage,
   );
-  const duplicatePageData = filteredExistingPlannings.slice(
+  const duplicatePageData = filteredExistingProyeks.slice(
     (duplicatePage - 1) * duplicatePerPage,
     duplicatePage * duplicatePerPage,
   );
 
-  const replaceCount = Object.values(planningActions).filter(
+  const replaceCount = Object.values(proyekActions).filter(
     (a) => a === "replace",
   ).length;
-  const skipCount = Object.values(planningActions).filter(
+  const skipCount = Object.values(proyekActions).filter(
     (a) => a === "skip",
   ).length;
 
@@ -428,7 +427,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
               "Upload file Excel rekapitulasi rencana anggaran"}
             {step === "balai" && "Periksa hasil pemetaan data balai"}
             {step === "duplicate" &&
-              "Beberapa planning sudah ada di sistem — pilih tindakan"}
+              "Beberapa proyek sudah ada di sistem — pilih tindakan"}
             {step === "done" && "Import telah selesai diproses"}
           </p>
         </DialogHeader>
@@ -541,7 +540,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
               <div className="grid grid-cols-4 gap-3">
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-2xl font-bold">
-                    {preview.summary.totalPlanning}
+                    {preview.summary.totalProyek}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     Total Proyek
@@ -549,13 +548,13 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                 </div>
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-2xl font-bold text-green-600">
-                    {preview.summary.totalPlanningBaru}
+                    {preview.summary.totalProyekBaru}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">Baru</p>
                 </div>
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-2xl font-bold text-amber-600">
-                    {preview.summary.totalPlanningDuplikat}
+                    {preview.summary.totalProyekDuplikat}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     Sudah Ada
@@ -690,7 +689,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
             </div>
           )}
 
-          {/* STEP: Duplicate planning resolution */}
+          {/* STEP: Duplicate proyek resolution */}
           {step === "duplicate" && preview && (
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3">
@@ -709,7 +708,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                     size="sm"
                     variant="outline"
                     className="h-8 text-xs"
-                    onClick={() => setAllPlanningAction("skip")}
+                    onClick={() => setAllProyekAction("skip")}
                   >
                     <SkipForward size={12} className="mr-1.5" /> Skip Semua
                   </Button>
@@ -717,7 +716,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                     size="sm"
                     variant="outline"
                     className="h-8 text-xs"
-                    onClick={() => setAllPlanningAction("replace")}
+                    onClick={() => setAllProyekAction("replace")}
                   >
                     <RefreshCw size={12} className="mr-1.5" /> Replace Semua
                   </Button>
@@ -754,8 +753,8 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
 
               {duplicateSearch && (
                 <p className="text-xs text-muted-foreground">
-                  {filteredExistingPlannings.length} hasil ditemukan untuk
-                  &quot;{duplicateSearch}&quot;
+                  {filteredExistingProyeks.length} hasil ditemukan untuk &quot;
+                  {duplicateSearch}&quot;
                 </p>
               )}
 
@@ -764,12 +763,12 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   <div className="text-center py-10 text-muted-foreground">
                     <Search size={28} className="mx-auto mb-2 opacity-30" />
                     <p className="text-sm">
-                      Tidak ada planning yang cocok dengan pencarian
+                      Tidak ada proyek yang cocok dengan pencarian
                     </p>
                   </div>
                 ) : (
                   duplicatePageData.map((ep) => {
-                    const action = planningActions[ep.groupKey] ?? "skip";
+                    const action = proyekActions[ep.groupKey] ?? "skip";
                     return (
                       <div
                         key={ep.groupKey}
@@ -818,7 +817,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                         <div className="grid grid-cols-2 gap-3">
                           <button
                             onClick={() =>
-                              setPlanningActions((p) => ({
+                              setProyekActions((p) => ({
                                 ...p,
                                 [ep.groupKey]: "skip",
                               }))
@@ -833,7 +832,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                           </button>
                           <button
                             onClick={() =>
-                              setPlanningActions((p) => ({
+                              setProyekActions((p) => ({
                                 ...p,
                                 [ep.groupKey]: "replace",
                               }))
@@ -909,19 +908,19 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
               <div className="grid grid-cols-4 gap-2.5">
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-xl font-bold text-green-600">
-                    {result.createdPlanning}
+                    {result.createdProyek}
                   </p>
                   <p className="text-xs text-muted-foreground">Baru</p>
                 </div>
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-xl font-bold text-blue-600">
-                    {result.updatedPlanning}
+                    {result.updatedProyek}
                   </p>
                   <p className="text-xs text-muted-foreground">Diganti</p>
                 </div>
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-xl font-bold text-amber-600">
-                    {result.skippedPlanning}
+                    {result.skippedProyek}
                   </p>
                   <p className="text-xs text-muted-foreground">Di-skip</p>
                 </div>
@@ -984,7 +983,10 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
               <Button variant="outline" onClick={handleClose}>
                 Batal
               </Button>
-              <Button onClick={handleUpload} disabled={!file || !importTahun || uploading}>
+              <Button
+                onClick={handleUpload}
+                disabled={!file || !importTahun || uploading}
+              >
                 {uploading ? (
                   <Loader2 size={15} className="mr-2 animate-spin" />
                 ) : (
@@ -1003,12 +1005,12 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                 {committing && (
                   <Loader2 size={15} className="mr-2 animate-spin" />
                 )}
-                {preview && preview.existingPlannings.length > 0
+                {preview && preview.existingProyek.length > 0
                   ? "Lanjutkan"
                   : committing
                     ? "Mengimpor..."
                     : "Import Sekarang"}
-                {preview && preview.existingPlannings.length > 0 && (
+                {preview && preview.existingProyek.length > 0 && (
                   <ArrowRight size={15} className="ml-2" />
                 )}
               </Button>

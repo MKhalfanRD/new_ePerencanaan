@@ -1,15 +1,10 @@
-import {
-  IsBoolean,
-  IsEnum,
-  IsOptional,
-  IsString,
-} from 'class-validator';
+import { IsOptional, IsEnum, IsString } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreatePaketDto {
   @ApiProperty()
   @IsString()
-  planningId: string;
+  proyekId: string;
 
   // kodePaket sengaja tidak ada di sini — digenerate otomatis di service
   // (lihat src/common/kode-generator.ts), bukan input manual.
@@ -40,25 +35,7 @@ export class CreatePaketDto {
   @IsString()
   dokLingStatus?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  catatanPembina?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  catatanSspsda?: string;
-
-  // Indikator RENJA — semuanya FK ke master data, dikonfirmasi dari
-  // referensi 1.xlsx (lihat docs-planning/fitur-paket/04-rekonsiliasi-referensi.md)
-  @ApiPropertyOptional() @IsOptional() @IsString() pkpnId?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() indikatorSasaranProgramId?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() indikatorSasaranKegiatanId?: string;
+  // PKPN/ISP/ISK/Tematik/fkb/fkw/mpa/catatan pindah ke Proyek (1 proyek =
+  // 1 set tagging) — lihat CreateProyekDto.
   @ApiPropertyOptional() @IsOptional() @IsString() indikatorRoId?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() tematikRenjaId?: string;
-
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() fkb?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() fkw?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() mpa?: boolean;
 }

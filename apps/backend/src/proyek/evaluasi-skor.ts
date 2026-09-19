@@ -71,8 +71,9 @@ export async function skorDariItemIds(
 //   npx ts-node src/proyek/evaluasi-skor.ts
 if (require.main === module) {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { strictEqual }: { strictEqual: (a: unknown, b: unknown) => void } =
-    require('assert');
+  const {
+    strictEqual,
+  }: { strictEqual: (a: unknown, b: unknown) => void } = require('assert');
   const item = (metodeId: string, score: number) => ({ metodeId, score });
   const bobotMetode = new Map([
     ['URGENSITAS', 0.4],

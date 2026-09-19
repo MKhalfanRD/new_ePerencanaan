@@ -46,11 +46,11 @@ interface AlokasiLike {
 
 // Input number kosong via valueAsNumber jadi NaN, bukan undefined —
 // z.number().optional() menolak NaN, gagalnya senyap (lihat bug submit
-// planning-form-dialog.tsx yang sama).
+// proyek-form-dialog.tsx yang sama).
 const toOptionalNumber = (v: string) => (v === "" ? undefined : Number(v));
 
 const schema = z.object({
-  tahun: z.number().min(2020),
+  tahun: z.number(),
   status: z.enum(["RENCANA", "REALISASI"]),
   rm: z.number(),
   rmp: z.number(),
@@ -210,122 +210,122 @@ export function AlokasiFormDialog({
 
         <SheetBody className="px-5 py-5 space-y-5">
           <>
-              {/* Tahun + Status */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label>Tahun</Label>
-                  <Input
-                    className="h-10"
-                    type="number"
-                    disabled={isEdit}
-                    {...register("tahun", { valueAsNumber: true })}
-                  />
-                  {isEdit && (
-                    <p className="text-xs text-muted-foreground">
-                      Tidak dapat diubah
-                    </p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label>Status</Label>
-                  <Select
-                    value={watch("status")}
-                    onValueChange={(v) => setValue("status", v as any)}
-                    disabled={isEdit}
-                  >
-                    <SelectTrigger className="h-10">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="RENCANA">Rencana</SelectItem>
-                      <SelectItem value="REALISASI">Realisasi</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {isEdit && (
-                    <p className="text-xs text-muted-foreground">
-                      Tidak dapat diubah
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Sumber dana — grid 5 kolom (RM/RMP/PLN/SBSN/KPBU sejajar),
-                  sesuai `.grid5` di mockup, bukan 2 kolom. */}
+            {/* Tahun + Status */}
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label>Sumber Dana (Rp)</Label>
-                <div className="grid grid-cols-5 gap-2">
-                  {(["rm", "rmp", "pln", "sbsn", "kpbu"] as const).map((f) => (
-                    <div key={f} className="space-y-1">
-                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">
-                        {f}
-                      </p>
-                      <Input
-                        type="number"
-                        className="text-xs h-9 px-1.5"
-                        placeholder="0"
-                        {...register(f, { valueAsNumber: true })}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Output & Outcome — stacked karena panel sempit */}
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Volume RO</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="number"
-                      className="h-10"
-                      placeholder="0"
-                      {...register("outputTarget", {
-                        setValueAs: toOptionalNumber,
-                      })}
-                    />
-                    {/* Satuan ikut RO paket (referensi 1.xlsx) — dikunci,
-                        bukan input bebas, supaya tidak salah ketik/beda
-                        istilah dari satuan resmi. */}
-                    <Input
-                      className={`h-10 w-24 shrink-0 ${roSatuan ? "bg-muted" : ""}`}
-                      placeholder="Satuan"
-                      readOnly={!!roSatuan}
-                      title={roSatuan ? "Satuan mengikuti RO" : undefined}
-                      {...register("outputUnit")}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Indikator RO</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="number"
-                      className="h-10"
-                      placeholder="0"
-                      {...register("outcomeTarget", {
-                        setValueAs: toOptionalNumber,
-                      })}
-                    />
-                    <Input
-                      className={`h-10 w-24 shrink-0 ${roSatuan ? "bg-muted" : ""}`}
-                      placeholder="Satuan"
-                      readOnly={!!roSatuan}
-                      title={roSatuan ? "Satuan mengikuti RO" : undefined}
-                      {...register("outcomeUnit")}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Catatan */}
-              <div className="space-y-2">
-                <Label>Catatan</Label>
+                <Label>Tahun</Label>
                 <Input
                   className="h-10"
-                  placeholder="Catatan tambahan (opsional)"
-                  {...register("catatan")}
+                  type="number"
+                  disabled={isEdit}
+                  {...register("tahun", { valueAsNumber: true })}
                 />
+                {isEdit && (
+                  <p className="text-xs text-muted-foreground">
+                    Tidak dapat diubah
+                  </p>
+                )}
               </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select
+                  value={watch("status")}
+                  onValueChange={(v) => setValue("status", v as any)}
+                  disabled={isEdit}
+                >
+                  <SelectTrigger className="h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="RENCANA">Rencana</SelectItem>
+                    <SelectItem value="REALISASI">Realisasi</SelectItem>
+                  </SelectContent>
+                </Select>
+                {isEdit && (
+                  <p className="text-xs text-muted-foreground">
+                    Tidak dapat diubah
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Sumber dana — grid 5 kolom (RM/RMP/PLN/SBSN/KPBU sejajar),
+                  sesuai `.grid5` di mockup, bukan 2 kolom. */}
+            <div className="space-y-2">
+              <Label>Sumber Dana (Rp)</Label>
+              <div className="grid grid-cols-5 gap-2">
+                {(["rm", "rmp", "pln", "sbsn", "kpbu"] as const).map((f) => (
+                  <div key={f} className="space-y-1">
+                    <p className="text-[10px] text-muted-foreground uppercase font-semibold">
+                      {f}
+                    </p>
+                    <Input
+                      type="number"
+                      className="text-xs h-9 px-1.5"
+                      placeholder="0"
+                      {...register(f, { valueAsNumber: true })}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Output & Outcome — stacked karena panel sempit */}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Volume RO</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    className="h-10"
+                    placeholder="0"
+                    {...register("outputTarget", {
+                      setValueAs: toOptionalNumber,
+                    })}
+                  />
+                  {/* Satuan ikut RO paket (referensi 1.xlsx) — dikunci,
+                        bukan input bebas, supaya tidak salah ketik/beda
+                        istilah dari satuan resmi. */}
+                  <Input
+                    className={`h-10 w-24 shrink-0 ${roSatuan ? "bg-muted" : ""}`}
+                    placeholder="Satuan"
+                    readOnly={!!roSatuan}
+                    title={roSatuan ? "Satuan mengikuti RO" : undefined}
+                    {...register("outputUnit")}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Indikator RO</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    className="h-10"
+                    placeholder="0"
+                    {...register("outcomeTarget", {
+                      setValueAs: toOptionalNumber,
+                    })}
+                  />
+                  <Input
+                    className={`h-10 w-24 shrink-0 ${roSatuan ? "bg-muted" : ""}`}
+                    placeholder="Satuan"
+                    readOnly={!!roSatuan}
+                    title={roSatuan ? "Satuan mengikuti RO" : undefined}
+                    {...register("outcomeUnit")}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Catatan */}
+            <div className="space-y-2">
+              <Label>Catatan</Label>
+              <Input
+                className="h-10"
+                placeholder="Catatan tambahan (opsional)"
+                {...register("catatan")}
+              />
+            </div>
           </>
         </SheetBody>
 
@@ -333,10 +333,7 @@ export function AlokasiFormDialog({
           <Button type="button" variant="outline" onClick={onClose}>
             Batal
           </Button>
-          <Button
-            onClick={handleSubmit(onSubmit)}
-            disabled={isSubmitting}
-          >
+          <Button onClick={handleSubmit(onSubmit)} disabled={isSubmitting}>
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isEdit ? "Simpan Perubahan" : "Tambah Alokasi"}
           </Button>

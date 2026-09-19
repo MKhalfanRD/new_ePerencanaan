@@ -29,7 +29,7 @@ export class RolesGuard implements CanActivate {
     if (user?.role === 'SUPER_ADMIN') return true;
 
     // Role turunan (mis. OPERATOR_7691) lolos lewat baseRole-nya (SATKER),
-    // lalu tetap disaring per kegiatan di PlanningsService.
+    // lalu tetap disaring per kegiatan di ProyekService.
     return (
       requiredRoles.includes(user?.role) ||
       requiredRoles.includes(roleEfektif(user) as string)

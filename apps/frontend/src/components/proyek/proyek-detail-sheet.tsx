@@ -53,10 +53,10 @@ import {
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
 import { punyaRole } from "@/lib/role";
-import { Planning, Paket, Alokasi } from "@/types";
+import { Proyek, Paket, Alokasi } from "@/types";
 import {
-  exportPlanningDetailToExcel,
-  exportPlanningDetailToPDF,
+  exportProyekDetailToExcel,
+  exportProyekDetailToPDF,
 } from "@/lib/export-utils";
 import { AlokasiFormDialog } from "./alokasi-form-dialog";
 import { AlokasiExpandPanel } from "./alokasi-expand-panel";
@@ -70,9 +70,9 @@ import {
 import { formatRupiah, formatRupiahShort } from "@/lib/format-rupiah";
 
 // Kode identitas ringkas per proyek (mis. "BWS.07.7755") — logic sama
-// persis dengan `getPlanningKode` di plannings/page.tsx, supaya kode yang
+// persis dengan `getProyekKode` di proyekList/page.tsx, supaya kode yang
 // tampil di baris list & di header drawer selalu konsisten.
-const getPlanningKode = (p: Planning) => {
+const getProyekKode = (p: Proyek) => {
   const ro = (p.paket ?? [])[0]?.ro;
   const balaiCode = p.balai.code || p.balai.shortName || "-";
   const programCode = ro?.kro?.kegiatan?.program?.code || "-";
@@ -115,15 +115,15 @@ function SectionHeader({ icon: Icon, title }: { icon?: any; title: string }) {
 
 interface Props {
   open: boolean;
-  planning: Planning;
+  proyek: Proyek;
   onClose: () => void;
-  onEdit: (p: Planning) => void;
+  onEdit: (p: Proyek) => void;
   onRefresh: () => void;
 }
 
-export function PlanningDetailSheet({
+export function ProyekDetailSheet({
   open,
-  planning,
+  proyek,
   onClose,
   onEdit,
   onRefresh,
@@ -173,7 +173,7 @@ export function PlanningDetailSheet({
   const handleApprove = async () => {
     setApproving(true);
     try {
-      await api.patch(`/plannings/${planning.id}/approve`);
+      await api.patch(`/proyek/${proyek.id}/approve`);
       toast.success("Proyek disetujui");
       onRefresh();
       onClose();
@@ -187,7 +187,7 @@ export function PlanningDetailSheet({
   const handleUnapprove = async () => {
     setApproving(true);
     try {
-      await api.patch(`/plannings/${planning.id}/unapprove`);
+      await api.patch(`/proyek/${proyek.id}/unapprove`);
       toast.success("Proyek dikembalikan ke draft");
       onRefresh();
       onClose();
@@ -230,9 +230,9 @@ export function PlanningDetailSheet({
     }
   };
 
-  const cfg = statusConfig[planning.status];
+  const cfg = statusConfig[proyek.status];
   // Backend selalu balikin array, tapi dijaga di sini juga — dipakai berulang di bawah.
-  const paket = planning.paket ?? [];
+  const paket = proyek.paket ?? [];
   const firstRo = paket[0]?.ro;
 
   return (
@@ -242,7 +242,7 @@ export function PlanningDetailSheet({
           <SheetBreadcrumb
             items={[
               { label: "Daftar Proyek", onClick: onClose },
-              { label: planning.projectName },
+              { label: proyek.projectName },
             ]}
           />
           <div className="flex items-center justify-end gap-2">
@@ -254,12 +254,12 @@ export function PlanningDetailSheet({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  onClick={() => exportPlanningDetailToExcel(planning)}
+                  onClick={() => exportProyekDetailToExcel(proyek)}
                 >
                   <FileSpreadsheet size={14} className="mr-2" /> Export ke Excel
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => exportPlanningDetailToPDF(planning)}
+                  onClick={() => exportProyekDetailToPDF(proyek)}
                 >
                   <FileDown size={14} className="mr-2" /> Export ke PDF
                 </DropdownMenuItem>
@@ -269,12 +269,12 @@ export function PlanningDetailSheet({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => onEdit(planning)}
+                onClick={() => onEdit(proyek)}
               >
                 <Edit size={13} className="mr-1.5" /> Edit Proyek
               </Button>
             )}
-            {punyaRole(user, "ADMINISTRATOR") && planning.status === "DRAFT" && (
+            {punyaRole(user, "ADMINISTRATOR") && proyek.status === "DRAFT" && (
               <Button size="sm" onClick={handleApprove} disabled={approving}>
                 {approving ? (
                   <Loader2 size={13} className="mr-1.5 animate-spin" />
@@ -285,7 +285,7 @@ export function PlanningDetailSheet({
               </Button>
             )}
             {punyaRole(user, "ADMINISTRATOR") &&
-              planning.status === "APPROVED" && (
+              proyek.status === "APPROVED" && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -303,7 +303,7 @@ export function PlanningDetailSheet({
           </div>
 
           <SheetTitle className="text-lg leading-snug">
-            {planning.projectName}
+            {proyek.projectName}
           </SheetTitle>
 
           {/* Meta line: balai · kode · status (dot inline) — sesuai
@@ -311,31 +311,28 @@ export function PlanningDetailSheet({
           <div className="flex items-center gap-3 flex-wrap">
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Building2 size={12} />{" "}
-              {planning.balai.shortName ?? planning.balai.name}
+              {proyek.balai.shortName ?? proyek.balai.name}
             </span>
             <span className="text-xs font-mono text-muted-foreground">
-              {getPlanningKode(planning)}
+              {getProyekKode(proyek)}
             </span>
             <Badge variant="dot" dotColor={cfg.dotColor} className="text-xs">
               {cfg.label}
             </Badge>
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Calendar size={12} /> {planning.periode.label}
+              <Calendar size={12} /> {proyek.periode.label}
             </span>
           </div>
         </SheetHeader>
 
         <SheetBody className="px-6 py-6 space-y-6">
           {/* Info Proyek — kartu ringkas, field detail nomenklatur diambil
-              dari paket pertama (Planning sendiri tidak lagi menyimpan
+              dari paket pertama (Proyek sendiri tidak lagi menyimpan
               Program/Kegiatan/KRO/RO — itu melekat di tiap Paket). */}
           <div className="space-y-2">
             <SectionHeader title="Info Proyek" icon={FileText} />
             <div className="rounded-lg border p-4 grid grid-cols-2 gap-x-4 gap-y-4">
-              <InfoStat
-                label="Kode Proyek"
-                value={planning.kodeProyek || "—"}
-              />
+              <InfoStat label="Kode Proyek" value={proyek.kodeProyek || "—"} />
               <InfoStat
                 label="Program / Kegiatan"
                 value={
@@ -354,41 +351,146 @@ export function PlanningDetailSheet({
               />
               <InfoStat
                 label="Kegiatan Prioritas (PN.PP.KP)"
-                value={planning.kegiatanPrioritas?.name ?? "Tidak"}
+                value={proyek.kegiatanPrioritas?.name ?? "Tidak"}
               />
               <InfoStat
                 label="Skor Evaluasi"
                 value={
-                  planning.skorEvaluasi
-                    ? `${(Number(planning.skorEvaluasi) * 100).toFixed(1)}%`
+                  proyek.skorEvaluasi
+                    ? `${(Number(proyek.skorEvaluasi) * 100).toFixed(1)}%`
                     : "Belum dievaluasi"
                 }
               />
               <InfoStat
                 label="Diajukan oleh"
-                value={`${planning.createdBy.name} (${planning.createdBy.role.name})`}
+                value={`${proyek.createdBy.name} (${proyek.createdBy.role.name})`}
               />
               <InfoStat
                 label="Sumber Usulan"
                 value={
-                  planning.sumberUsulanProyek
+                  proyek.sumberUsulanProyek
                     ? [
                         "PEMERINTAH_DAERAH",
                         "KEMENTERIAN_LEMBAGA",
                         "LAINNYA",
-                      ].includes(planning.sumberUsulanProyek) &&
-                      planning.sumberUsulanLainnya
-                      ? `${planning.sumberUsulanProyek.replaceAll("_", " ")} — ${planning.sumberUsulanLainnya}`
-                      : planning.sumberUsulanProyek.replaceAll("_", " ")
+                      ].includes(proyek.sumberUsulanProyek) &&
+                      proyek.sumberUsulanLainnya
+                      ? `${proyek.sumberUsulanProyek.replaceAll("_", " ")} — ${proyek.sumberUsulanLainnya}`
+                      : proyek.sumberUsulanProyek.replaceAll("_", " ")
                     : "—"
                 }
               />
-              <InfoStat
-                label="Jumlah Paket"
-                value={String(paket.length)}
-              />
+              <InfoStat label="Jumlah Paket" value={String(paket.length)} />
             </div>
           </div>
+
+          {/* Tagging & Dokumen — 1 proyek = 1 set tagging (RPJMN/RENSTRA/
+              RENJA/tagging dinamis), lihat proyek-form-dialog.tsx tab
+              Tagging & Dokumen. */}
+          {(proyek.justifikasiProyek ||
+            proyek.pkpn ||
+            proyek.indikatorSasaranProgram ||
+            proyek.indikatorSasaranKegiatan ||
+            proyek.tematikRenja ||
+            proyek.fkb ||
+            proyek.fkw ||
+            proyek.mpa ||
+            proyek.taggingDinamis?.length ||
+            proyek.catatanPembina ||
+            proyek.catatanSspsda ||
+            proyek.dokumenPendukung?.length) && (
+            <div className="space-y-2">
+              <SectionHeader title="Tagging & Dokumen" icon={FileText} />
+              <div className="rounded-lg border p-4 space-y-3">
+                {proyek.justifikasiProyek && (
+                  <InfoStat
+                    label="Justifikasi Proyek"
+                    value={proyek.justifikasiProyek}
+                  />
+                )}
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  {proyek.pkpn && (
+                    <InfoStat label="PKPN" value={proyek.pkpn.name} />
+                  )}
+                  {proyek.tematikRenja && (
+                    <InfoStat
+                      label="Tematik RENJA"
+                      value={proyek.tematikRenja.name}
+                    />
+                  )}
+                  {proyek.indikatorSasaranProgram && (
+                    <InfoStat
+                      label="Indikator Sasaran Program (ISP)"
+                      value={proyek.indikatorSasaranProgram.name}
+                    />
+                  )}
+                  {proyek.indikatorSasaranKegiatan && (
+                    <InfoStat
+                      label="Indikator Sasaran Kegiatan (ISK)"
+                      value={proyek.indikatorSasaranKegiatan.name}
+                    />
+                  )}
+                </div>
+                {(proyek.fkb ||
+                  proyek.fkw ||
+                  proyek.mpa ||
+                  !!proyek.taggingDinamis?.length) && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {proyek.fkb && <Badge variant="secondary">FKB</Badge>}
+                    {proyek.fkw && <Badge variant="secondary">FKW</Badge>}
+                    {proyek.mpa && <Badge variant="secondary">MPA</Badge>}
+                    {proyek.taggingDinamis?.map((t) => (
+                      <Badge key={t} variant="outline">
+                        {t}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {(proyek.catatanPembina || proyek.catatanSspsda) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {proyek.catatanPembina && (
+                      <div className="rounded-lg border bg-muted/30 p-3">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                          Catatan Pembina
+                        </p>
+                        <p className="text-xs whitespace-pre-wrap">
+                          {proyek.catatanPembina}
+                        </p>
+                      </div>
+                    )}
+                    {proyek.catatanSspsda && (
+                      <div className="rounded-lg border bg-muted/30 p-3">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                          Catatan SSPSDA
+                        </p>
+                        <p className="text-xs whitespace-pre-wrap">
+                          {proyek.catatanSspsda}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!!proyek.dokumenPendukung?.length && (
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Dokumen Pendukung
+                    </p>
+                    {proyek.dokumenPendukung.map((d) => (
+                      <a
+                        key={d.id}
+                        href={`${api.defaults.baseURL}/uploads/${d.filePath}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block rounded-lg border px-3 py-2 text-xs hover:bg-accent/40 truncate"
+                      >
+                        {d.fileName}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Daftar Paket — level baru di antara Proyek & Alokasi. */}
           <div className="space-y-3">
@@ -433,7 +535,10 @@ export function PlanningDetailSheet({
                     .reduce((s, a) => s + Number(a.total), 0);
 
                   return (
-                    <div key={pk.id} className="rounded-lg border overflow-hidden">
+                    <div
+                      key={pk.id}
+                      className="rounded-lg border overflow-hidden"
+                    >
                       <div
                         role="button"
                         tabIndex={0}
@@ -458,7 +563,10 @@ export function PlanningDetailSheet({
                             {pk.ro.kro.kegiatan.code} · {pk.ro.name}
                           </p>
                         </div>
-                        <Badge variant="outline" className="shrink-0 text-[10px]">
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 text-[10px]"
+                        >
                           {pk.jenis === "FISIK" ? "Fisik" : "Non-Fisik"}
                         </Badge>
                         <span
@@ -511,31 +619,6 @@ export function PlanningDetailSheet({
 
                       {isPaketExpanded && (
                         <div className="p-3.5 space-y-3">
-                          {(pk.catatanPembina || pk.catatanSspsda) && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {pk.catatanPembina && (
-                                <div className="rounded-lg border bg-muted/30 p-3">
-                                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-                                    Catatan Pembina
-                                  </p>
-                                  <p className="text-xs whitespace-pre-wrap">
-                                    {pk.catatanPembina}
-                                  </p>
-                                </div>
-                              )}
-                              {pk.catatanSspsda && (
-                                <div className="rounded-lg border bg-muted/30 p-3">
-                                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-                                    Catatan SSPSDA
-                                  </p>
-                                  <p className="text-xs whitespace-pre-wrap">
-                                    {pk.catatanSspsda}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
                           {canManagePaket && (
                             <div className="flex justify-end">
                               <Button
@@ -572,7 +655,10 @@ export function PlanningDetailSheet({
                                     yearRencana,
                                   );
                                   return (
-                                    <div key={tahun} className="border-b last:border-b-0">
+                                    <div
+                                      key={tahun}
+                                      className="border-b last:border-b-0"
+                                    >
                                       <div className="flex items-center gap-3 px-3.5 py-2.5 bg-muted/40 border-b">
                                         <span className="text-xs font-bold w-14 shrink-0">
                                           {tahun}
@@ -712,7 +798,7 @@ export function PlanningDetailSheet({
                                                   version={a.updatedAt}
                                                   onRefreshParent={onRefresh}
                                                   projectName={
-                                                    planning.projectName
+                                                    proyek.projectName
                                                   }
                                                   onNavigateToList={onClose}
                                                   onSubDrawerOpenChange={() => {}}
@@ -751,9 +837,9 @@ export function PlanningDetailSheet({
           setShowPaketForm(false);
           onRefresh();
         }}
-        planningId={planning.id}
+        proyekId={proyek.id}
         editData={editPaket}
-        projectName={planning.projectName}
+        projectName={proyek.projectName}
         onNavigateToList={onClose}
       />
 
@@ -769,7 +855,7 @@ export function PlanningDetailSheet({
           paketId={activePaketId}
           roSatuan={paket.find((p) => p.id === activePaketId)?.ro?.satuan}
           editData={editAlokasi}
-          projectName={planning.projectName}
+          projectName={proyek.projectName}
           onNavigateToList={onClose}
         />
       )}

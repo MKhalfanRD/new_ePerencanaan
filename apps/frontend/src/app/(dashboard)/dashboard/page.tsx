@@ -18,10 +18,10 @@ import { Button } from "@/components/ui/button";
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
 import { punyaRole } from "@/lib/role";
-import { Planning, PaginatedResponse } from "@/types";
+import { Proyek, PaginatedResponse } from "@/types";
 import { statusConfig } from "@/components/shared/status-config";
 
-// --- Formatter angka, konsisten dengan pola di plannings/page.tsx ---
+// --- Formatter angka, konsisten dengan pola di proyekList/page.tsx ---
 const formatRupiah = (val: number) =>
   new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(val);
 
@@ -54,30 +54,29 @@ const barToneClasses: Record<string, string> = {
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
-  const [plannings, setPlannings] = useState<Planning[]>([]);
+  const [proyekList, setProyekList] = useState<Proyek[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     api
-      .get<PaginatedResponse<Planning>>("/plannings?limit=100")
-      .then((res) => setPlannings(res.data.data))
+      .get<PaginatedResponse<Proyek>>("/proyek?limit=100")
+      .then((res) => setProyekList(res.data.data))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
   const isSatker = punyaRole(user, "SATKER");
 
-  // Semua Alokasi lintas Paket milik satu Planning — dipakai berulang di
+  // Semua Alokasi lintas Paket milik satu Proyek — dipakai berulang di
   // bawah, jadi 1 helper alih-alih guard `?? []` berulang tiap tempat.
-  const alokasiOf = (p: Planning) => (p.paket ?? []).flatMap((pk) => pk.alokasi);
+  const alokasiOf = (p: Proyek) => (p.paket ?? []).flatMap((pk) => pk.alokasi);
 
   // Tahun yang bisa dipilih di Ringkasan Anggaran — dari data alokasi yang ada.
   const tahunTersedia = useMemo(() => {
     const s = new Set<number>();
-    for (const p of plannings)
-      for (const a of alokasiOf(p)) s.add(a.tahun);
+    for (const p of proyekList) for (const a of alokasiOf(p)) s.add(a.tahun);
     return Array.from(s).sort((a, b) => a - b);
-  }, [plannings]);
+  }, [proyekList]);
 
   // Default: tahun berjalan. Kalau datanya belum termuat / tahun ini belum
   // punya alokasi, jatuh ke tahun terbaru yang ada.
@@ -91,32 +90,31 @@ export default function DashboardPage() {
   }, [tahunTersedia, tahunAnggaran]);
 
   // Periode aktif diturunkan dari data yang sudah ada (tidak nambah request) —
-  // setiap Planning bawa objek `periode` lengkap dgn flag isActive.
+  // setiap Proyek bawa objek `periode` lengkap dgn flag isActive.
   const periodeAktif = useMemo(() => {
-    const found = plannings.find((p) => p.periode?.isActive);
+    const found = proyekList.find((p) => p.periode?.isActive);
     return found?.periode.label ?? null;
-  }, [plannings]);
+  }, [proyekList]);
 
   const statusCounts = useMemo(() => {
     const base: Record<string, number> = { DRAFT: 0, APPROVED: 0 };
-    for (const p of plannings) base[p.status] = (base[p.status] ?? 0) + 1;
+    for (const p of proyekList) base[p.status] = (base[p.status] ?? 0) + 1;
     return base;
-  }, [plannings]);
+  }, [proyekList]);
 
   const totalLokasi = useMemo(
     () =>
-      plannings.reduce(
-        (acc, p) =>
-          acc + alokasiOf(p).reduce((s, a) => s + a.lokasi.length, 0),
+      proyekList.reduce(
+        (acc, p) => acc + alokasiOf(p).reduce((s, a) => s + a.lokasi.length, 0),
         0,
       ),
-    [plannings],
+    [proyekList],
   );
 
   // Rencana vs realisasi, plus rincian per sumber dana — meniru grid 5-kolom
   // flat yang sudah dipakai di alokasi-expand-panel.tsx supaya konsisten.
   const anggaran = useMemo(() => {
-    const semuaAlokasi = plannings
+    const semuaAlokasi = proyekList
       .flatMap(alokasiOf)
       .filter((a) => tahunAnggaran === "semua" || a.tahun === tahunAnggaran);
     const rencana = semuaAlokasi.filter((a) => a.status === "RENCANA");
@@ -132,9 +130,7 @@ export default function DashboardPage() {
     // Persentase asli (tidak di-cap) supaya over-budget kelihatan — mis.
     // realisasi 10x rencana = 1000%, bukan disamarkan jadi 100% hijau.
     const persenRealisasi =
-      totalRencana > 0
-        ? Math.round((totalRealisasi / totalRencana) * 100)
-        : 0;
+      totalRencana > 0 ? Math.round((totalRealisasi / totalRencana) * 100) : 0;
 
     return {
       totalRencana,
@@ -149,13 +145,13 @@ export default function DashboardPage() {
         { label: "KPBU", value: sum(rencana, "kpbu") },
       ],
     };
-  }, [plannings, tahunAnggaran]);
+  }, [proyekList, tahunAnggaran]);
 
   // Rencana anggaran per tahun, utk bar chart flat sederhana (CSS murni,
   // tanpa dependency chart baru).
   const perTahun = useMemo(() => {
     const map = new Map<number, number>();
-    for (const p of plannings) {
+    for (const p of proyekList) {
       for (const a of alokasiOf(p)) {
         if (a.status !== "RENCANA") continue;
         map.set(a.tahun, (map.get(a.tahun) ?? 0) + Number(a.total));
@@ -166,24 +162,24 @@ export default function DashboardPage() {
       .map(([tahun, total]) => ({ tahun, total }));
     const max = Math.max(1, ...rows.map((r) => r.total));
     return { rows, max };
-  }, [plannings]);
+  }, [proyekList]);
 
-  const recentPlannings = useMemo(
+  const recentProyek = useMemo(
     () =>
-      [...plannings]
+      [...proyekList]
         .sort(
           (a, b) =>
             new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
         )
         .slice(0, 6),
-    [plannings],
+    [proyekList],
   );
 
   const kpiCards = [
     {
       key: "total",
       title: "Total Proyek",
-      value: plannings.length,
+      value: proyekList.length,
       icon: FileText,
       tone: "blue",
     },
@@ -210,7 +206,7 @@ export default function DashboardPage() {
     ...statusConfig[key],
     count: statusCounts[key] ?? 0,
   }));
-  const statusTotal = Math.max(1, plannings.length);
+  const statusTotal = Math.max(1, proyekList.length);
 
   return (
     <div className="space-y-6">
@@ -236,7 +232,7 @@ export default function DashboardPage() {
         </div>
         {isSatker && (
           <Button asChild size="sm" className="gap-1.5 self-start sm:self-auto">
-            <Link href="/plannings">
+            <Link href="/proyek">
               <Plus size={15} />
               Proyek Baru
             </Link>
@@ -282,7 +278,7 @@ export default function DashboardPage() {
             </CardTitle>
             {tahunTersedia.length > 0 && (
               <div className="flex flex-wrap gap-1 pt-2">
-                {[("semua" as const), ...tahunTersedia].map((th) => {
+                {["semua" as const, ...tahunTersedia].map((th) => {
                   const aktif = tahunAnggaran === th;
                   return (
                     <button
@@ -480,7 +476,7 @@ export default function DashboardPage() {
               size="sm"
               className="w-full justify-between"
             >
-              <Link href="/plannings">
+              <Link href="/proyek">
                 Lihat semua proyek
                 <ArrowRight size={14} />
               </Link>
@@ -489,12 +485,12 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Planning terbaru */}
+      {/* Proyek terbaru */}
       <Card>
         <CardHeader className="pb-3 flex flex-row items-center justify-between">
           <CardTitle className="text-base">Proyek Terbaru</CardTitle>
           <Link
-            href="/plannings"
+            href="/proyek"
             className="text-xs font-medium text-blue-600 hover:underline flex items-center gap-1"
           >
             Lihat semua
@@ -511,19 +507,19 @@ export default function DashboardPage() {
                 />
               ))}
             </div>
-          ) : recentPlannings.length === 0 ? (
+          ) : recentProyek.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <FileText size={40} className="mx-auto mb-3 opacity-30" />
               <p className="text-sm">Belum ada proyek</p>
             </div>
           ) : (
             <div className="divide-y">
-              {recentPlannings.map((p) => {
+              {recentProyek.map((p) => {
                 const cfg = statusConfig[p.status];
                 return (
                   <Link
                     key={p.id}
-                    href="/plannings"
+                    href="/proyek"
                     className="flex items-center justify-between py-3 px-1 -mx-1 rounded-lg hover:bg-slate-50 transition-colors"
                   >
                     <div className="min-w-0 flex-1">

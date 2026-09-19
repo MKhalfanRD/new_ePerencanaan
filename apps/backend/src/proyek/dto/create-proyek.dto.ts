@@ -219,7 +219,9 @@ export class CreateProyekDto {
   ])
   sumberUsulanProyek?: string;
 
-  @ApiPropertyOptional({ description: 'Diisi kalau sumberUsulanProyek = LAINNYA' })
+  @ApiPropertyOptional({
+    description: 'Diisi kalau sumberUsulanProyek = LAINNYA',
+  })
   @IsOptional()
   @IsString()
   sumberUsulanLainnya?: string;
@@ -234,15 +236,24 @@ export class CreateProyekDto {
   // dideteksi otomatis dari field-field ini + Kriteria Teknis di service
   // (lihat evaluasi-deteksi.ts), bukan checklist manual seperti sebelumnya.
   @ApiPropertyOptional() @IsOptional() @IsString() pkpnId?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() indikatorSasaranProgramId?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() indikatorSasaranKegiatanId?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  indikatorSasaranProgramId?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  indikatorSasaranKegiatanId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() tematikRenjaId?: string;
 
   @ApiPropertyOptional() @IsOptional() @IsBoolean() fkb?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() fkw?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() mpa?: boolean;
 
-  @ApiPropertyOptional({ type: [String], description: 'Tagging Dinamis — tag bebas' })
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Tagging Dinamis — tag bebas',
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })

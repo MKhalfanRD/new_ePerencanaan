@@ -7,27 +7,26 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreatePaketDto } from './dto/create-paket.dto';
 import { UpdatePaketDto } from './dto/update-paket.dto';
-import { generateKodeProyek, generateKodePaket } from '../common/kode-generator';
+import {
+  generateKodeProyek,
+  generateKodePaket,
+} from '../common/kode-generator';
 
 const paketDetailInclude = {
-  planning: { select: { id: true, projectName: true, status: true } },
+  proyek: { select: { id: true, projectName: true, status: true } },
   ro: {
     include: {
       kro: { include: { kegiatan: { include: { program: true } } } },
     },
   },
   komponen: true,
-  pkpn: true,
-  tematikRenja: true,
-  indikatorSasaranProgram: { include: { sasaranProgram: true } },
-  indikatorSasaranKegiatan: { include: { sasaranKegiatan: true } },
   indikatorRo: true,
   alokasi: {
     include: { lokasi: true },
     orderBy: [{ tahun: 'asc' as const }, { status: 'asc' as const }],
   },
-  // `prioritas` sengaja tidak di-include — relasi itu sudah dibuang dari
-  // model Paket (lihat docs-planning/audit-restrukturisasi-db-xlsx.md §4).
+  // PKPN/ISP/ISK/Tematik sengaja tidak di-include — pindah ke Proyek (lihat
+  // schema.prisma & CreateProyekDto).
 };
 
 @Injectable()
@@ -37,23 +36,23 @@ export class PaketService {
     private redis: RedisService,
   ) {}
 
-  // Sama seperti AlokasiService — planning list/detail di-cache di Redis dan
+  // Sama seperti AlokasiService — proyek list/detail di-cache di Redis dan
   // sebelumnya tidak pernah diinvalidasi dari sini, jadi paket baru/edit
   // tidak kelihatan di tabel proyek sampai TTL cache habis.
-  private async invalidatePlanning(planningId: string) {
-    await this.redis.del(`planning:${planningId}`);
-    await this.redis.delByPrefix('plannings:list:');
+  private async invalidateProyek(proyekId: string) {
+    await this.redis.del(`proyek:${proyekId}`);
+    await this.redis.delByPrefix('proyek:list:');
   }
 
   async create(dto: CreatePaketDto, userRole?: string) {
-    const planning = await this.prisma.planning.findUnique({
-      where: { id: dto.planningId },
+    const proyek = await this.prisma.proyek.findUnique({
+      where: { id: dto.proyekId },
       include: { balai: { select: { isActive: true } } },
     });
-    if (!planning) throw new NotFoundException('Planning tidak ditemukan');
+    if (!proyek) throw new NotFoundException('Proyek tidak ditemukan');
     // ADMINISTRATOR tidak terkena batasan — flag ini cuma membatasi SATKER
     // balai yang dinonaktifkan admin.
-    if (!planning.balai?.isActive && userRole !== 'ADMINISTRATOR') {
+    if (!proyek.balai?.isActive && userRole !== 'ADMINISTRATOR') {
       throw new ForbiddenException(
         'Balai ini sedang dinonaktifkan oleh admin, tidak bisa membuat paket baru',
       );
@@ -63,11 +62,11 @@ export class PaketService {
       // Kode Proyek seharusnya sudah ada dari saat proyek dibuat — fallback
       // generate di sini cuma jaga-jaga untuk data lama sebelum fitur ini ada.
       const kodeProyek =
-        planning.kodeProyek ??
+        proyek.kodeProyek ??
         (await (async () => {
           const generated = await generateKodeProyek(tx);
-          await tx.planning.update({
-            where: { id: planning.id },
+          await tx.proyek.update({
+            where: { id: proyek.id },
             data: { kodeProyek: generated },
           });
           return generated;
@@ -76,30 +75,21 @@ export class PaketService {
 
       return tx.paket.create({
         data: {
-          planningId: dto.planningId,
+          proyekId: dto.proyekId,
           kodePaket,
           name: dto.name,
-        roId: dto.roId,
-        komponenId: dto.komponenId,
-        jenis: dto.jenis as any,
-        masaPelaksanaan: dto.masaPelaksanaan as any,
-        dokLingStatus: dto.dokLingStatus,
-        catatanPembina: dto.catatanPembina,
-        catatanSspsda: dto.catatanSspsda,
-        pkpnId: dto.pkpnId,
-        indikatorSasaranProgramId: dto.indikatorSasaranProgramId,
-        indikatorSasaranKegiatanId: dto.indikatorSasaranKegiatanId,
+          roId: dto.roId,
+          komponenId: dto.komponenId,
+          jenis: dto.jenis as any,
+          masaPelaksanaan: dto.masaPelaksanaan as any,
+          dokLingStatus: dto.dokLingStatus,
           indikatorRoId: dto.indikatorRoId,
-          tematikRenjaId: dto.tematikRenjaId,
-          fkb: dto.fkb ?? false,
-          fkw: dto.fkw ?? false,
-          mpa: dto.mpa ?? false,
         },
         include: paketDetailInclude,
       });
     });
 
-    await this.invalidatePlanning(dto.planningId);
+    await this.invalidateProyek(dto.proyekId);
     return result;
   }
 
@@ -127,33 +117,24 @@ export class PaketService {
         jenis: dto.jenis as any,
         masaPelaksanaan: dto.masaPelaksanaan as any,
         dokLingStatus: dto.dokLingStatus,
-        catatanPembina: dto.catatanPembina,
-        catatanSspsda: dto.catatanSspsda,
-        pkpnId: dto.pkpnId,
-        indikatorSasaranProgramId: dto.indikatorSasaranProgramId,
-        indikatorSasaranKegiatanId: dto.indikatorSasaranKegiatanId,
         indikatorRoId: dto.indikatorRoId,
-        tematikRenjaId: dto.tematikRenjaId,
-        fkb: dto.fkb,
-        fkw: dto.fkw,
-        mpa: dto.mpa,
       },
       include: paketDetailInclude,
     });
 
-    await this.invalidatePlanning(paket.planningId);
+    await this.invalidateProyek(paket.proyekId);
     return updated;
   }
 
   async remove(id: string) {
     const paket = await this.prisma.paket.findUnique({ where: { id } });
     if (!paket) throw new NotFoundException('Paket tidak ditemukan');
-    // Soft delete, konsisten dengan Planning.deletedAt
+    // Soft delete, konsisten dengan Proyek.deletedAt
     await this.prisma.paket.update({
       where: { id },
       data: { deletedAt: new Date() },
     });
-    await this.invalidatePlanning(paket.planningId);
+    await this.invalidateProyek(paket.proyekId);
     return { message: 'Paket berhasil dihapus' };
   }
 }

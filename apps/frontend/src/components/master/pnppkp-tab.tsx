@@ -42,7 +42,7 @@ import api from "@/lib/api";
 
 /**
  * Master Prioritas Nasional RPJMN: PN > PP > KP, 3 tingkat. Paket/Proyek
- * memilih KP-nya lewat select berjenjang di form (lihat planning-form-dialog).
+ * memilih KP-nya lewat select berjenjang di form (lihat proyek-form-dialog).
  */
 
 interface PN {
@@ -87,8 +87,16 @@ export function PnppkpTab() {
     });
 
   const pn = useForm<{ code: string; name: string }>();
-  const pp = useForm<{ code: string; name: string; prioritasNasionalId: string }>();
-  const kp = useForm<{ code: string; name: string; programPrioritasId: string }>();
+  const pp = useForm<{
+    code: string;
+    name: string;
+    prioritasNasionalId: string;
+  }>();
+  const kp = useForm<{
+    code: string;
+    name: string;
+    programPrioritasId: string;
+  }>();
 
   const fetchAll = async () => {
     setLoading(true);
@@ -115,7 +123,9 @@ export function PnppkpTab() {
   // ===== PN =====
   const openPn = (item: PN | "new") => {
     setPnForm(item);
-    pn.reset(item === "new" ? codeNameSchema : { code: item.code, name: item.name });
+    pn.reset(
+      item === "new" ? codeNameSchema : { code: item.code, name: item.name },
+    );
   };
   const submitPn = async (data: { code: string; name: string }) => {
     try {
@@ -247,7 +257,9 @@ export function PnppkpTab() {
         // dilewati
       }
     }
-    toast.success(`Import PN selesai: ${created} ditambah, ${updated} diperbarui`);
+    toast.success(
+      `Import PN selesai: ${created} ditambah, ${updated} diperbarui`,
+    );
     fetchAll();
   };
   const onImportPp = async (rows: Record<string, string>[]) => {
@@ -332,7 +344,10 @@ export function PnppkpTab() {
       XLSX.utils.json_to_sheet(rows.length ? rows : [{}]),
       sheet,
     );
-    XLSX.writeFile(wb, `${filename}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(
+      wb,
+      `${filename}-${new Date().toISOString().slice(0, 10)}.xlsx`,
+    );
   };
   const exportPn = () =>
     exportExcel(
@@ -373,7 +388,9 @@ export function PnppkpTab() {
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: "array" });
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const raw = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: "" });
+    const raw = XLSX.utils.sheet_to_json<Record<string, any>>(ws, {
+      defval: "",
+    });
     return raw.map((r) =>
       Object.fromEntries(
         Object.entries(r)
@@ -383,14 +400,17 @@ export function PnppkpTab() {
     );
   };
   const handleImportFile =
-    (level: "pn" | "pp" | "kp") => async (e: React.ChangeEvent<HTMLInputElement>) => {
+    (level: "pn" | "pp" | "kp") =>
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       e.target.value = "";
       if (!file) return;
       setImporting(level);
       try {
         if (level === "pn") {
-          await onImportPn(await readExcelRows(file, { Kode: "code", Nama: "name" }));
+          await onImportPn(
+            await readExcelRows(file, { Kode: "code", Nama: "name" }),
+          );
         } else if (level === "pp") {
           await onImportPp(
             await readExcelRows(file, {
@@ -446,7 +466,12 @@ export function PnppkpTab() {
         )}
         Import
       </Button>
-      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onExport}>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 text-xs"
+        onClick={onExport}
+      >
         <Download size={12} className="mr-1" /> Export
       </Button>
     </div>
@@ -461,13 +486,18 @@ export function PnppkpTab() {
   }
   const kpByPp = new Map<string, KP[]>();
   for (const k of kpList) {
-    kpByPp.set(k.programPrioritasId, [...(kpByPp.get(k.programPrioritasId) ?? []), k]);
+    kpByPp.set(k.programPrioritasId, [
+      ...(kpByPp.get(k.programPrioritasId) ?? []),
+      k,
+    ]);
   }
 
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold">Prioritas Nasional (PN / PP / KP)</h3>
+        <h3 className="text-sm font-semibold">
+          Prioritas Nasional (PN / PP / KP)
+        </h3>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-card shadow-sm px-3 py-2">
@@ -475,19 +505,31 @@ export function PnppkpTab() {
           <span className="text-[11px] font-semibold text-muted-foreground w-8">
             PN
           </span>
-          <ImportExportButtons level="pn" fileRef={pnFileRef} onExport={exportPn} />
+          <ImportExportButtons
+            level="pn"
+            fileRef={pnFileRef}
+            onExport={exportPn}
+          />
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-semibold text-muted-foreground w-8">
             PP
           </span>
-          <ImportExportButtons level="pp" fileRef={ppFileRef} onExport={exportPp} />
+          <ImportExportButtons
+            level="pp"
+            fileRef={ppFileRef}
+            onExport={exportPp}
+          />
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-semibold text-muted-foreground w-8">
             KP
           </span>
-          <ImportExportButtons level="kp" fileRef={kpFileRef} onExport={exportKp} />
+          <ImportExportButtons
+            level="kp"
+            fileRef={kpFileRef}
+            onExport={exportKp}
+          />
         </div>
       </div>
 
@@ -504,7 +546,9 @@ export function PnppkpTab() {
           ) : (
             <div className="divide-y">
               {[...pnList]
-                .sort((a, b) => a.code.localeCompare(b.code, "id", { numeric: true }))
+                .sort((a, b) =>
+                  a.code.localeCompare(b.code, "id", { numeric: true }),
+                )
                 .map((p) => {
                   const pnOpen = expanded.has(p.id);
                   const ppChildren = (ppByPn.get(p.id) ?? []).sort((a, b) =>
@@ -519,9 +563,15 @@ export function PnppkpTab() {
                         className="group flex items-center gap-2 px-3.5 py-2.5 cursor-pointer hover:bg-accent/30"
                       >
                         {pnOpen ? (
-                          <ChevronDown size={14} className="text-muted-foreground shrink-0" />
+                          <ChevronDown
+                            size={14}
+                            className="text-muted-foreground shrink-0"
+                          />
                         ) : (
-                          <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+                          <ChevronRight
+                            size={14}
+                            className="text-muted-foreground shrink-0"
+                          />
                         )}
                         <span className="font-mono text-[10px] bg-sky-50 text-sky-700 px-1.5 py-0.5 rounded shrink-0">
                           {p.code}
@@ -539,7 +589,12 @@ export function PnppkpTab() {
                           >
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openPn(p)}>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() => openPn(p)}
+                                >
                                   <Pencil size={12} />
                                 </Button>
                               </TooltipTrigger>
@@ -566,8 +621,11 @@ export function PnppkpTab() {
                         <div className="bg-muted/10 border-t divide-y">
                           {ppChildren.map((pp) => {
                             const ppOpen = expanded.has(pp.id);
-                            const kpChildren = (kpByPp.get(pp.id) ?? []).sort((a, b) =>
-                              a.code.localeCompare(b.code, "id", { numeric: true }),
+                            const kpChildren = (kpByPp.get(pp.id) ?? []).sort(
+                              (a, b) =>
+                                a.code.localeCompare(b.code, "id", {
+                                  numeric: true,
+                                }),
                             );
                             return (
                               <div key={pp.id}>
@@ -578,9 +636,15 @@ export function PnppkpTab() {
                                   className="group flex items-center gap-2 pl-9 pr-3.5 py-2 cursor-pointer hover:bg-accent/30"
                                 >
                                   {ppOpen ? (
-                                    <ChevronDown size={13} className="text-muted-foreground shrink-0" />
+                                    <ChevronDown
+                                      size={13}
+                                      className="text-muted-foreground shrink-0"
+                                    />
                                   ) : (
-                                    <ChevronRight size={13} className="text-muted-foreground shrink-0" />
+                                    <ChevronRight
+                                      size={13}
+                                      className="text-muted-foreground shrink-0"
+                                    />
                                   )}
                                   <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded shrink-0">
                                     {pp.code}
@@ -598,7 +662,12 @@ export function PnppkpTab() {
                                     >
                                       <Tooltip>
                                         <TooltipTrigger asChild>
-                                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openPp(pp)}>
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6"
+                                            onClick={() => openPp(pp)}
+                                          >
                                             <Pencil size={11} />
                                           </Button>
                                         </TooltipTrigger>
@@ -638,11 +707,18 @@ export function PnppkpTab() {
                                           <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 shrink-0">
                                             <Tooltip>
                                               <TooltipTrigger asChild>
-                                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openKp(k)}>
+                                                <Button
+                                                  variant="ghost"
+                                                  size="icon"
+                                                  className="h-6 w-6"
+                                                  onClick={() => openKp(k)}
+                                                >
                                                   <Pencil size={11} />
                                                 </Button>
                                               </TooltipTrigger>
-                                              <TooltipContent>Edit</TooltipContent>
+                                              <TooltipContent>
+                                                Edit
+                                              </TooltipContent>
                                             </Tooltip>
                                             <Tooltip>
                                               <TooltipTrigger asChild>
@@ -655,7 +731,9 @@ export function PnppkpTab() {
                                                   <Trash2 size={11} />
                                                 </Button>
                                               </TooltipTrigger>
-                                              <TooltipContent>Hapus</TooltipContent>
+                                              <TooltipContent>
+                                                Hapus
+                                              </TooltipContent>
                                             </Tooltip>
                                           </div>
                                         </TooltipProvider>
@@ -702,14 +780,20 @@ export function PnppkpTab() {
       <Dialog open={!!pnForm} onOpenChange={(v) => !v && setPnForm(null)}>
         <DialogContent onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>{pnForm === "new" ? "Tambah PN" : "Edit PN"}</DialogTitle>
+            <DialogTitle>
+              {pnForm === "new" ? "Tambah PN" : "Edit PN"}
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={pn.handleSubmit(submitPn)} className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>
                 Kode <span className="text-destructive">*</span>
               </Label>
-              <Input className="h-10" placeholder="02" {...pn.register("code")} />
+              <Input
+                className="h-10"
+                placeholder="02"
+                {...pn.register("code")}
+              />
             </div>
             <div className="space-y-2">
               <Label>
@@ -718,7 +802,11 @@ export function PnppkpTab() {
               <Input className="h-10" {...pn.register("name")} />
             </div>
             <DialogFooter className="pt-3">
-              <Button type="button" variant="outline" onClick={() => setPnForm(null)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPnForm(null)}
+              >
                 Batal
               </Button>
               <Button type="submit" disabled={pn.formState.isSubmitting}>
@@ -736,7 +824,9 @@ export function PnppkpTab() {
       <Dialog open={!!ppForm} onOpenChange={(v) => !v && setPpForm(null)}>
         <DialogContent onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>{ppForm === "new" ? "Tambah PP" : "Edit PP"}</DialogTitle>
+            <DialogTitle>
+              {ppForm === "new" ? "Tambah PP" : "Edit PP"}
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={pp.handleSubmit(submitPp)} className="space-y-4 py-2">
             <div className="space-y-2">
@@ -763,7 +853,11 @@ export function PnppkpTab() {
               <Label>
                 Kode <span className="text-destructive">*</span>
               </Label>
-              <Input className="h-10" placeholder="02.12" {...pp.register("code")} />
+              <Input
+                className="h-10"
+                placeholder="02.12"
+                {...pp.register("code")}
+              />
             </div>
             <div className="space-y-2">
               <Label>
@@ -772,7 +866,11 @@ export function PnppkpTab() {
               <Input className="h-10" {...pp.register("name")} />
             </div>
             <DialogFooter className="pt-3">
-              <Button type="button" variant="outline" onClick={() => setPpForm(null)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPpForm(null)}
+              >
                 Batal
               </Button>
               <Button type="submit" disabled={pp.formState.isSubmitting}>
@@ -790,7 +888,9 @@ export function PnppkpTab() {
       <Dialog open={!!kpForm} onOpenChange={(v) => !v && setKpForm(null)}>
         <DialogContent onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>{kpForm === "new" ? "Tambah KP" : "Edit KP"}</DialogTitle>
+            <DialogTitle>
+              {kpForm === "new" ? "Tambah KP" : "Edit KP"}
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={kp.handleSubmit(submitKp)} className="space-y-4 py-2">
             <div className="space-y-2">
@@ -817,7 +917,11 @@ export function PnppkpTab() {
               <Label>
                 Kode <span className="text-destructive">*</span>
               </Label>
-              <Input className="h-10" placeholder="02.12.01" {...kp.register("code")} />
+              <Input
+                className="h-10"
+                placeholder="02.12.01"
+                {...kp.register("code")}
+              />
             </div>
             <div className="space-y-2">
               <Label>
@@ -826,7 +930,11 @@ export function PnppkpTab() {
               <Input className="h-10" {...kp.register("name")} />
             </div>
             <DialogFooter className="pt-3">
-              <Button type="button" variant="outline" onClick={() => setKpForm(null)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setKpForm(null)}
+              >
                 Batal
               </Button>
               <Button type="submit" disabled={kp.formState.isSubmitting}>

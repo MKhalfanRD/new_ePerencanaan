@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Planning } from "@/types";
+import { Proyek } from "@/types";
 
 const formatRupiah = (val: string | number) =>
   new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(
@@ -13,22 +13,22 @@ const statusLabel: Record<string, string> = {
   APPROVED: "Disetujui",
 };
 
-// Semua Alokasi lintas Paket milik satu Planning, dengan info paket (RO,
+// Semua Alokasi lintas Paket milik satu Proyek, dengan info paket (RO,
 // jenis, masa pelaksanaan) ikut disalin ke tiap baris supaya sheet/tabel
 // export tidak perlu join manual.
-const flatAlokasi = (p: Planning) =>
+const flatAlokasi = (p: Proyek) =>
   p.paket.flatMap((pk) =>
     pk.alokasi.map((a) => ({ ...a, paket: pk, ro: pk.ro })),
   );
 
 // ============================================================
-// EXPORT EXCEL — LIST (multiple planning, ringkas)
+// EXPORT EXCEL — LIST (multiple proyek, ringkas)
 // ============================================================
-export function exportPlanningsToExcel(
-  plannings: Planning[],
-  filename = "daftar-planning",
+export function exportProyekToExcel(
+  proyekList: Proyek[],
+  filename = "daftar-proyek",
 ) {
-  const rows = plannings.map((p) => {
+  const rows = proyekList.map((p) => {
     const alokasi = flatAlokasi(p);
     const totalRencana = alokasi
       .filter((a) => a.status === "RENCANA")
@@ -66,14 +66,14 @@ export function exportPlanningsToExcel(
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Daftar Planning");
+  XLSX.utils.book_append_sheet(wb, ws, "Daftar Proyek");
   XLSX.writeFile(wb, `${filename}-${Date.now()}.xlsx`);
 }
 
 // ============================================================
-// EXPORT EXCEL — DETAIL (single planning, lengkap multi-sheet)
+// EXPORT EXCEL — DETAIL (single proyek, lengkap multi-sheet)
 // ============================================================
-export function exportPlanningDetailToExcel(p: Planning) {
+export function exportProyekDetailToExcel(p: Proyek) {
   const wb = XLSX.utils.book_new();
 
   // Sheet 1: Info Umum
@@ -156,20 +156,20 @@ export function exportPlanningDetailToExcel(p: Planning) {
   }
 
   const safeName = p.projectName.substring(0, 30).replace(/[^a-z0-9]/gi, "-");
-  XLSX.writeFile(wb, `planning-${safeName}-${Date.now()}.xlsx`);
+  XLSX.writeFile(wb, `proyek-${safeName}-${Date.now()}.xlsx`);
 }
 
 // ============================================================
-// EXPORT PDF — LIST (multiple planning, ringkas)
+// EXPORT PDF — LIST (multiple proyek, ringkas)
 // ============================================================
-export function exportPlanningsToPDF(
-  plannings: Planning[],
-  filename = "daftar-planning",
+export function exportProyekToPDF(
+  proyekList: Proyek[],
+  filename = "daftar-proyek",
 ) {
   const doc = new jsPDF({ orientation: "landscape" });
 
   doc.setFontSize(14);
-  doc.text("Daftar Planning - ePerencanaan", 14, 15);
+  doc.text("Daftar Proyek - ePerencanaan", 14, 15);
   doc.setFontSize(9);
   doc.setTextColor(100);
   doc.text(
@@ -178,7 +178,7 @@ export function exportPlanningsToPDF(
     21,
   );
 
-  const rows = plannings.map((p) => {
+  const rows = proyekList.map((p) => {
     const totalRencana = flatAlokasi(p)
       .filter((a) => a.status === "RENCANA")
       .reduce((s, a) => s + Number(a.total), 0);
@@ -215,14 +215,14 @@ export function exportPlanningsToPDF(
 }
 
 // ============================================================
-// EXPORT PDF — DETAIL (single planning, lengkap)
+// EXPORT PDF — DETAIL (single proyek, lengkap)
 // ============================================================
-export function exportPlanningDetailToPDF(p: Planning) {
+export function exportProyekDetailToPDF(p: Proyek) {
   const doc = new jsPDF();
   let y = 15;
 
   doc.setFontSize(14);
-  doc.text("Detail Planning", 14, y);
+  doc.text("Detail Proyek", 14, y);
   y += 8;
 
   doc.setFontSize(11);
@@ -262,9 +262,7 @@ export function exportPlanningDetailToPDF(p: Planning) {
       ["Kegiatan Prioritas (PN.PP.KP)", p.kegiatanPrioritas?.name || "-"],
       [
         "Skor Evaluasi",
-        p.skorEvaluasi
-          ? `${(Number(p.skorEvaluasi) * 100).toFixed(1)}%`
-          : "-",
+        p.skorEvaluasi ? `${(Number(p.skorEvaluasi) * 100).toFixed(1)}%` : "-",
       ],
       ["Dibuat Oleh", `${p.createdBy.name} (${p.createdBy.role.name})`],
     ],
@@ -335,5 +333,5 @@ export function exportPlanningDetailToPDF(p: Planning) {
   }
 
   const safeName = p.projectName.substring(0, 30).replace(/[^a-z0-9]/gi, "-");
-  doc.save(`planning-${safeName}-${Date.now()}.pdf`);
+  doc.save(`proyek-${safeName}-${Date.now()}.pdf`);
 }

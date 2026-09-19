@@ -34,7 +34,7 @@ const navItems: {
   roles?: string[];
 }[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Proyek", href: "/plannings", icon: FolderKanban },
+  { label: "Proyek", href: "/proyek", icon: FolderKanban },
   { label: "Pengguna", href: "/users", icon: Users, roles: ADMIN },
   { label: "Master Data", href: "/master", icon: Database, roles: ADMIN },
   {

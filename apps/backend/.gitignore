@@ -3,6 +3,10 @@
 /node_modules
 /build
 
+# Dokumen pendukung proyek — file upload, disimpan lokal di server (bukan di
+# repo), lihat proyek.controller.ts.
+/uploads
+
 # Logs
 logs
 *.log

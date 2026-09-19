@@ -422,7 +422,8 @@ export class ImportService {
           excelRowNumber,
           namaProyek: current?.namaProyek || '(kosong)',
           balaiName: current?.balaiName || '(kosong)',
-          reason: 'Kolom "Jenis Paket (F/NF)" atau "MasaLaksana" tidak valid/kosong',
+          reason:
+            'Kolom "Jenis Paket (F/NF)" atau "MasaLaksana" tidak valid/kosong',
         });
         return;
       }
@@ -476,7 +477,10 @@ export class ImportService {
 
     // ===== Deteksi Balai — cocokkan dulu via KdBalai (id persis), baru fallback fuzzy nama =====
     const groups = this.groupRows(parsedRows);
-    const balaiCandidates = new Map<string, { kdBalai: number | null; name: string }>();
+    const balaiCandidates = new Map<
+      string,
+      { kdBalai: number | null; name: string }
+    >();
     for (const g of groups.values()) {
       const first = g[0];
       balaiCandidates.set(first.balaiName, {
@@ -494,20 +498,35 @@ export class ImportService {
     }[] = [];
 
     for (const { kdBalai, name } of balaiCandidates.values()) {
-      const byId = kdBalai != null ? existingBalai.find((b) => b.id === kdBalai) : undefined;
+      const byId =
+        kdBalai != null
+          ? existingBalai.find((b) => b.id === kdBalai)
+          : undefined;
       if (byId) {
-        matched.push({ excelName: name, balaiId: byId.id, balaiName: byId.name });
+        matched.push({
+          excelName: name,
+          balaiId: byId.id,
+          balaiName: byId.name,
+        });
         continue;
       }
       const byName = existingBalai.find(
         (b) => normalizeBalaiName(b.name) === normalizeBalaiName(name),
       );
       if (byName) {
-        matched.push({ excelName: name, balaiId: byName.id, balaiName: byName.name });
+        matched.push({
+          excelName: name,
+          balaiId: byName.id,
+          balaiName: byName.name,
+        });
         continue;
       }
       const suggestions = existingBalai
-        .map((b) => ({ id: b.id, name: b.name, score: similarity(name, b.name) }))
+        .map((b) => ({
+          id: b.id,
+          name: b.name,
+          score: similarity(name, b.name),
+        }))
         .filter((s) => s.score >= 0.5)
         .sort((a, b) => b.score - a.score)
         .slice(0, 3);
@@ -515,7 +534,7 @@ export class ImportService {
     }
 
     // ===== Deteksi proyek yang sudah ada (by kodeProyek) =====
-    const existingPlannings: {
+    const existingProyek: {
       groupKey: string;
       namaProyek: string;
       balaiName: string;
@@ -529,7 +548,7 @@ export class ImportService {
     for (const [groupKey, rows] of groups) {
       const first = rows[0];
       if (!first.kodeProyek) continue; // tanpa KodeProyek tidak bisa dicek duplikat
-      const existing = await this.prisma.planning.findFirst({
+      const existing = await this.prisma.proyek.findFirst({
         where: { kodeProyek: first.kodeProyek, deletedAt: null },
         include: { paket: { include: { alokasi: true } } },
       });
@@ -537,7 +556,7 @@ export class ImportService {
         const existingTotal = existing.paket
           .flatMap((p) => p.alokasi)
           .reduce((s, a) => s + Number(a.total), 0);
-        existingPlannings.push({
+        existingProyek.push({
           groupKey,
           namaProyek: first.namaProyek,
           balaiName: first.balaiName,
@@ -559,16 +578,16 @@ export class ImportService {
         totalRowsExcel: parsedRows.length + parseErrors.length,
         totalRowsValid: parsedRows.length,
         totalRowsError: parseErrors.length,
-        totalPlanning: groups.size,
-        totalPlanningBaru: groups.size - existingPlannings.length,
-        totalPlanningDuplikat: existingPlannings.length,
+        totalProyek: groups.size,
+        totalProyekBaru: groups.size - existingProyek.length,
+        totalProyekDuplikat: existingProyek.length,
         totalBalaiTerdeteksi: balaiCandidates.size,
         totalBalaiMatched: matched.length,
         totalBalaiUnmatched: unmatched.length,
       },
       matched,
       unmatched,
-      existingPlannings,
+      existingProyek,
       parseErrors,
     };
   }
@@ -627,7 +646,9 @@ export class ImportService {
     const resolveRoId = async (row: ParsedPaketRow): Promise<string | null> => {
       const qualified = `${row.kdKegiatan}.${row.kdKRO}.${row.kdRO}`;
       if (!roCache.has(qualified)) {
-        const ro = await this.prisma.rO.findUnique({ where: { id: qualified } });
+        const ro = await this.prisma.rO.findUnique({
+          where: { id: qualified },
+        });
         roCache.set(qualified, ro?.id ?? null);
       }
       return roCache.get(qualified)!;
@@ -687,7 +708,9 @@ export class ImportService {
     };
 
     const tematikCache = new Map<string, string>();
-    const resolveTematikId = async (name: string): Promise<string | undefined> => {
+    const resolveTematikId = async (
+      name: string,
+    ): Promise<string | undefined> => {
       if (!name) return undefined;
       const key = name.toLowerCase();
       if (tematikCache.has(key)) return tematikCache.get(key);
@@ -731,10 +754,7 @@ export class ImportService {
       if (!kp) return undefined;
       const found = await this.prisma.kegiatanPrioritas.findFirst({
         where: {
-          OR: [
-            { code: kp },
-            { name: { contains: kp, mode: 'insensitive' } },
-          ],
+          OR: [{ code: kp }, { name: { contains: kp, mode: 'insensitive' } }],
         },
       });
       return found?.id;
@@ -828,7 +848,8 @@ export class ImportService {
               pln: row.pln,
               sbsn: row.sbsn,
               kpbu: row.kpbu,
-              total: row.total || row.rm + row.rmp + row.pln + row.sbsn + row.kpbu,
+              total:
+                row.total || row.rm + row.rmp + row.pln + row.sbsn + row.kpbu,
               outputTarget: row.volOutput,
               outputUnit: row.outputSatuan,
               outcomeTarget: row.volOutcome,
@@ -857,13 +878,13 @@ export class ImportService {
     // ===== Commit per grup =====
     const groups = this.groupRows(rows);
     const decisions = new Map<string, 'skip' | 'replace'>();
-    for (const pr of dto.planningResolutions ?? []) {
+    for (const pr of dto.proyekResolutions ?? []) {
       decisions.set(pr.groupKey, pr.action);
     }
 
-    let createdPlanning = 0;
-    let updatedPlanning = 0;
-    let skippedPlanning = 0;
+    let createdProyek = 0;
+    let updatedProyek = 0;
+    let skippedProyek = 0;
     let createdPaket = 0;
 
     for (const [groupKey, groupRows] of groups) {
@@ -871,7 +892,7 @@ export class ImportService {
       const balaiId = balaiMap.get(first.balaiName)!;
 
       const existing = first.kodeProyek
-        ? await this.prisma.planning.findFirst({
+        ? await this.prisma.proyek.findFirst({
             where: { kodeProyek: first.kodeProyek, deletedAt: null },
           })
         : null;
@@ -879,7 +900,7 @@ export class ImportService {
       if (existing) {
         const decision = decisions.get(groupKey) ?? 'skip';
         if (decision === 'skip') {
-          skippedPlanning++;
+          skippedProyek++;
           continue;
         }
         try {
@@ -890,8 +911,10 @@ export class ImportService {
             first.sumberUsulanProyekRaw,
           );
           // onDelete: Cascade di Alokasi/LokasiAlokasi ikut membersihkan
-          await this.prisma.paket.deleteMany({ where: { planningId: existing.id } });
-          await this.prisma.planning.update({
+          await this.prisma.paket.deleteMany({
+            where: { proyekId: existing.id },
+          });
+          await this.prisma.proyek.update({
             where: { id: existing.id },
             data: {
               projectName: first.namaProyek,
@@ -913,7 +936,7 @@ export class ImportService {
               paket: { create: paketData as any },
             },
           });
-          updatedPlanning++;
+          updatedProyek++;
           createdPaket += paketData.length;
         } catch (err: any) {
           commitErrors.push({
@@ -932,7 +955,7 @@ export class ImportService {
           await Promise.all(groupRows.map(buildPaketData))
         ).filter((p): p is NonNullable<typeof p> => p !== null);
         const sumberUsulan = parseSumberUsulan(first.sumberUsulanProyekRaw);
-        await this.prisma.planning.create({
+        await this.prisma.proyek.create({
           data: {
             kodeProyek: first.kodeProyek || undefined,
             projectName: first.namaProyek,
@@ -957,7 +980,7 @@ export class ImportService {
             paket: { create: paketData as any },
           },
         });
-        createdPlanning++;
+        createdProyek++;
         createdPaket += paketData.length;
       } catch (err: any) {
         commitErrors.push({
@@ -976,9 +999,9 @@ export class ImportService {
 
     return {
       message: 'Import berhasil diproses',
-      createdPlanning,
-      updatedPlanning,
-      skippedPlanning,
+      createdProyek,
+      updatedProyek,
+      skippedProyek,
       createdPaket,
       skipped: commitErrors.length,
       commitErrors,

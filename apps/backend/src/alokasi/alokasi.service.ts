@@ -28,23 +28,23 @@ export class AlokasiService {
     );
   }
 
-  // Planning list/detail di-cache di Redis (plannings.service.ts). Semua
-  // mutasi di sini menembus paket->planning, tapi service ini sebelumnya
+  // Proyek list/detail di-cache di Redis (proyek.service.ts). Semua
+  // mutasi di sini menembus paket->proyek, tapi service ini sebelumnya
   // TIDAK PERNAH invalidasi cache itu — jadi setelah tambah/edit alokasi
   // atau lokasi, popup sukses muncul & DB benar berubah, tapi tabel/detail
   // proyek masih menampilkan data lama sampai TTL cache habis (60 detik
   // untuk list, 300 detik untuk detail). Ini akar dari beberapa keluhan
   // yang kelihatannya beda-beda: "alokasi baru tidak muncul", "nilai yang
   // sudah diedit tidak berubah", "harus tunggu beberapa detik".
-  private async invalidatePlanning(planningId: string) {
-    await this.redis.del(`planning:${planningId}`);
-    await this.redis.delByPrefix('plannings:list:');
+  private async invalidateProyek(proyekId: string) {
+    await this.redis.del(`proyek:${proyekId}`);
+    await this.redis.delByPrefix('proyek:list:');
   }
 
   async create(dto: CreateAlokasiDto) {
     const paket = await this.prisma.paket.findUnique({
       where: { id: dto.paketId },
-      include: { planning: true },
+      include: { proyek: true },
     });
     if (!paket) throw new NotFoundException('Paket tidak ditemukan');
 
@@ -94,7 +94,10 @@ export class AlokasiService {
         outcomeUnit: dto.outcomeUnit,
         catatan: dto.catatan,
       },
-      include: { paket: { include: { ro: { include: { kro: true } } } }, lokasi: true },
+      include: {
+        paket: { include: { ro: { include: { kro: true } } } },
+        lokasi: true,
+      },
     });
 
     // Auto-buat pasangan dengan nilai 0 kalau belum ada, supaya tabel selalu lengkap Rencana+Realisasi
@@ -117,7 +120,7 @@ export class AlokasiService {
       });
     }
 
-    await this.invalidatePlanning(paket.planningId);
+    await this.invalidateProyek(paket.proyekId);
     return created;
   }
 
@@ -127,7 +130,7 @@ export class AlokasiService {
       include: {
         paket: {
           include: {
-            planning: { select: { id: true, projectName: true } },
+            proyek: { select: { id: true, projectName: true } },
             ro: {
               include: {
                 indikatorRO: true,
@@ -148,7 +151,7 @@ export class AlokasiService {
   async update(id: string, dto: UpdateAlokasiDto, user: any) {
     const alokasi = await this.prisma.alokasi.findUnique({
       where: { id },
-      include: { paket: { select: { planningId: true } } },
+      include: { paket: { select: { proyekId: true } } },
     });
     if (!alokasi) throw new NotFoundException('Alokasi tidak ditemukan');
 
@@ -205,25 +208,25 @@ export class AlokasiService {
       },
     });
 
-    await this.invalidatePlanning(alokasi.paket.planningId);
+    await this.invalidateProyek(alokasi.paket.proyekId);
     return updated;
   }
 
   async remove(id: string) {
     const alokasi = await this.prisma.alokasi.findUnique({
       where: { id },
-      include: { paket: { select: { planningId: true } } },
+      include: { paket: { select: { proyekId: true } } },
     });
     if (!alokasi) throw new NotFoundException('Alokasi tidak ditemukan');
     await this.prisma.alokasi.delete({ where: { id } });
-    await this.invalidatePlanning(alokasi.paket.planningId);
+    await this.invalidateProyek(alokasi.paket.proyekId);
     return { message: 'Alokasi berhasil dihapus' };
   }
 
   async addLokasi(alokasiId: string, dto: CreateLokasiDto) {
     const alokasi = await this.prisma.alokasi.findUnique({
       where: { id: alokasiId },
-      include: { paket: { select: { planningId: true } } },
+      include: { paket: { select: { proyekId: true } } },
     });
     if (!alokasi) throw new NotFoundException('Alokasi tidak ditemukan');
 
@@ -251,14 +254,16 @@ export class AlokasiService {
       },
     });
 
-    await this.invalidatePlanning(alokasi.paket.planningId);
+    await this.invalidateProyek(alokasi.paket.proyekId);
     return created;
   }
 
   async updateLokasi(lokasiId: string, dto: CreateLokasiDto) {
     const lokasi = await this.prisma.lokasiAlokasi.findUnique({
       where: { id: lokasiId },
-      include: { alokasi: { include: { paket: { select: { planningId: true } } } } },
+      include: {
+        alokasi: { include: { paket: { select: { proyekId: true } } } },
+      },
     });
     if (!lokasi) throw new NotFoundException('Lokasi tidak ditemukan');
 
@@ -286,18 +291,20 @@ export class AlokasiService {
       },
     });
 
-    await this.invalidatePlanning(lokasi.alokasi.paket.planningId);
+    await this.invalidateProyek(lokasi.alokasi.paket.proyekId);
     return updated;
   }
 
   async removeLokasi(lokasiId: string) {
     const lokasi = await this.prisma.lokasiAlokasi.findUnique({
       where: { id: lokasiId },
-      include: { alokasi: { include: { paket: { select: { planningId: true } } } } },
+      include: {
+        alokasi: { include: { paket: { select: { proyekId: true } } } },
+      },
     });
     if (!lokasi) throw new NotFoundException('Lokasi tidak ditemukan');
     await this.prisma.lokasiAlokasi.delete({ where: { id: lokasiId } });
-    await this.invalidatePlanning(lokasi.alokasi.paket.planningId);
+    await this.invalidateProyek(lokasi.alokasi.paket.proyekId);
     return { message: 'Lokasi berhasil dihapus' };
   }
 

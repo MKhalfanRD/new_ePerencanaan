@@ -168,7 +168,7 @@ function SheetDescription({
  * Sengaja SATU BARIS (tidak wrap) — di Sheet lapis-2 yang sempit (440px),
  * breadcrumb 3 segmen + nama proyek panjang dulu pernah bikin "›" nyangkut
  * sendirian di baris terpisah. Sekarang segmen tengah/terakhir yang panjang
- * di-truncate (ellipsis), segmen pertama ("Daftar Planning") selalu utuh
+ * di-truncate (ellipsis), segmen pertama ("Daftar Proyek") selalu utuh
  * karena itu jangkarnya.
  */
 function SheetBreadcrumb({

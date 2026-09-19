@@ -62,7 +62,7 @@ interface Props {
   editData?: LokasiData | null;
   /** Nama proyek — dipakai di breadcrumb header (Sheet lapis-2, Fase 4). */
   projectName?: string;
-  /** Klik "Daftar Planning" di breadcrumb — kembali ke daftar (tutup semua lapis). */
+  /** Klik "Daftar Proyek" di breadcrumb — kembali ke daftar (tutup semua lapis). */
   onNavigateToList?: () => void;
 }
 

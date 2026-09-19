@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Package, MapPinned, Target, Tags, ScrollText } from "lucide-react";
+import { Loader2, Package, MapPinned, Target } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -27,48 +27,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Accordion,
-  AccordionItem,
-  AccordionTrigger,
-  AccordionContent,
-} from "@/components/ui/accordion";
 import api from "@/lib/api";
 import { RO, Komponen, Paket } from "@/types";
-
-interface WilayahSungaiOpt {
-  id: string;
-  name: string;
-}
-interface PkpnOpt {
-  id: string;
-  name: string;
-}
-interface TematikOpt {
-  id: string;
-  name: string;
-}
-interface KegiatanPrioritasOpt {
-  id: string;
-  code: string;
-  name: string;
-  programPrioritas: {
-    code: string;
-    prioritasNasional: { code: string };
-  };
-}
-interface SasaranProgramOpt {
-  id: string;
-  programId: string;
-  name: string;
-  indikator: { id: string; name: string; satuan?: string }[];
-}
-interface SasaranKegiatanOpt {
-  id: string;
-  kegiatanId: string;
-  name: string;
-  indikator: { id: string; name: string; satuan?: string }[];
-}
 
 const NONE = "__NONE__"; // Radix Select tidak boleh punya SelectItem value=""
 
@@ -80,16 +40,7 @@ const schema = z.object({
   jenis: z.enum(["FISIK", "NON_FISIK"]),
   masaPelaksanaan: z.enum(["SINGLE_YEAR", "MULTI_YEAR"]),
   dokLingStatus: z.string().optional(),
-  catatanPembina: z.string().optional(),
-  catatanSspsda: z.string().optional(),
-  pkpnId: z.string().optional(),
-  indikatorSasaranProgramId: z.string().optional(),
-  indikatorSasaranKegiatanId: z.string().optional(),
   indikatorRoId: z.string().optional(),
-  tematikRenjaId: z.string().optional(),
-  fkb: z.boolean(),
-  fkw: z.boolean(),
-  mpa: z.boolean(),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -97,7 +48,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  planningId: string;
+  proyekId: string;
   editData?: Paket | null;
   projectName?: string;
   onNavigateToList?: () => void;
@@ -107,7 +58,7 @@ export function PaketFormDialog({
   open,
   onClose,
   onSuccess,
-  planningId,
+  proyekId,
   editData,
   projectName,
   onNavigateToList,
@@ -120,17 +71,7 @@ export function PaketFormDialog({
   // Teks pencarian per dropdown yang berpotensi > 20 opsi.
   const [roSearch, setRoSearch] = useState("");
   const [komponenSearch, setKomponenSearch] = useState("");
-  const [ispSearch, setIspSearch] = useState("");
-  const [iskSearch, setIskSearch] = useState("");
   const [indikatorRoSearch, setIndikatorRoSearch] = useState("");
-  const [pkpnList, setPkpnList] = useState<PkpnOpt[]>([]);
-  const [tematikList, setTematikList] = useState<TematikOpt[]>([]);
-  const [sasaranProgramList, setSasaranProgramList] = useState<
-    SasaranProgramOpt[]
-  >([]);
-  const [sasaranKegiatanList, setSasaranKegiatanList] = useState<
-    SasaranKegiatanOpt[]
-  >([]);
 
   // Filter cascade nomenklatur (Program > Kegiatan > KRO). State lokal, bukan
   // field form — cuma mempersempit daftar RO.
@@ -150,30 +91,16 @@ export function PaketFormDialog({
     defaultValues: {
       jenis: "FISIK",
       masaPelaksanaan: "SINGLE_YEAR",
-      fkb: false,
-      fkw: false,
-      mpa: false,
     },
   });
 
   useEffect(() => {
     if (!open) return;
     setLoadingMaster(true);
-    Promise.all([
-      api.get("/master/ro"),
-      api.get("/master/komponen"),
-      api.get("/master/pkpn"),
-      api.get("/master/tematik-renja"),
-      api.get("/master/sasaran-program"),
-      api.get("/master/sasaran-kegiatan"),
-    ])
-      .then(([ro, komponen, pkpn, tematik, sp, sk]) => {
+    Promise.all([api.get("/master/ro"), api.get("/master/komponen")])
+      .then(([ro, komponen]) => {
         setROList(ro.data);
         setKomponenList(komponen.data);
-        setPkpnList(pkpn.data);
-        setTematikList(tematik.data);
-        setSasaranProgramList(sp.data);
-        setSasaranKegiatanList(sk.data);
       })
       .finally(() => setLoadingMaster(false));
   }, [open]);
@@ -187,16 +114,7 @@ export function PaketFormDialog({
         jenis: editData.jenis,
         masaPelaksanaan: editData.masaPelaksanaan,
         dokLingStatus: editData.dokLingStatus || "",
-        catatanPembina: editData.catatanPembina || "",
-        catatanSspsda: editData.catatanSspsda || "",
-        pkpnId: editData.pkpnId || "",
-        indikatorSasaranProgramId: editData.indikatorSasaranProgramId || "",
-        indikatorSasaranKegiatanId: editData.indikatorSasaranKegiatanId || "",
         indikatorRoId: editData.indikatorRoId || "",
-        tematikRenjaId: editData.tematikRenjaId || "",
-        fkb: editData.fkb,
-        fkw: editData.fkw,
-        mpa: editData.mpa,
       });
       // Pra-isi cascade dari RO paket yang diedit.
       setFilterProgramId(editData.ro.kro.kegiatan.program.id);
@@ -206,9 +124,6 @@ export function PaketFormDialog({
       reset({
         jenis: "FISIK",
         masaPelaksanaan: "SINGLE_YEAR",
-        fkb: false,
-        fkw: false,
-        mpa: false,
       });
       setFilterProgramId("");
       setFilterKegiatanId("");
@@ -227,8 +142,6 @@ export function PaketFormDialog({
     setValue("roId", roId);
     setValue("komponenId", "");
     setValue("indikatorRoId", "");
-    setValue("indikatorSasaranProgramId", "");
-    setValue("indikatorSasaranKegiatanId", "");
   };
 
   // Cascade nomenklatur: Program > Kegiatan > KRO > RO. Opsi diturunkan dari
@@ -239,14 +152,16 @@ export function PaketFormDialog({
 
   const programOptions = useMemo(() => {
     const m = new Map<string, RO["kro"]["kegiatan"]["program"]>();
-    for (const r of roList) m.set(r.kro.kegiatan.program.id, r.kro.kegiatan.program);
+    for (const r of roList)
+      m.set(r.kro.kegiatan.program.id, r.kro.kegiatan.program);
     return [...m.values()].sort(byCode);
   }, [roList]);
 
   const kegiatanOptions = useMemo(() => {
     const m = new Map<string, RO["kro"]["kegiatan"]>();
     for (const r of roList) {
-      if (filterProgramId && r.kro.kegiatan.program.id !== filterProgramId) continue;
+      if (filterProgramId && r.kro.kegiatan.program.id !== filterProgramId)
+        continue;
       m.set(r.kro.kegiatan.id, r.kro.kegiatan);
     }
     return [...m.values()].sort(byCode);
@@ -255,7 +170,8 @@ export function PaketFormDialog({
   const kroOptions = useMemo(() => {
     const m = new Map<string, RO["kro"]>();
     for (const r of roList) {
-      if (filterProgramId && r.kro.kegiatan.program.id !== filterProgramId) continue;
+      if (filterProgramId && r.kro.kegiatan.program.id !== filterProgramId)
+        continue;
       if (filterKegiatanId && r.kro.kegiatan.id !== filterKegiatanId) continue;
       m.set(r.kro.id, r.kro);
     }
@@ -294,42 +210,20 @@ export function PaketFormDialog({
     [komponenList, selectedRoId],
   );
   const indikatorRoOptions = selectedRO?.indikatorRO ?? [];
-  const ispOptions = useMemo(() => {
-    const programId = selectedRO?.kro.kegiatan.program.id;
-    if (!programId) return [];
-    return sasaranProgramList
-      .filter((sp) => sp.programId === programId)
-      .flatMap((sp) =>
-        sp.indikator.map((i) => ({ ...i, spName: sp.name })),
-      );
-  }, [sasaranProgramList, selectedRO]);
-  const iskOptions = useMemo(() => {
-    const kegiatanId = selectedRO?.kro.kegiatan.id;
-    if (!kegiatanId) return [];
-    return sasaranKegiatanList
-      .filter((sk) => sk.kegiatanId === kegiatanId)
-      .flatMap((sk) => sk.indikator.map((i) => ({ ...i, skName: sk.name })));
-  }, [sasaranKegiatanList, selectedRO]);
 
   const onSubmit = async (data: FormData) => {
     const payload = {
       ...data,
       komponenId: data.komponenId || undefined,
       dokLingStatus: data.dokLingStatus || undefined,
-      catatanPembina: data.catatanPembina || undefined,
-      catatanSspsda: data.catatanSspsda || undefined,
-      pkpnId: data.pkpnId || undefined,
-      indikatorSasaranProgramId: data.indikatorSasaranProgramId || undefined,
-      indikatorSasaranKegiatanId: data.indikatorSasaranKegiatanId || undefined,
       indikatorRoId: data.indikatorRoId || undefined,
-      tematikRenjaId: data.tematikRenjaId || undefined,
     };
     try {
       if (isEdit) {
         await api.patch(`/paket/${editData!.id}`, payload);
         toast.success("Paket berhasil diperbarui");
       } else {
-        await api.post("/paket", { ...payload, planningId });
+        await api.post("/paket", { ...payload, proyekId });
         toast.success("Paket berhasil ditambahkan");
       }
       onSuccess();
@@ -361,6 +255,9 @@ export function PaketFormDialog({
           <SheetTitle className="text-base leading-snug">
             {isEdit ? "Edit Paket" : "Tambah Paket Baru"}
           </SheetTitle>
+          {/* PKPN/ISP/ISK/Tematik RENJA/tagging FKB-FKW-MPA/catatan pembina &
+              SSPSDA sudah pindah ke tab Tagging & Dokumen di form Proyek —
+              1 proyek = 1 set tagging, bukan per paket. */}
         </SheetHeader>
 
         <SheetBody className="px-5 py-5 space-y-6">
@@ -585,9 +482,7 @@ export function PaketFormDialog({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="SINGLE_YEAR">
-                          Single Year
-                        </SelectItem>
+                        <SelectItem value="SINGLE_YEAR">Single Year</SelectItem>
                         <SelectItem value="MULTI_YEAR">Multi Year</SelectItem>
                       </SelectContent>
                     </Select>
@@ -595,9 +490,7 @@ export function PaketFormDialog({
                 </div>
               </div>
 
-              {/* === DOKUMEN LINGKUNGAN ===
-                  Wilayah Sungai pindah ke form Proyek (bagian "Kesesuaian
-                  Proyek") — 1 proyek 1 wilayah sungai, bukan per paket. */}
+              {/* === DOKUMEN LINGKUNGAN === */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                   <MapPinned size={13} /> Dokumen Lingkungan
@@ -612,256 +505,52 @@ export function PaketFormDialog({
                 </div>
               </div>
 
-              {/* === INDIKATOR RENJA — default terbuka & label eksplisit
-                  supaya tidak tersembunyi; sebelumnya tertutup dengan label
-                  generik dan pengguna tidak sadar ini bisa diklik untuk
-                  mengisi PN/PP/KP/PKPN/SP/ISP/SK/ISK/IRO. === */}
-              <Accordion type="single" collapsible defaultValue="indikator">
-                <AccordionItem value="indikator">
-                  <AccordionTrigger>
-                    <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                      <Target size={13} /> Indikator RENJA — PKPN, SP/ISP,
-                      SK/ISK, IRO (opsional)
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    <div className="space-y-3">
-                      {/* PN/PP/KP pindah ke form Proyek — 1 proyek = 1
-                          Kegiatan Prioritas, bukan per paket. */}
-                      <div className="space-y-2">
-                        <Label className="text-xs">PKPN</Label>
-                        <Select
-                          value={watch("pkpnId") || NONE}
-                          onValueChange={(v) =>
-                            setValue("pkpnId", v === NONE ? "" : v)
-                          }
-                        >
-                          <SelectTrigger className="w-full h-9 text-xs">
-                            <SelectValue placeholder="Pilih (opsional)" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                            {pkpnList.map((p) => (
-                              <SelectItem key={p.id} value={p.id}>
-                                {p.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label className="text-xs">
-                          Indikator Sasaran Program (ISP)
-                        </Label>
-                        <Select
-                          value={watch("indikatorSasaranProgramId") || NONE}
-                          onValueChange={(v) =>
-                            setValue(
-                              "indikatorSasaranProgramId",
-                              v === NONE ? "" : v,
-                            )
-                          }
-                          disabled={!selectedRoId}
-                          onOpenChange={(o) => o && setIspSearch("")}
-                        >
-                          <SelectTrigger className="w-full h-9 text-xs">
-                            <SelectValue
-                              placeholder={
-                                selectedRoId
-                                  ? "Pilih (opsional)"
-                                  : "Pilih RO dulu"
-                              }
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                            {ispOptions.length > 20 && (
-                              <SelectSearchBox
-                                value={ispSearch}
-                                onChange={setIspSearch}
-                                placeholder="Cari ISP..."
-                              />
-                            )}
-                            {ispOptions
-                              .filter(
-                                (i) =>
-                                  !ispSearch ||
-                                  i.name
-                                    .toLowerCase()
-                                    .includes(ispSearch.toLowerCase()),
-                              )
-                              .map((i) => (
-                                <SelectItem key={i.id} value={i.id}>
-                                  {i.name}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label className="text-xs">
-                          Indikator Sasaran Kegiatan (ISK)
-                        </Label>
-                        <Select
-                          value={watch("indikatorSasaranKegiatanId") || NONE}
-                          onValueChange={(v) =>
-                            setValue(
-                              "indikatorSasaranKegiatanId",
-                              v === NONE ? "" : v,
-                            )
-                          }
-                          disabled={!selectedRoId}
-                          onOpenChange={(o) => o && setIskSearch("")}
-                        >
-                          <SelectTrigger className="w-full h-9 text-xs">
-                            <SelectValue
-                              placeholder={
-                                selectedRoId
-                                  ? "Pilih (opsional)"
-                                  : "Pilih RO dulu"
-                              }
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                            {iskOptions.length > 20 && (
-                              <SelectSearchBox
-                                value={iskSearch}
-                                onChange={setIskSearch}
-                                placeholder="Cari ISK..."
-                              />
-                            )}
-                            {iskOptions
-                              .filter(
-                                (i) =>
-                                  !iskSearch ||
-                                  i.name
-                                    .toLowerCase()
-                                    .includes(iskSearch.toLowerCase()),
-                              )
-                              .map((i) => (
-                                <SelectItem key={i.id} value={i.id}>
-                                  {i.name}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label className="text-xs">Indikator RO (IRO)</Label>
-                        <Select
-                          value={watch("indikatorRoId") || NONE}
-                          onValueChange={(v) =>
-                            setValue("indikatorRoId", v === NONE ? "" : v)
-                          }
-                          disabled={!selectedRoId}
-                          onOpenChange={(o) => o && setIndikatorRoSearch("")}
-                        >
-                          <SelectTrigger className="w-full h-9 text-xs">
-                            <SelectValue
-                              placeholder={
-                                selectedRoId
-                                  ? "Pilih (opsional)"
-                                  : "Pilih RO dulu"
-                              }
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                            {indikatorRoOptions.length > 20 && (
-                              <SelectSearchBox
-                                value={indikatorRoSearch}
-                                onChange={setIndikatorRoSearch}
-                                placeholder="Cari indikator RO..."
-                              />
-                            )}
-                            {indikatorRoOptions
-                              .filter(
-                                (i) =>
-                                  !indikatorRoSearch ||
-                                  i.nama
-                                    .toLowerCase()
-                                    .includes(indikatorRoSearch.toLowerCase()),
-                              )
-                              .map((i) => (
-                                <SelectItem key={i.id} value={i.id}>
-                                  {i.nama} ({i.satuan})
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label className="text-xs">Tematik RENJA</Label>
-                        <Select
-                          value={watch("tematikRenjaId") || NONE}
-                          onValueChange={(v) =>
-                            setValue("tematikRenjaId", v === NONE ? "" : v)
-                          }
-                        >
-                          <SelectTrigger className="w-full h-9 text-xs">
-                            <SelectValue placeholder="Pilih (opsional)" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                            {tematikList.map((t) => (
-                              <SelectItem key={t.id} value={t.id}>
-                                {t.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-
-              {/* === TAGGING === */}
+              {/* === INDIKATOR RO === */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  <Tags size={13} /> Tagging
+                  <Target size={13} /> Indikator RO
                 </div>
-                <div className="flex items-center gap-5">
-                  {(["fkb", "fkw", "mpa"] as const).map((key) => (
-                    <label
-                      key={key}
-                      className="flex items-center gap-2 text-xs font-medium uppercase cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        className="h-3.5 w-3.5 rounded border-input"
-                        checked={watch(key)}
-                        onChange={(e) => setValue(key, e.target.checked)}
+                <div className="space-y-2">
+                  <Label className="text-xs">Indikator RO (IRO)</Label>
+                  <Select
+                    value={watch("indikatorRoId") || NONE}
+                    onValueChange={(v) =>
+                      setValue("indikatorRoId", v === NONE ? "" : v)
+                    }
+                    disabled={!selectedRoId}
+                    onOpenChange={(o) => o && setIndikatorRoSearch("")}
+                  >
+                    <SelectTrigger className="w-full h-9 text-xs">
+                      <SelectValue
+                        placeholder={
+                          selectedRoId ? "Pilih (opsional)" : "Pilih RO dulu"
+                        }
                       />
-                      {key}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* === CATATAN === */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  <ScrollText size={13} /> Catatan
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">Catatan Pembina</Label>
-                  <Input
-                    className="h-9 text-xs"
-                    {...register("catatanPembina")}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">Catatan SSPSDA</Label>
-                  <Input
-                    className="h-9 text-xs"
-                    {...register("catatanSspsda")}
-                  />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+                      {indikatorRoOptions.length > 20 && (
+                        <SelectSearchBox
+                          value={indikatorRoSearch}
+                          onChange={setIndikatorRoSearch}
+                          placeholder="Cari indikator RO..."
+                        />
+                      )}
+                      {indikatorRoOptions
+                        .filter(
+                          (i) =>
+                            !indikatorRoSearch ||
+                            i.nama
+                              .toLowerCase()
+                              .includes(indikatorRoSearch.toLowerCase()),
+                        )
+                        .map((i) => (
+                          <SelectItem key={i.id} value={i.id}>
+                            {i.nama} ({i.satuan})
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 

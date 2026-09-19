@@ -76,9 +76,7 @@ describe('ProyekService', () => {
               roId: 'ro_1',
               jenis: 'FISIK',
               masaPelaksanaan: 'SINGLE_YEAR',
-              alokasi: [
-                { tahun: 2025, status: 'RENCANA', rm: 1000, rmp: 500 },
-              ],
+              alokasi: [{ tahun: 2025, status: 'RENCANA', rm: 1000, rmp: 500 }],
             },
             {
               name: 'Paket II',
@@ -404,9 +402,9 @@ describe('ProyekService', () => {
         buildProyek({ createdById: 'user_1', status: 'DRAFT' }) as any,
       );
 
-      await expect(
-        service.remove('proyek_1', otherSatkerUser),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(service.remove('proyek_1', otherSatkerUser)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('proyek tidak ditemukan → NotFoundException', async () => {

@@ -432,7 +432,7 @@ export function NomenklaturTab() {
         e.stopPropagation();
         bukaTambah(level, parentId);
       }}
-      className="inline-flex items-center gap-1 rounded-md border border-dashed px-2 py-1 text-[10.5px] text-muted-foreground hover:border-primary hover:text-primary"
+      className="inline-flex items-center gap-1 rounded-md border border-primary/40 bg-primary/5 px-2 py-1 text-[10.5px] font-medium text-primary hover:border-primary hover:bg-primary/10"
     >
       <Plus size={10} /> {label}
     </button>
@@ -462,7 +462,7 @@ export function NomenklaturTab() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <Button variant="outline" onClick={() => bukaTambah("Program")}>
+        <Button onClick={() => bukaTambah("Program")}>
           <Plus size={14} className="mr-1.5" /> Program
         </Button>
         <input

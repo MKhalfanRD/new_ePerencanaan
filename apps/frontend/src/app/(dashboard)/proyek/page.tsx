@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   Plus,
   Search,
@@ -22,7 +22,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { exportPlanningsToExcel } from "@/lib/export-plannings-excel";
+import { exportProyekToExcel } from "@/lib/export-proyek-excel";
 import { nilaiRealisasi } from "@/components/shared/status-config";
 import { punyaRole } from "@/lib/role";
 
@@ -49,9 +49,9 @@ import {
 } from "@/components/ui/tooltip";
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
-import { Planning, PaginatedResponse } from "@/types";
-import { PlanningFormDialog } from "@/components/planning/planning-form-dialog";
-import { PlanningDetailSheet } from "@/components/planning/planning-detail-sheet";
+import { Proyek, PaginatedResponse, Periode } from "@/types";
+import { ProyekFormDialog } from "@/components/proyek/proyek-form-dialog";
+import { ProyekDetailSheet } from "@/components/proyek/proyek-detail-sheet";
 
 const formatRupiah = (val: string | number) =>
   new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(
@@ -67,17 +67,18 @@ const formatRupiahShort = (val: number) => {
 
 // `paket` selalu array dari backend, tapi dijaga di sini juga karena dipakai
 // berulang lintas fungsi di file ini.
-const paketOf = (p: Planning) => p.paket ?? [];
-const alokasiOf = (p: Planning) => paketOf(p).flatMap((pk) => pk.alokasi);
+const paketOf = (p: Proyek) => p.paket ?? [];
+const alokasiOf = (p: Proyek) => paketOf(p).flatMap((pk) => pk.alokasi);
 
 // Penanda cepat di luar tabel: proyek ini sudah punya titik lokasi di peta
 // atau belum, tanpa perlu buka detail.
-const hasLokasi = (p: Planning) =>
-  alokasiOf(p).some((a) => a.lokasi.length > 0);
+const hasLokasi = (p: Proyek) => alokasiOf(p).some((a) => a.lokasi.length > 0);
 
 // Rekap Rencana/Realisasi per tahun dari satu daftar alokasi — dipakai baik
 // di level Proyek (semua paket) maupun di level Paket (satu paket saja).
-const byYearOf = (alokasi: { tahun: number; status: string; total: string }[]) => {
+const byYearOf = (
+  alokasi: { tahun: number; status: string; total: string }[],
+) => {
   const byYear: Record<number, { rencana: number; realisasi: number }> = {};
   for (const a of alokasi) {
     if (!byYear[a.tahun]) byYear[a.tahun] = { rencana: 0, realisasi: 0 };
@@ -87,9 +88,9 @@ const byYearOf = (alokasi: { tahun: number; status: string; total: string }[]) =
   return byYear;
 };
 
-export default function PlanningsPage() {
+export default function ProyekPage() {
   const { user } = useAuthStore();
-  const [plannings, setPlannings] = useState<Planning[]>([]);
+  const [proyekList, setProyekList] = useState<Proyek[]>([]);
   const [showImport, setShowImport] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -103,13 +104,11 @@ export default function PlanningsPage() {
   const [expandedKegiatan, setExpandedKegiatan] = useState<Set<string>>(
     new Set(),
   );
-  const [expandedProyek, setExpandedProyek] = useState<Set<string>>(
-    new Set(),
-  );
+  const [expandedProyek, setExpandedProyek] = useState<Set<string>>(new Set());
 
   const [showForm, setShowForm] = useState(false);
-  const [editData, setEditData] = useState<Planning | null>(null);
-  const [detailData, setDetailData] = useState<Planning | null>(null);
+  const [editData, setEditData] = useState<Proyek | null>(null);
+  const [detailData, setDetailData] = useState<Proyek | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -123,27 +122,41 @@ export default function PlanningsPage() {
   const [filterKro, setFilterKro] = useState("");
   const [filterRo, setFilterRo] = useState("");
 
-  const fetchPlannings = async () => {
+  // Periode — filter server-side (bukan cascading dari data ter-load kayak
+  // Balai/Program/dst) karena tabel rekap tahun menggabungkan rentang
+  // periode SEMUA proyek yang tampil; tanpa filter ini, satu proyek lama
+  // berperiode beda bikin kolom tahun melebar ke rentang periode itu juga.
+  const [periodeList, setPeriodeList] = useState<Periode[]>([]);
+  const [filterPeriode, setFilterPeriode] = useState("");
+
+  useEffect(() => {
+    api
+      .get<Periode[]>("/master/periodes")
+      .then((res) => {
+        setPeriodeList(res.data);
+        if (res.data.length > 0) setFilterPeriode(String(res.data[0].id));
+      })
+      .catch(() => {});
+  }, []);
+
+  const fetchProyek = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
         page: String(page),
         limit: "100",
         ...(search && { search }),
+        ...(filterPeriode && { periodeId: filterPeriode }),
       });
-      const res = await api.get<PaginatedResponse<Planning>>(
-        `/plannings?${params}`,
-      );
-      setPlannings(res.data.data);
+      const res = await api.get<PaginatedResponse<Proyek>>(`/proyek?${params}`);
+      setProyekList(res.data.data);
       setTotalPages(res.data.meta.totalPages);
       setTotal(res.data.meta.total);
       // detailData adalah snapshot terpisah (dipilih saat Sheet dibuka) —
       // kalau tidak disegarkan juga di sini, perubahan (tambah/edit alokasi,
       // paket, dst) baru kelihatan setelah Sheet ditutup lalu dibuka lagi.
       setDetailData((prev) =>
-        prev
-          ? (res.data.data.find((p) => p.id === prev.id) ?? prev)
-          : prev,
+        prev ? (res.data.data.find((p) => p.id === prev.id) ?? prev) : prev,
       );
     } catch {
       toast.error("Gagal memuat data proyek");
@@ -153,12 +166,24 @@ export default function PlanningsPage() {
   };
 
   useEffect(() => {
-    fetchPlannings();
-  }, [page]);
+    // Tunggu filterPeriode ke-resolve (default periode dulu dipilih otomatis
+    // setelah periodeList termuat) — kalau tidak, fetch awal tanpa periodeId
+    // bisa menang race melawan fetch ber-periodeId begitu default terpasang.
+    if (!filterPeriode) return;
+    fetchProyek();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, filterPeriode]);
+  const prevSearch = useRef(search);
   useEffect(() => {
+    // Skip di mount (search belum benar-benar berubah) — kalau tidak, fetch
+    // tanpa periodeId ini terjadwal dengan closure lama (filterPeriode masih
+    // "") dan bisa menimpa hasil fetch ber-periodeId begitu default periode
+    // terpasang.
+    if (prevSearch.current === search) return;
+    prevSearch.current = search;
     const timeout = setTimeout(() => {
       setPage(1);
-      fetchPlannings();
+      fetchProyek();
     }, 400);
     return () => clearTimeout(timeout);
   }, [search]);
@@ -167,10 +192,10 @@ export default function PlanningsPage() {
     if (!deleteId) return;
     setDeleting(true);
     try {
-      await api.delete(`/plannings/${deleteId}`);
+      await api.delete(`/proyek/${deleteId}`);
       toast.success("Proyek berhasil dihapus");
       setDeleteId(null);
-      fetchPlannings();
+      fetchProyek();
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Gagal menghapus proyek");
     } finally {
@@ -184,18 +209,18 @@ export default function PlanningsPage() {
     setExporting(true);
     try {
       // Backend membatasi limit maks 100/request — tarik semua halaman.
-      const all: Planning[] = [];
+      const all: Proyek[] = [];
       let page = 1;
       let totalPages = 1;
       do {
-        const res = await api.get<PaginatedResponse<Planning>>("/plannings", {
+        const res = await api.get<PaginatedResponse<Proyek>>("/proyek", {
           params: { page, limit: 100 },
         });
         all.push(...res.data.data);
         totalPages = res.data.meta.totalPages;
         page++;
       } while (page <= totalPages);
-      await exportPlanningsToExcel(all);
+      await exportProyekToExcel(all);
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Gagal mengexport ke Excel");
     } finally {
@@ -205,18 +230,18 @@ export default function PlanningsPage() {
 
   const handleApprove = async (id: string) => {
     try {
-      await api.patch(`/plannings/${id}/approve`);
+      await api.patch(`/proyek/${id}/approve`);
       toast.success("Proyek disetujui");
-      fetchPlannings();
+      fetchProyek();
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Gagal menyetujui proyek");
     }
   };
 
-  const canApprove = (p: Planning) =>
+  const canApprove = (p: Proyek) =>
     p.status === "DRAFT" && punyaRole(user, "ADMINISTRATOR");
 
-  const canDelete = (p: Planning) =>
+  const canDelete = (p: Proyek) =>
     punyaRole(user, "ADMINISTRATOR") || p.createdBy.id === user?.id;
 
   // Opsi filter, dicascade dari data yang sudah termuat: Balai independen;
@@ -231,7 +256,7 @@ export default function PlanningsPage() {
       { code: string; name: string; kroId: string }
     >();
 
-    for (const p of plannings) {
+    for (const p of proyekList) {
       balaiMap.set(p.balai.id, p.balai.name);
       for (const pk of paketOf(p)) {
         const ro = pk.ro;
@@ -244,7 +269,10 @@ export default function PlanningsPage() {
           name: `${keg.code} — ${keg.name}`,
           programId: prog.id,
         });
-        kroMap.set(kro.id, { name: `${kro.code} — ${kro.name}`, kegiatanId: keg.id });
+        kroMap.set(kro.id, {
+          name: `${kro.code} — ${kro.name}`,
+          kegiatanId: keg.id,
+        });
         roMap.set(ro.id, { code: ro.code, name: ro.name, kroId: kro.id });
       }
     }
@@ -264,13 +292,13 @@ export default function PlanningsPage() {
         .filter(([, v]) => !filterKro || v.kroId === filterKro)
         .sort((a, b) => a[1].name.localeCompare(b[1].name)),
     };
-  }, [plannings, filterProgram, filterKegiatan, filterKro]);
+  }, [proyekList, filterProgram, filterKegiatan, filterKro]);
 
   // Proyek lolos filter kalau salah satu paketnya cocok dengan pilihan
   // Program/Kegiatan/KRO/RO (bukan cuma paket pertama) — Balai difilter di
   // level proyek langsung.
-  const filteredPlannings = useMemo(() => {
-    return plannings.filter((p) => {
+  const filteredProyek = useMemo(() => {
+    return proyekList.filter((p) => {
       if (filterBalai && String(p.balai.id) !== filterBalai) return false;
       if (!filterProgram && !filterKegiatan && !filterKro && !filterRo)
         return true;
@@ -284,20 +312,27 @@ export default function PlanningsPage() {
         return true;
       });
     });
-  }, [plannings, filterBalai, filterProgram, filterKegiatan, filterKro, filterRo]);
+  }, [
+    proyekList,
+    filterBalai,
+    filterProgram,
+    filterKegiatan,
+    filterKro,
+    filterRo,
+  ]);
 
   type KegiatanGroup = {
     kegiatanCode: string;
     kegiatanName: string;
     programCode: string;
-    plannings: Planning[];
+    proyekList: Proyek[];
     rencanaByYear: Record<number, number>;
     realisasiByYear: Record<number, number>;
     grandTotalRencana: number;
     grandTotalRealisasi: number;
   };
   type BalaiGroup = {
-    balai: Planning["balai"];
+    balai: Proyek["balai"];
     kegiatanGroups: KegiatanGroup[];
     rencanaByYear: Record<number, number>;
     realisasiByYear: Record<number, number>;
@@ -308,28 +343,38 @@ export default function PlanningsPage() {
   const groups = useMemo(() => {
     const balaiMap = new Map<
       number,
-      Omit<BalaiGroup, "kegiatanGroups"> & { kegiatanMap: Map<string, KegiatanGroup> }
+      Omit<BalaiGroup, "kegiatanGroups"> & {
+        kegiatanMap: Map<string, KegiatanGroup>;
+      }
     >();
     const years = new Set<number>();
 
     const addAlokasi = (
-      target: { rencanaByYear: Record<number, number>; realisasiByYear: Record<number, number>; grandTotalRencana: number; grandTotalRealisasi: number },
+      target: {
+        rencanaByYear: Record<number, number>;
+        realisasiByYear: Record<number, number>;
+        grandTotalRencana: number;
+        grandTotalRealisasi: number;
+      },
       a: { tahun: number; status: string; total: string },
     ) => {
       const value = Number(a.total);
       if (a.status === "RENCANA") {
-        target.rencanaByYear[a.tahun] = (target.rencanaByYear[a.tahun] || 0) + value;
+        target.rencanaByYear[a.tahun] =
+          (target.rencanaByYear[a.tahun] || 0) + value;
         target.grandTotalRencana += value;
       } else {
-        target.realisasiByYear[a.tahun] = (target.realisasiByYear[a.tahun] || 0) + value;
+        target.realisasiByYear[a.tahun] =
+          (target.realisasiByYear[a.tahun] || 0) + value;
         target.grandTotalRealisasi += value;
       }
     };
 
-    for (const p of filteredPlannings) {
+    for (const p of filteredProyek) {
       // Kolom tahun mengikuti rentang periode proyek, bukan cuma tahun yang
       // kebetulan sudah punya alokasi — tahun kosong tetap ditampilkan.
-      for (let y = p.periode.startYear; y <= p.periode.endYear; y++) years.add(y);
+      for (let y = p.periode.startYear; y <= p.periode.endYear; y++)
+        years.add(y);
 
       const firstRo = paketOf(p)[0]?.ro;
       const kegiatanCode = firstRo?.kro?.kegiatan?.code || "LAINNYA";
@@ -353,7 +398,7 @@ export default function PlanningsPage() {
           kegiatanCode,
           kegiatanName,
           programCode,
-          plannings: [],
+          proyekList: [],
           rencanaByYear: {},
           realisasiByYear: {},
           grandTotalRencana: 0,
@@ -361,7 +406,7 @@ export default function PlanningsPage() {
         });
       }
       const kegGroup = balaiGroup.kegiatanMap.get(kegiatanCode)!;
-      kegGroup.plannings.push(p);
+      kegGroup.proyekList.push(p);
 
       for (const a of alokasiOf(p)) {
         addAlokasi(kegGroup, a);
@@ -380,7 +425,7 @@ export default function PlanningsPage() {
       .sort((a, b) => a.balai.name.localeCompare(b.balai.name));
 
     return { balaiGroups, years: sortedYears };
-  }, [filteredPlannings]);
+  }, [filteredProyek]);
 
   const allCollapsed =
     groups.balaiGroups.length > 0 && expandedBalai.size === 0;
@@ -412,7 +457,7 @@ export default function PlanningsPage() {
           ),
         ),
       );
-      setExpandedProyek(new Set(filteredPlannings.map((p) => p.id)));
+      setExpandedProyek(new Set(filteredProyek.map((p) => p.id)));
     } else {
       setExpandedBalai(new Set());
       setExpandedKegiatan(new Set());
@@ -423,7 +468,7 @@ export default function PlanningsPage() {
   // Kode identitas ringkas per proyek, mis. "WA.7755.EBA" — dari kode Balai +
   // Program.Kegiatan pada alokasi pertamanya. Ditampilkan langsung di baris
   // list supaya user tidak perlu buka detail hanya untuk mengenali proyek.
-  const getPlanningKode = (p: Planning) => {
+  const getProyekKode = (p: Proyek) => {
     const ro = paketOf(p)[0]?.ro;
     const balaiCode = p.balai.code || p.balai.shortName || "-";
     const programCode = ro?.kro?.kegiatan?.program?.code || "-";
@@ -476,7 +521,7 @@ export default function PlanningsPage() {
     );
   };
 
-  const renderActions = (p: Planning) => (
+  const renderActions = (p: Proyek) => (
     <TooltipProvider delayDuration={300}>
       <div className="flex items-center gap-1 shrink-0">
         {canApprove(p) && (
@@ -588,9 +633,23 @@ export default function PlanningsPage() {
           yang sudah termuat di halaman ini. */}
       <div className="flex items-center gap-2 flex-wrap">
         <select
+          value={filterPeriode}
+          onChange={(e) => {
+            setFilterPeriode(e.target.value);
+            setPage(1);
+          }}
+          className="h-7 w-[160px] rounded-md border bg-background px-2 text-xs"
+        >
+          {periodeList.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <select
           value={filterBalai}
           onChange={(e) => setFilterBalai(e.target.value)}
-          className="h-8 rounded-md border bg-background px-2 text-xs"
+          className="h-7 w-[160px] rounded-md border bg-background px-2 text-xs"
         >
           <option value="">Semua Balai</option>
           {filterOptions.balai.map(([id, name]) => (
@@ -607,7 +666,7 @@ export default function PlanningsPage() {
             setFilterKro("");
             setFilterRo("");
           }}
-          className="h-8 rounded-md border bg-background px-2 text-xs"
+          className="h-7 w-[160px] rounded-md border bg-background px-2 text-xs"
         >
           <option value="">Semua Program</option>
           {filterOptions.program.map(([id, name]) => (
@@ -623,7 +682,7 @@ export default function PlanningsPage() {
             setFilterKro("");
             setFilterRo("");
           }}
-          className="h-8 rounded-md border bg-background px-2 text-xs max-w-[220px]"
+          className="h-7 w-[160px] rounded-md border bg-background px-2 text-xs"
         >
           <option value="">Semua Kegiatan</option>
           {filterOptions.kegiatan.map(([id, v]) => (
@@ -638,7 +697,7 @@ export default function PlanningsPage() {
             setFilterKro(e.target.value);
             setFilterRo("");
           }}
-          className="h-8 rounded-md border bg-background px-2 text-xs max-w-[220px]"
+          className="h-7 w-[160px] rounded-md border bg-background px-2 text-xs"
         >
           <option value="">Semua KRO</option>
           {filterOptions.kro.map(([id, v]) => (
@@ -650,7 +709,7 @@ export default function PlanningsPage() {
         <select
           value={filterRo}
           onChange={(e) => setFilterRo(e.target.value)}
-          className="h-8 rounded-md border bg-background px-2 text-xs max-w-[220px]"
+          className="h-7 w-[160px] rounded-md border bg-background px-2 text-xs"
         >
           <option value="">Semua RO</option>
           {filterOptions.ro.map(([id, v]) => (
@@ -710,7 +769,7 @@ export default function PlanningsPage() {
           groups.balaiGroups.map((balaiGroup) => {
             const balaiOpen = expandedBalai.has(balaiGroup.balai.id);
             const proyekCount = balaiGroup.kegiatanGroups.reduce(
-              (acc, kg) => acc + kg.plannings.length,
+              (acc, kg) => acc + kg.proyekList.length,
               0,
             );
 
@@ -809,7 +868,7 @@ export default function PlanningsPage() {
                                   {kegGroup.kegiatanName}
                                 </p>
                                 <p className="text-[11px] text-muted-foreground">
-                                  {kegGroup.plannings.length} proyek
+                                  {kegGroup.proyekList.length} proyek
                                 </p>
                               </div>
                               <div className="hidden md:flex items-center gap-4 shrink-0">
@@ -847,7 +906,7 @@ export default function PlanningsPage() {
 
                           {kegOpen && (
                             <div className="divide-y divide-border border-t bg-background">
-                              {kegGroup.plannings.map((p) => {
+                              {kegGroup.proyekList.map((p) => {
                                 const byYear = byYearOf(alokasiOf(p));
                                 const total = Object.values(byYear).reduce(
                                   (acc, v) => {
@@ -867,7 +926,10 @@ export default function PlanningsPage() {
                                       tabIndex={0}
                                       onClick={() => toggleProyek(p.id)}
                                       onKeyDown={(e) => {
-                                        if (e.key === "Enter" || e.key === " ") {
+                                        if (
+                                          e.key === "Enter" ||
+                                          e.key === " "
+                                        ) {
                                           e.preventDefault();
                                           toggleProyek(p.id);
                                         }
@@ -888,14 +950,18 @@ export default function PlanningsPage() {
                                         )}
                                         <div className="min-w-0 flex-1">
                                           <span className="inline-block text-[11px] font-mono font-medium text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded shrink-0 truncate mb-1">
-                                            {getPlanningKode(p)}
+                                            {getProyekKode(p)}
                                           </span>
                                           <p className="text-sm font-medium truncate mb-0.5 group-hover:text-primary transition-colors">
                                             {p.projectName}
                                           </p>
                                           <div className="flex items-center gap-2 text-[11px] text-muted-foreground truncate">
-                                            <span>{paketOf(p).length} paket</span>
-                                            <TooltipProvider delayDuration={300}>
+                                            <span>
+                                              {paketOf(p).length} paket
+                                            </span>
+                                            <TooltipProvider
+                                              delayDuration={300}
+                                            >
                                               <Tooltip>
                                                 <TooltipTrigger asChild>
                                                   <MapPin
@@ -914,7 +980,9 @@ export default function PlanningsPage() {
                                                 </TooltipContent>
                                               </Tooltip>
                                             </TooltipProvider>
-                                            <TooltipProvider delayDuration={300}>
+                                            <TooltipProvider
+                                              delayDuration={300}
+                                            >
                                               <Tooltip>
                                                 <TooltipTrigger asChild>
                                                   <StickyNote
@@ -977,9 +1045,7 @@ export default function PlanningsPage() {
                                                 key={pk.id}
                                                 role="button"
                                                 tabIndex={0}
-                                                onClick={() =>
-                                                  setDetailData(p)
-                                                }
+                                                onClick={() => setDetailData(p)}
                                                 onKeyDown={(e) => {
                                                   if (
                                                     e.key === "Enter" ||
@@ -1076,27 +1142,27 @@ export default function PlanningsPage() {
         </div>
       )}
 
-      <PlanningFormDialog
+      <ProyekFormDialog
         open={showForm}
         onClose={() => setShowForm(false)}
         onSuccess={() => {
           setShowForm(false);
-          fetchPlannings();
+          fetchProyek();
         }}
         editData={editData}
       />
 
       {detailData && (
-        <PlanningDetailSheet
+        <ProyekDetailSheet
           open={!!detailData}
-          planning={detailData}
+          proyek={detailData}
           onClose={() => setDetailData(null)}
           onEdit={(p) => {
             setDetailData(null);
             setEditData(p);
             setShowForm(true);
           }}
-          onRefresh={fetchPlannings}
+          onRefresh={fetchProyek}
         />
       )}
 
@@ -1105,7 +1171,7 @@ export default function PlanningsPage() {
         onClose={() => setShowImport(false)}
         onSuccess={() => {
           setShowImport(false);
-          fetchPlannings();
+          fetchProyek();
         }}
       />
 

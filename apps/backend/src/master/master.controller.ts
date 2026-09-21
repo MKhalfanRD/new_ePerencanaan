@@ -101,6 +101,18 @@ export class MasterController {
     return this.masterService.getTematikRenja();
   }
 
+  @ApiOperation({ summary: 'Daftar Sumber Usulan Proyek' })
+  @Get('sumber-usulan-proyek')
+  getSumberUsulanProyek() {
+    return this.masterService.getSumberUsulanProyek();
+  }
+
+  @ApiOperation({ summary: 'Daftar Tagging Dinamis' })
+  @Get('tagging-dinamis')
+  getTaggingDinamis() {
+    return this.masterService.getTaggingDinamis();
+  }
+
   @ApiOperation({ summary: 'Daftar Sasaran Program (SP, dengan ISP)' })
   @Get('sasaran-program')
   getSasaranProgram() {
@@ -503,6 +515,46 @@ export class MasterController {
   @Delete('tematik-renja/:id')
   deleteTematikRenja(@Param('id') id: string) {
     return this.masterService.deleteTematikRenja(id);
+  }
+
+  // ========== CRUD SUMBER USULAN PROYEK ==========
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('sumber-usulan-proyek')
+  createSumberUsulanProyek(@Body() dto: any) {
+    return this.masterService.createSumberUsulanProyek(dto);
+  }
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Patch('sumber-usulan-proyek/:id')
+  updateSumberUsulanProyek(@Param('id') id: string, @Body() dto: any) {
+    return this.masterService.updateSumberUsulanProyek(id, dto);
+  }
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Delete('sumber-usulan-proyek/:id')
+  deleteSumberUsulanProyek(@Param('id') id: string) {
+    return this.masterService.deleteSumberUsulanProyek(id);
+  }
+
+  // ========== CRUD TAGGING DINAMIS ==========
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('tagging-dinamis')
+  createTaggingDinamis(@Body() dto: any) {
+    return this.masterService.createTaggingDinamis(dto);
+  }
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Patch('tagging-dinamis/:id')
+  updateTaggingDinamis(@Param('id') id: string, @Body() dto: any) {
+    return this.masterService.updateTaggingDinamis(id, dto);
+  }
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Delete('tagging-dinamis/:id')
+  deleteTaggingDinamis(@Param('id') id: string) {
+    return this.masterService.deleteTaggingDinamis(id);
   }
 
   // ========== CRUD SASARAN PROGRAM / KEGIATAN + INDIKATORNYA ==========

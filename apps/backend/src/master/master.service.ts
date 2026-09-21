@@ -61,7 +61,12 @@ export class MasterService {
   }
   getKegiatan() {
     return this.prisma.kegiatan.findMany({
-      include: { program: true },
+      include: {
+        program: true,
+        // dipakai frontend buat nentuin tab evaluasi tampil atau tidak
+        // (kegiatan punya evaluasi kalau ada baris EvaluasiItem)
+        _count: { select: { evaluasiItem: true } },
+      },
       orderBy: { name: 'asc' },
     });
   }
@@ -164,6 +169,14 @@ export class MasterService {
   }
   getTematikRenja() {
     return this.prisma.tematikRenja.findMany({ orderBy: { name: 'asc' } });
+  }
+  getSumberUsulanProyek() {
+    return this.prisma.sumberUsulanProyek.findMany({
+      orderBy: { name: 'asc' },
+    });
+  }
+  getTaggingDinamis() {
+    return this.prisma.taggingDinamis.findMany({ orderBy: { name: 'asc' } });
   }
   getSasaranProgram() {
     return this.prisma.sasaranProgram.findMany({
@@ -530,6 +543,30 @@ export class MasterService {
   async deleteTematikRenja(id: string) {
     await this.prisma.tematikRenja.delete({ where: { id } });
     return { message: 'Tematik RENJA berhasil dihapus' };
+  }
+
+  // ========== SUMBER USULAN PROYEK ==========
+  createSumberUsulanProyek(dto: any) {
+    return this.prisma.sumberUsulanProyek.create({ data: dto });
+  }
+  updateSumberUsulanProyek(id: string, dto: any) {
+    return this.prisma.sumberUsulanProyek.update({ where: { id }, data: dto });
+  }
+  async deleteSumberUsulanProyek(id: string) {
+    await this.prisma.sumberUsulanProyek.delete({ where: { id } });
+    return { message: 'Sumber Usulan Proyek berhasil dihapus' };
+  }
+
+  // ========== TAGGING DINAMIS ==========
+  createTaggingDinamis(dto: any) {
+    return this.prisma.taggingDinamis.create({ data: dto });
+  }
+  updateTaggingDinamis(id: string, dto: any) {
+    return this.prisma.taggingDinamis.update({ where: { id }, data: dto });
+  }
+  async deleteTaggingDinamis(id: string) {
+    await this.prisma.taggingDinamis.delete({ where: { id } });
+    return { message: 'Tagging Dinamis berhasil dihapus' };
   }
 
   // ========== SASARAN PROGRAM (SP) & INDIKATORNYA (ISP) ==========

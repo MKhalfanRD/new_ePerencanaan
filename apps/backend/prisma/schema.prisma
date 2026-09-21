@@ -51,12 +51,10 @@ enum JenisPaket {
   NON_FISIK
 }
 
-enum SumberUsulanProyek {
-  PEMERINTAH_DAERAH
-  KEMENTERIAN_LEMBAGA
-  MASYARAKAT
-  TINDAK_LANJUT_RENAKSI
-  LAINNYA
+enum StatusKriteriaTeknis {
+  RENCANA
+  SUDAH_ADA
+  TIDAK_PERLU
 }
 
 // =============================================
@@ -374,6 +372,20 @@ model TematikRenja {
   @@map("tematik_renja")
 }
 
+model SumberUsulanProyek {
+  id   String @id @default(cuid())
+  name String @unique @db.VarChar(255)
+
+  @@map("sumber_usulan_proyek")
+}
+
+model TaggingDinamis {
+  id   String @id @default(cuid())
+  name String @unique @db.VarChar(255)
+
+  @@map("tagging_dinamis")
+}
+
 // =============================================
 // MASTER: Sasaran Program/Kegiatan — SP/ISP (anak Program), SK/ISK (anak Kegiatan)
 // =============================================
@@ -629,18 +641,26 @@ model Proyek {
   wilayahSungaiId String?
   wilayahSungai   WilayahSungai? @relation(fields: [wilayahSungaiId], references: [id])
 
-  // Dasar pelaksanaan — tab "Dasar Pelaksanaan".
-  sumberUsulanProyek  SumberUsulanProyek?
-  sumberUsulanLainnya String?             @db.Text
-  justifikasiProyek   String?             @db.Text
+  // Dasar pelaksanaan — tab "Dasar Pelaksanaan". Nilai berupa nama dari
+  // master data SumberUsulanProyek (bukan FK id — lihat plan tab dinamis),
+  // supaya admin bisa nambah/ubah pilihan tanpa migration.
+  sumberUsulanProyek  String? @db.VarChar(255)
+  sumberUsulanLainnya String? @db.Text
+  justifikasiProyek   String? @db.Text
 
   // StudiLayak/DED/LARAP di DB.xlsx cuma angka tahun polos, tanpa status
   // terpisah — jadi field langsung, bukan lewat KriteriaDokumen generic
   // (dibuang, lihat docs-planning/audit-restrukturisasi-db-xlsx.md §3.3).
-  tahunStudiLayak        Int? @db.SmallInt
-  tahunDed               Int? @db.SmallInt
-  tahunLarap             Int? @db.SmallInt
-  tahunDokumenLingkungan Int? @db.SmallInt
+  // status* = kesiapan dokumen (Rencana/Sudah Ada/Tidak Perlu), dipasangkan
+  // dengan kolom tahun masing-masing.
+  tahunStudiLayak        Int?                  @db.SmallInt
+  statusStudiLayak       StatusKriteriaTeknis? @default(RENCANA)
+  tahunDed               Int?                  @db.SmallInt
+  statusDed              StatusKriteriaTeknis? @default(RENCANA)
+  tahunLarap             Int?                  @db.SmallInt
+  statusLarap            StatusKriteriaTeknis? @default(RENCANA)
+  tahunDokumenLingkungan Int?                  @db.SmallInt
+  statusDokumenLingkungan StatusKriteriaTeknis? @default(RENCANA)
 
   // === TAGGING === pindah dari Paket ke sini (1 proyek = 1 set tagging,
   // bukan per paket — lihat plan "Rombak Modal Proyek jadi 7 Tab").

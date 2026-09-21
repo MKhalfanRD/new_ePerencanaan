@@ -176,11 +176,21 @@ function FlatMasterTable({
 export function TaggingRenjaTab() {
   const pkpn = useFlatMaster("/master/pkpn", "PKPN");
   const tematik = useFlatMaster("/master/tematik-renja", "Tematik RENJA");
+  const sumberUsulan = useFlatMaster(
+    "/master/sumber-usulan-proyek",
+    "Sumber Usulan Proyek",
+  );
+  const taggingDinamis = useFlatMaster(
+    "/master/tagging-dinamis",
+    "Tagging Dinamis",
+  );
 
   return (
     <div className="space-y-8">
       <FlatMasterTable title="PKPN" m={pkpn} />
       <FlatMasterTable title="Tematik RENJA" m={tematik} />
+      <FlatMasterTable title="Sumber Usulan Proyek" m={sumberUsulan} />
+      <FlatMasterTable title="Tagging Dinamis" m={taggingDinamis} />
     </div>
   );
 }

@@ -178,12 +178,7 @@ export interface LokasiAlokasi {
   createdAt: string;
 }
 
-export type SumberUsulanProyek =
-  | "PEMERINTAH_DAERAH"
-  | "KEMENTERIAN_LEMBAGA"
-  | "MASYARAKAT"
-  | "TINDAK_LANJUT_RENAKSI"
-  | "LAINNYA";
+export type StatusKriteriaTeknis = "RENCANA" | "SUDAH_ADA" | "TIDAK_PERLU";
 
 export interface DokumenPendukung {
   id: string;
@@ -207,16 +202,20 @@ export interface Proyek {
   wilayahSungaiId?: string;
   wilayahSungai?: { id: string; name: string };
 
-  // === Dasar Pelaksanaan ===
-  sumberUsulanProyek?: SumberUsulanProyek;
+  // === Dasar Pelaksanaan === nama dari master data SumberUsulanProyek
+  sumberUsulanProyek?: string;
   sumberUsulanLainnya?: string;
   justifikasiProyek?: string;
 
   // === Kriteria Teknis === StudiLayak/DED/LARAP — angka tahun polos sesuai DB.xlsx
   tahunStudiLayak?: number;
+  statusStudiLayak?: StatusKriteriaTeknis;
   tahunDed?: number;
+  statusDed?: StatusKriteriaTeknis;
   tahunLarap?: number;
+  statusLarap?: StatusKriteriaTeknis;
   tahunDokumenLingkungan?: number;
+  statusDokumenLingkungan?: StatusKriteriaTeknis;
 
   // === Tagging === RPJMN (PN>PP>KP), RENSTRA (SP/ISP, SK/ISK), RENJA (Tematik, PKPN)
   kegiatanPrioritasId?: string;

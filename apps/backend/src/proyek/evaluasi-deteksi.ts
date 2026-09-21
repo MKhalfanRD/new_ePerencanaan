@@ -52,19 +52,31 @@ type Aturan = {
   keterangan?: (input: ProyekEvaluasiInput) => string | undefined;
 };
 
+// Sumber Usulan Proyek dulu enum hardcode (PEMERINTAH_DAERAH dkk), sekarang
+// nama dari master data (lihat prisma/scripts/seed-sumber-usulan-proyek.ts,
+// 5 label diseed persis sama). Cocokkan case-insensitive terhadap label itu.
+// ponytail: kalau admin master data ganti nama salah satu dari 5 label ini,
+// deteksi di bawah berhenti cocok — upgrade ke matching by id kalau field
+// form-nya diubah jadi simpan id, bukan nama.
+const sumberUsulanIs = (
+  nama: string | null | undefined,
+  label: string,
+): boolean => nama?.trim().toLowerCase() === label;
+
 const ATURAN: Aturan[] = [
   {
     cocok: (n) => n.includes('usulan pemerintah daerah'),
-    aktif: (i) => i.sumberUsulanProyek === 'PEMERINTAH_DAERAH',
+    aktif: (i) => sumberUsulanIs(i.sumberUsulanProyek, 'pemerintah daerah'),
   },
   {
     cocok: (n) =>
       n.includes('direktif dirjen sda') || n.includes('direktif menteri pu'),
-    aktif: (i) => i.sumberUsulanProyek === 'KEMENTERIAN_LEMBAGA',
+    aktif: (i) => sumberUsulanIs(i.sumberUsulanProyek, 'kementerian/lembaga'),
   },
   {
     cocok: (n) => n.includes('renaksi nasional'),
-    aktif: (i) => i.sumberUsulanProyek === 'TINDAK_LANJUT_RENAKSI',
+    aktif: (i) =>
+      sumberUsulanIs(i.sumberUsulanProyek, 'tindak lanjut renaksi'),
   },
   {
     cocok: (n) => n === 'rpjmn',
@@ -168,7 +180,7 @@ if (require.main === module) {
 
   const hasil = deteksiEvaluasiItemIds(
     {
-      sumberUsulanProyek: 'PEMERINTAH_DAERAH',
+      sumberUsulanProyek: 'Pemerintah Daerah',
       kegiatanPrioritasId: 'kp1',
       tahunDed: 2022,
       tahunDokumenLingkungan: null,

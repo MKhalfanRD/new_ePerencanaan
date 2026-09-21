@@ -61,6 +61,7 @@ interface KegiatanOpt {
   name: string;
   code: string;
   program: { id: string; name: string; code: string };
+  _count: { evaluasiItem: number };
 }
 interface PkpnOpt {
   id: string;
@@ -90,24 +91,20 @@ const schema = z.object({
   projectName: z.string().min(1, "Nama proyek wajib diisi"),
   wilayahSungaiId: z.string().optional(),
 
-  // Tab 2: Dasar Pelaksanaan
-  sumberUsulanProyek: z
-    .enum([
-      "PEMERINTAH_DAERAH",
-      "KEMENTERIAN_LEMBAGA",
-      "MASYARAKAT",
-      "TINDAK_LANJUT_RENAKSI",
-      "LAINNYA",
-    ])
-    .optional(),
+  // Tab 2: Dasar Pelaksanaan — nilai dari master data SumberUsulanProyek
+  sumberUsulanProyek: z.string().optional(),
   sumberUsulanLainnya: z.string().optional(),
   justifikasiProyek: z.string().optional(),
 
   // Tab 3: Kriteria Teknis
   tahunStudiLayak: z.number().optional(),
+  statusStudiLayak: z.enum(["RENCANA", "SUDAH_ADA", "TIDAK_PERLU"]),
   tahunDed: z.number().optional(),
+  statusDed: z.enum(["RENCANA", "SUDAH_ADA", "TIDAK_PERLU"]),
   tahunLarap: z.number().optional(),
+  statusLarap: z.enum(["RENCANA", "SUDAH_ADA", "TIDAK_PERLU"]),
   tahunDokumenLingkungan: z.number().optional(),
+  statusDokumenLingkungan: z.enum(["RENCANA", "SUDAH_ADA", "TIDAK_PERLU"]),
   kebutuhanTanah: z.boolean(),
   kewenangan: z.enum(["PUSAT", "DAERAH"]),
 
@@ -183,9 +180,13 @@ const FIELD_TO_TAB: Record<string, (typeof TABS)[number]["value"]> = {
   sumberUsulanLainnya: "dasar",
   justifikasiProyek: "dasar",
   tahunStudiLayak: "kriteria",
+  statusStudiLayak: "kriteria",
   tahunDed: "kriteria",
+  statusDed: "kriteria",
   tahunLarap: "kriteria",
+  statusLarap: "kriteria",
   tahunDokumenLingkungan: "kriteria",
+  statusDokumenLingkungan: "kriteria",
   kebutuhanTanah: "kriteria",
   kewenangan: "kriteria",
   paket: "pemaketan",
@@ -257,6 +258,12 @@ export function ProyekFormDialog({
   const [selectedPpId, setSelectedPpId] = useState("");
   const [pkpnList, setPkpnList] = useState<PkpnOpt[]>([]);
   const [tematikList, setTematikList] = useState<TematikOpt[]>([]);
+  const [sumberUsulanList, setSumberUsulanList] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const [taggingDinamisMaster, setTaggingDinamisMaster] = useState<
+    { id: string; name: string }[]
+  >([]);
   const [sasaranProgramList, setSasaranProgramList] = useState<
     SasaranProgramOpt[]
   >([]);
@@ -268,7 +275,6 @@ export function ProyekFormDialog({
   const [ispSearch, setIspSearch] = useState("");
   const [iskSearch, setIskSearch] = useState("");
 
-  const [taggingDinamisInput, setTaggingDinamisInput] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [uploadingDokumen, setUploadingDokumen] = useState(false);
   const [dokumenList, setDokumenList] = useState<
@@ -299,6 +305,10 @@ export function ProyekFormDialog({
     defaultValues: {
       kewenangan: "PUSAT",
       kebutuhanTanah: false,
+      statusStudiLayak: "RENCANA",
+      statusDed: "RENCANA",
+      statusLarap: "RENCANA",
+      statusDokumenLingkungan: "RENCANA",
       fkb: false,
       fkw: false,
       mpa: false,
@@ -328,20 +338,26 @@ export function ProyekFormDialog({
       api.get("/master/tematik-renja"),
       api.get("/master/sasaran-program"),
       api.get("/master/sasaran-kegiatan"),
+      api.get("/master/sumber-usulan-proyek"),
+      api.get("/master/tagging-dinamis"),
     ])
-      .then(([b, p, r, k, ws, keg, pn, pkpn, tematik, sp, sk]) => {
-        setBalaiList(b.data);
-        setPeriodeList(p.data);
-        setROList(r.data);
-        setKomponenList(k.data);
-        setWilayahSungaiList(ws.data);
-        setKegiatanList(keg.data);
-        setPnList(pn.data);
-        setPkpnList(pkpn.data);
-        setTematikList(tematik.data);
-        setSasaranProgramList(sp.data);
-        setSasaranKegiatanList(sk.data);
-      })
+      .then(
+        ([b, p, r, k, ws, keg, pn, pkpn, tematik, sp, sk, sumber, tagging]) => {
+          setBalaiList(b.data);
+          setPeriodeList(p.data);
+          setROList(r.data);
+          setKomponenList(k.data);
+          setWilayahSungaiList(ws.data);
+          setKegiatanList(keg.data);
+          setPnList(pn.data);
+          setPkpnList(pkpn.data);
+          setTematikList(tematik.data);
+          setSasaranProgramList(sp.data);
+          setSasaranKegiatanList(sk.data);
+          setSumberUsulanList(sumber.data);
+          setTaggingDinamisMaster(tagging.data);
+        },
+      )
       .finally(() => setLoadingMaster(false));
   }, [open]);
 
@@ -360,9 +376,14 @@ export function ProyekFormDialog({
         sumberUsulanLainnya: editData.sumberUsulanLainnya || "",
         justifikasiProyek: editData.justifikasiProyek || "",
         tahunStudiLayak: editData.tahunStudiLayak,
+        statusStudiLayak: editData.statusStudiLayak || "RENCANA",
         tahunDed: editData.tahunDed,
+        statusDed: editData.statusDed || "RENCANA",
         tahunLarap: editData.tahunLarap,
+        statusLarap: editData.statusLarap || "RENCANA",
         tahunDokumenLingkungan: editData.tahunDokumenLingkungan,
+        statusDokumenLingkungan:
+          editData.statusDokumenLingkungan || "RENCANA",
         kebutuhanTanah: editData.kebutuhanTanah,
         kewenangan: editData.kewenangan,
         paket: [],
@@ -400,6 +421,10 @@ export function ProyekFormDialog({
       reset({
         kewenangan: "PUSAT",
         kebutuhanTanah: false,
+        statusStudiLayak: "RENCANA",
+        statusDed: "RENCANA",
+        statusLarap: "RENCANA",
+        statusDokumenLingkungan: "RENCANA",
         fkb: false,
         fkw: false,
         mpa: false,
@@ -409,7 +434,26 @@ export function ProyekFormDialog({
     }
   }, [editData, open]);
 
-  const allTabsVisited = TABS.every((t) => visitedTabs.has(t.value));
+  // Cuma 4 kegiatan (Irwa/Supan/Bendungan/Air Tanah) yang punya EvaluasiItem
+  // di master data — itu yang menentukan tab lengkap vs tab minimal, bukan
+  // daftar kegiatan hardcode. Belum pilih kegiatan -> anggap true (tampilkan
+  // semua tab dulu, jangan bikin tab tiba-tiba hilang sebelum sempat pilih).
+  const hasEvaluasi =
+    !selectedKegiatanId ||
+    (kegiatanList.find((k) => k.id === selectedKegiatanId)?._count
+      .evaluasiItem ?? 0) > 0;
+  const visibleTabs = hasEvaluasi
+    ? TABS
+    : TABS.filter((t) => t.value === "identitas" || t.value === "pemaketan");
+
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.value === activeTab)) {
+      setActiveTab("identitas");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasEvaluasi]);
+
+  const allTabsVisited = visibleTabs.every((t) => visitedTabs.has(t.value));
 
   const roOptionsFiltered = selectedKegiatanId
     ? roList.filter((r) => r.kro.kegiatan.id === selectedKegiatanId)
@@ -432,11 +476,9 @@ export function ProyekFormDialog({
     skOptionsFiltered.find((sk) => sk.id === selectedSkId)?.indikator ?? [];
 
   const taggingDinamis = watch("taggingDinamis") ?? [];
-  const tambahTaggingDinamis = () => {
-    const v = taggingDinamisInput.trim();
+  const tambahTaggingDinamis = (v: string) => {
     if (!v || taggingDinamis.includes(v)) return;
     setValue("taggingDinamis", [...taggingDinamis, v], { shouldDirty: true });
-    setTaggingDinamisInput("");
   };
   const hapusTaggingDinamis = (v: string) => {
     setValue(
@@ -675,7 +717,7 @@ export function ProyekFormDialog({
           >
             <div className="px-6 pt-2">
               <TabsList className="w-full flex-nowrap">
-                {TABS.map((t) => (
+                {visibleTabs.map((t) => (
                   <TabsTrigger
                     key={t.value}
                     value={t.value}
@@ -882,52 +924,37 @@ export function ProyekFormDialog({
                 <div className="grid grid-cols-2 gap-5 pl-12">
                   <div className="col-span-2 space-y-2">
                     <Label>Sumber Usulan Proyek</Label>
-                    <div className="flex flex-nowrap gap-2">
-                      {/* Satu baris — muat karena tab ini masih cukup lebar
-                          (col-span-2), tidak perlu wrap ke baris kedua. */}
-                      {(
-                        [
-                          ["PEMERINTAH_DAERAH", "Pemerintah Daerah"],
-                          ["KEMENTERIAN_LEMBAGA", "Kementerian/Lembaga"],
-                          ["MASYARAKAT", "Masyarakat"],
-                          ["TINDAK_LANJUT_RENAKSI", "Tindak Lanjut Renaksi"],
-                          ["LAINNYA", "Lainnya"],
-                        ] as const
-                      ).map(([value, label]) => {
-                        const active = watch("sumberUsulanProyek") === value;
-                        return (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() =>
-                              setValue(
-                                "sumberUsulanProyek",
-                                active ? undefined : value,
-                                { shouldDirty: true },
-                              )
-                            }
-                            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                              active
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-background hover:bg-accent"
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <Select
+                      value={watch("sumberUsulanProyek") || NONE}
+                      onValueChange={(v) =>
+                        setValue("sumberUsulanProyek", v === NONE ? undefined : v, {
+                          shouldDirty: true,
+                        })
+                      }
+                    >
+                      <SelectTrigger className="h-10 w-full">
+                        <SelectValue placeholder="Pilih sumber usulan" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+                        {sumberUsulanList.map((s) => (
+                          <SelectItem key={s.id} value={s.name}>
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  {(watch("sumberUsulanProyek") === "PEMERINTAH_DAERAH" ||
-                    watch("sumberUsulanProyek") === "KEMENTERIAN_LEMBAGA" ||
-                    watch("sumberUsulanProyek") === "LAINNYA") && (
+                  {(watch("sumberUsulanProyek") === "Pemerintah Daerah" ||
+                    watch("sumberUsulanProyek") === "Kementerian/Lembaga" ||
+                    watch("sumberUsulanProyek") === "Lainnya") && (
                     <div className="col-span-2 space-y-2">
                       <Label>
-                        {watch("sumberUsulanProyek") === "PEMERINTAH_DAERAH"
+                        {watch("sumberUsulanProyek") === "Pemerintah Daerah"
                           ? "Pemerintah Daerah yang Mengusulkan"
                           : watch("sumberUsulanProyek") ===
-                              "KEMENTERIAN_LEMBAGA"
+                              "Kementerian/Lembaga"
                             ? "Kementerian/Lembaga yang Mengusulkan"
                             : "Sumber Usulan Lainnya"}
                       </Label>
@@ -956,50 +983,51 @@ export function ProyekFormDialog({
                   description="Kesiapan dokumen teknis — dipakai untuk deteksi skor evaluasi otomatis"
                 />
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-5 pl-12">
-                  <div className="space-y-2">
-                    <Label className="text-xs">Studi Kelayakan</Label>
-                    <Input
-                      type="number"
-                      placeholder="Tahun"
-                      className="h-9 text-xs"
-                      {...register("tahunStudiLayak", {
-                        setValueAs: toOptionalNumber,
-                      })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">DED</Label>
-                    <Input
-                      type="number"
-                      placeholder="Tahun"
-                      className="h-9 text-xs"
-                      {...register("tahunDed", {
-                        setValueAs: toOptionalNumber,
-                      })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Dokumen Lingkungan</Label>
-                    <Input
-                      type="number"
-                      placeholder="Tahun"
-                      className="h-9 text-xs"
-                      {...register("tahunDokumenLingkungan", {
-                        setValueAs: toOptionalNumber,
-                      })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">LARAP</Label>
-                    <Input
-                      type="number"
-                      placeholder="Tahun"
-                      className="h-9 text-xs"
-                      {...register("tahunLarap", {
-                        setValueAs: toOptionalNumber,
-                      })}
-                    />
-                  </div>
+                  {(
+                    [
+                      ["Studi Kelayakan", "statusStudiLayak", "tahunStudiLayak"],
+                      ["DED", "statusDed", "tahunDed"],
+                      [
+                        "Dokumen Lingkungan",
+                        "statusDokumenLingkungan",
+                        "tahunDokumenLingkungan",
+                      ],
+                      ["LARAP", "statusLarap", "tahunLarap"],
+                    ] as const
+                  ).map(([label, statusField, tahunField]) => {
+                    const status = watch(statusField);
+                    return (
+                      <div key={tahunField} className="space-y-2">
+                        <Label className="text-xs">{label}</Label>
+                        <Select
+                          value={status}
+                          onValueChange={(v) => setValue(statusField, v as any)}
+                        >
+                          <SelectTrigger className="h-9 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="RENCANA">Rencana</SelectItem>
+                            <SelectItem value="SUDAH_ADA">
+                              Sudah Ada
+                            </SelectItem>
+                            <SelectItem value="TIDAK_PERLU">
+                              Tidak Perlu
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          placeholder="Tahun"
+                          className="h-9 text-xs"
+                          disabled={status === "TIDAK_PERLU"}
+                          {...register(tahunField, {
+                            setValueAs: toOptionalNumber,
+                          })}
+                        />
+                      </div>
+                    );
+                  })}
                   <div className="space-y-2">
                     <Label className="text-xs">Kebutuhan Tanah</Label>
                     <Select
@@ -1858,30 +1886,31 @@ export function ProyekFormDialog({
                   <SectionHeader
                     icon={Tags}
                     title="Tagging Dinamis"
-                    description="Tag bebas — tekan Enter atau klik Tambah untuk menambah"
+                    description="Pilih dari master data — bisa lebih dari satu"
                   />
                   <div className="pl-12 space-y-3">
-                    <div className="flex gap-2">
-                      <Input
-                        className="h-9 text-xs"
-                        placeholder="tekan Enter atau klik Tambah"
-                        value={taggingDinamisInput}
-                        onChange={(e) => setTaggingDinamisInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            tambahTaggingDinamis();
-                          }
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={tambahTaggingDinamis}
-                      >
-                        <Plus size={14} className="mr-1" /> Tambah
-                      </Button>
-                    </div>
+                    <Select
+                      value={NONE}
+                      onValueChange={(v) => {
+                        if (v !== NONE) tambahTaggingDinamis(v);
+                      }}
+                    >
+                      <SelectTrigger className="h-9 text-xs w-full">
+                        <SelectValue placeholder="Tambah tag..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE} disabled>
+                          Tambah tag...
+                        </SelectItem>
+                        {taggingDinamisMaster
+                          .filter((t) => !taggingDinamis.includes(t.name))
+                          .map((t) => (
+                            <SelectItem key={t.id} value={t.name}>
+                              {t.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
                     <div className="flex flex-wrap gap-2">
                       {taggingDinamis.map((t) => (
                         <Badge key={t} variant="secondary" className="gap-1">

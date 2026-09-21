@@ -179,44 +179,53 @@ export class CreateProyekDto {
   kegiatanPrioritasId?: string;
 
   // StudiLayak/DED/LARAP — angka tahun polos, sesuai DB.xlsx (lihat
-  // docs-planning/audit-restrukturisasi-db-xlsx.md §3.3)
+  // docs-planning/audit-restrukturisasi-db-xlsx.md §3.3). status* = kesiapan
+  // dokumen (Rencana/Sudah Ada/Tidak Perlu), dipasangkan dengan tahunnya.
   @ApiPropertyOptional({ example: 2020 })
   @IsOptional()
   @IsInt()
   tahunStudiLayak?: number;
+
+  @ApiPropertyOptional({ enum: ['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'] })
+  @IsOptional()
+  @IsEnum(['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'])
+  statusStudiLayak?: string;
 
   @ApiPropertyOptional({ example: 2022 })
   @IsOptional()
   @IsInt()
   tahunDed?: number;
 
+  @ApiPropertyOptional({ enum: ['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'] })
+  @IsOptional()
+  @IsEnum(['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'])
+  statusDed?: string;
+
   @ApiPropertyOptional({ example: 2025 })
   @IsOptional()
   @IsInt()
   tahunLarap?: number;
+
+  @ApiPropertyOptional({ enum: ['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'] })
+  @IsOptional()
+  @IsEnum(['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'])
+  statusLarap?: string;
 
   @ApiPropertyOptional({ example: 2023 })
   @IsOptional()
   @IsInt()
   tahunDokumenLingkungan?: number;
 
+  @ApiPropertyOptional({ enum: ['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'] })
+  @IsOptional()
+  @IsEnum(['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'])
+  statusDokumenLingkungan?: string;
+
   @ApiPropertyOptional({
-    enum: [
-      'PEMERINTAH_DAERAH',
-      'KEMENTERIAN_LEMBAGA',
-      'MASYARAKAT',
-      'TINDAK_LANJUT_RENAKSI',
-      'LAINNYA',
-    ],
+    description: 'Nama dari master data Sumber Usulan Proyek',
   })
   @IsOptional()
-  @IsEnum([
-    'PEMERINTAH_DAERAH',
-    'KEMENTERIAN_LEMBAGA',
-    'MASYARAKAT',
-    'TINDAK_LANJUT_RENAKSI',
-    'LAINNYA',
-  ])
+  @IsString()
   sumberUsulanProyek?: string;
 
   @ApiPropertyOptional({

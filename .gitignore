@@ -4,3 +4,4 @@
 
 *.sql
 *.sql.gz
+!apps/backend/prisma/migrations/**/*.sql

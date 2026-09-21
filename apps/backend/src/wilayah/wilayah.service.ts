@@ -59,7 +59,26 @@ const NOMINATIM_SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
 //     (Sengaja tidak di-hardcode di kode ini — isi sertifikat adalah trust
 //     anchor yang sensitif, sebaiknya diunduh & diverifikasi langsung oleh
 //     developer dari sumber resminya, bukan disalin dari sini.)
-const EXTRA_CA_DIR = path.join(__dirname, '..', '..', 'certs');
+// Kedalaman __dirname relatif ke folder certs/ beda-beda tergantung cara
+// dijalankan (ts-node dev: src/wilayah/.., nest build: dist/wilayah/.. atau
+// dist/.. tergantung struktur output) — jangan hardcode jumlah '..', coba
+// beberapa kandidat dan pakai yang pertama ketemu. process.cwd() dipasang
+// sebagai fallback terakhir karena pm2/nest start biasanya dari apps/backend.
+const findExtraCaDir = (): string => {
+  const kandidat = [
+    path.join(__dirname, '..', '..', 'certs'),
+    path.join(__dirname, '..', 'certs'),
+    path.join(process.cwd(), 'certs'),
+  ];
+  return kandidat.find((d) => {
+    try {
+      return fs.statSync(d).isDirectory();
+    } catch {
+      return false;
+    }
+  }) ?? kandidat[0];
+};
+const EXTRA_CA_DIR = findExtraCaDir();
 let emsifaAgent: https.Agent | undefined;
 try {
   const certFiles = fs

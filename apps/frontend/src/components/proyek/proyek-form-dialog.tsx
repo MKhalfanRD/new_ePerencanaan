@@ -441,7 +441,7 @@ export function ProyekFormDialog({
   const hasEvaluasi =
     !selectedKegiatanId ||
     (kegiatanList.find((k) => k.id === selectedKegiatanId)?._count
-      .evaluasiItem ?? 0) > 0;
+      ?.evaluasiItem ?? 0) > 0;
   const visibleTabs = hasEvaluasi
     ? TABS
     : TABS.filter((t) => t.value === "identitas" || t.value === "pemaketan");

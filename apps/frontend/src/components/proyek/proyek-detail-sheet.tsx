@@ -853,7 +853,11 @@ export function ProyekDetailSheet({
             onRefresh();
           }}
           paketId={activePaketId}
-          roSatuan={paket.find((p) => p.id === activePaketId)?.ro?.satuan}
+          roSatuan={paket.find((p) => p.id === activePaketId)?.ro?.satuan?.name}
+          indikatorSatuanOptions={(
+            paket.find((p) => p.id === activePaketId)?.indikatorRo
+              ?.satuanList ?? []
+          ).map((s: any) => ({ id: s.satuan.id, name: s.satuan.name }))}
           editData={editAlokasi}
           projectName={proyek.projectName}
           onNavigateToList={onClose}

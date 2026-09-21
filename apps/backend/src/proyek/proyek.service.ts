@@ -69,9 +69,13 @@ const proyekInclude = Prisma.validator<Prisma.ProyekInclude>()({
       ro: {
         include: {
           kro: { include: { kegiatan: { include: { program: true } } } },
+          satuan: true,
         },
       },
       komponen: true,
+      indikatorRo: {
+        include: { satuanList: { include: { satuan: true } } },
+      },
       alokasi: {
         include: { lokasi: true },
         orderBy: [

@@ -736,8 +736,15 @@ export class ImportService {
         where: { roId, nama: { equals: nama, mode: 'insensitive' } },
       });
       if (!ind) {
-        ind = await this.prisma.indikatorRO.create({
-          data: { roId, nama, satuan: satuan || '-' },
+        ind = await this.prisma.indikatorRO.create({ data: { roId, nama } });
+        const satuanName = (satuan || '-').trim();
+        const s = await this.prisma.satuan.upsert({
+          where: { name: satuanName },
+          update: {},
+          create: { name: satuanName },
+        });
+        await this.prisma.indikatorRoSatuan.create({
+          data: { indikatorRoId: ind.id, satuanId: s.id },
         });
       }
       indikatorRoCache.set(key, ind.id);

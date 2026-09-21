@@ -154,19 +154,27 @@ async function main() {
     }
 
     if (parsed.ro) {
+      const satuanName = parsed.ro.satuan?.trim();
+      const satuan = satuanName
+        ? await prisma.satuan.upsert({
+            where: { name: satuanName },
+            update: {},
+            create: { name: satuanName },
+          })
+        : null;
       await prisma.rO.upsert({
         where: { id: parsed.ro.id },
         update: {
           code: parsed.ro.code,
           name: parsed.ro.name,
-          satuan: parsed.ro.satuan || null,
+          satuanId: satuan?.id,
         },
         create: {
           id: parsed.ro.id,
           kroId: parsed.ro.kroId,
           code: parsed.ro.code,
           name: parsed.ro.name,
-          satuan: parsed.ro.satuan || null,
+          satuanId: satuan?.id,
         },
       });
       currentRoId = parsed.ro.id;

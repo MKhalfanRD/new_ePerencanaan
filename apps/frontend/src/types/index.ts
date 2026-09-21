@@ -78,8 +78,11 @@ export interface RO {
   name: string;
   code: string;
   /** Satuan resmi RO (kolom "Satuan RO" di referensi 1.xlsx, mis. "Unit",
-   * "Km") — mengunci field Satuan Output Target di form Alokasi. */
-  satuan?: string | null;
+   * "Km") — mengunci field Volume RO di form Alokasi. Dari master Satuan. */
+  satuanId?: string | null;
+  satuan?: { id: string; name: string } | null;
+  /** 1 RO bisa mencakup banyak provinsi. */
+  provinsi?: { id: string; provinceId: string; provinceName: string }[];
   kro: {
     id: string;
     name: string;
@@ -95,7 +98,16 @@ export interface RO {
       };
     };
   };
-  indikatorRO?: { id: string; nama: string; satuan: string }[];
+  indikatorRO?: IndikatorRO[];
+}
+
+export interface IndikatorRO {
+  id: string;
+  nama: string;
+  roId: string;
+  /** 1 Indikator RO bisa punya banyak satuan — user pilih salah satu saat
+   * mengisi Alokasi. */
+  satuanList?: { id: string; satuanId: string; satuan: { id: string; name: string } }[];
 }
 
 export interface Komponen {
@@ -103,6 +115,8 @@ export interface Komponen {
   code: string;
   name: string;
   roId: string;
+  satuanId?: string | null;
+  satuan?: { id: string; name: string } | null;
 }
 
 export interface Paket {
@@ -118,7 +132,7 @@ export interface Paket {
   masaPelaksanaan: "SINGLE_YEAR" | "MULTI_YEAR";
   dokLingStatus?: string;
   indikatorRoId?: string;
-  indikatorRo?: { id: string; nama: string; satuan: string };
+  indikatorRo?: IndikatorRO;
   // Untuk ranking prioritas antar paket — algoritma penilaian menyusul.
   score?: string;
   alokasi: Alokasi[];

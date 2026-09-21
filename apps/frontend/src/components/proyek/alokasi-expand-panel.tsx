@@ -56,7 +56,11 @@ interface AlokasiDetail {
       id: string;
       name: string;
       code: string;
-      indikatorRO: { id: string; nama: string; satuan: string }[];
+      indikatorRO: {
+        id: string;
+        nama: string;
+        satuanList?: { satuan: { id: string; name: string } }[];
+      }[];
       kro: {
         id: string;
         name: string;
@@ -303,7 +307,12 @@ export function AlokasiExpandPanel({
               {data.paket.ro.indikatorRO.map((ind) => (
                 <div key={ind.id} className="px-3 py-2 text-xs">
                   <p className="font-medium">{ind.nama}</p>
-                  <p className="text-muted-foreground">Satuan: {ind.satuan}</p>
+                  <p className="text-muted-foreground">
+                    Satuan:{" "}
+                    {(ind.satuanList ?? [])
+                      .map((s) => s.satuan.name)
+                      .join(", ") || "-"}
+                  </p>
                 </div>
               ))}
             </div>

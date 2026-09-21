@@ -76,20 +76,37 @@ export class MasterService {
       include: {
         indikatorRO: true,
         kro: { include: { kegiatan: { include: { program: true } } } },
+        satuan: true,
+        provinsi: true,
       },
       orderBy: { name: 'asc' },
     });
   }
   getKomponen() {
     return this.prisma.komponen.findMany({
-      include: { ro: true },
+      include: { ro: true, satuan: true },
       orderBy: { name: 'asc' },
     });
   }
   getIndikatorRO() {
     return this.prisma.indikatorRO.findMany({
-      include: { ro: true },
+      include: { ro: true, satuanList: { include: { satuan: true } } },
       orderBy: { nama: 'asc' },
+    });
+  }
+
+  // ========== SATUAN (dropdown creatable) ==========
+  getSatuan() {
+    return this.prisma.satuan.findMany({ orderBy: { name: 'asc' } });
+  }
+  /** Upsert by name supaya combobox creatable idempoten (dua user ketik nama sama tidak error). */
+  createSatuan(dto: { name: string }) {
+    const name = dto.name?.trim();
+    if (!name) throw new BadRequestException('Nama satuan wajib diisi');
+    return this.prisma.satuan.upsert({
+      where: { name },
+      update: {},
+      create: { name },
     });
   }
   /** Metode evaluasi (dulu enum KriteriaEvaluasi) — bobotnya dipakai
@@ -340,11 +357,33 @@ export class MasterService {
   }
 
   // ========== RO ==========
-  createRO(dto: any) {
-    return this.prisma.rO.create({ data: dto });
+  /** provinceIds dikirim terpisah dari field RO biasa — di-replace-all ke RoProvinsi. */
+  private async syncRoProvinsi(roId: string, provinceIds?: string[]) {
+    if (!provinceIds) return;
+    await this.prisma.roProvinsi.deleteMany({ where: { roId } });
+    if (provinceIds.length === 0) return;
+    const provinces = await this.prisma.wilayahProvince.findMany({
+      where: { id: { in: provinceIds } },
+    });
+    await this.prisma.roProvinsi.createMany({
+      data: provinces.map((p) => ({
+        roId,
+        provinceId: p.id,
+        provinceName: p.name,
+      })),
+    });
   }
-  updateRO(id: string, dto: any) {
-    return this.prisma.rO.update({ where: { id }, data: dto });
+  async createRO(dto: any) {
+    const { provinceIds, ...data } = dto;
+    const ro = await this.prisma.rO.create({ data });
+    await this.syncRoProvinsi(ro.id, provinceIds);
+    return ro;
+  }
+  async updateRO(id: string, dto: any) {
+    const { provinceIds, ...data } = dto;
+    const ro = await this.prisma.rO.update({ where: { id }, data });
+    await this.syncRoProvinsi(id, provinceIds);
+    return ro;
   }
   async deleteRO(id: string) {
     await this.prisma.rO.delete({ where: { id } });
@@ -364,11 +403,31 @@ export class MasterService {
   createKomponen(dto: any) {
     return this.prisma.komponen.create({ data: dto });
   }
-  createIndikatorRO(dto: any) {
-    return this.prisma.indikatorRO.create({ data: dto });
+  /** satuanIds dikirim terpisah — di-replace-all ke IndikatorRoSatuan. */
+  private async syncIndikatorRoSatuan(
+    indikatorRoId: string,
+    satuanIds?: string[],
+  ) {
+    if (!satuanIds) return;
+    await this.prisma.indikatorRoSatuan.deleteMany({
+      where: { indikatorRoId },
+    });
+    if (satuanIds.length === 0) return;
+    await this.prisma.indikatorRoSatuan.createMany({
+      data: satuanIds.map((satuanId) => ({ indikatorRoId, satuanId })),
+    });
   }
-  updateIndikatorRO(id: string, dto: any) {
-    return this.prisma.indikatorRO.update({ where: { id }, data: dto });
+  async createIndikatorRO(dto: any) {
+    const { satuanIds, ...data } = dto;
+    const iro = await this.prisma.indikatorRO.create({ data });
+    await this.syncIndikatorRoSatuan(iro.id, satuanIds);
+    return iro;
+  }
+  async updateIndikatorRO(id: string, dto: any) {
+    const { satuanIds, ...data } = dto;
+    const iro = await this.prisma.indikatorRO.update({ where: { id }, data });
+    await this.syncIndikatorRoSatuan(id, satuanIds);
+    return iro;
   }
   async deleteIndikatorRO(id: string) {
     await this.prisma.indikatorRO.delete({ where: { id } });

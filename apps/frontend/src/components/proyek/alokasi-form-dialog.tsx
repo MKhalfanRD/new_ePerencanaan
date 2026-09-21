@@ -72,8 +72,11 @@ interface Props {
   onSuccess: () => void;
   paketId: string;
   /** Satuan resmi RO paket ini (dari referensi 1.xlsx) — mengunci field
-   * Satuan Output Target, bukan input teks bebas. */
+   * Volume RO, bukan input teks bebas. */
   roSatuan?: string | null;
+  /** Daftar satuan milik Indikator RO paket ini — user pilih salah satu
+   * untuk field Indikator RO (1 Indikator RO bisa punya banyak satuan). */
+  indikatorSatuanOptions?: { id: string; name: string }[];
   editData?: AlokasiLike | null;
   /** Nama proyek — dipakai di breadcrumb header. */
   projectName?: string;
@@ -91,6 +94,7 @@ export function AlokasiFormDialog({
   onSuccess,
   paketId,
   roSatuan,
+  indikatorSatuanOptions,
   editData,
   projectName,
   onNavigateToList,
@@ -130,13 +134,14 @@ export function AlokasiFormDialog({
         outputTarget: editData.outputTarget
           ? Number(editData.outputTarget)
           : undefined,
-        // Satuan ikut RO paket (sumber kebenaran) — fallback ke nilai lama
-        // kalau RO belum punya satuan resmi di master data.
+        // Volume RO ikut satuan RO paket (sumber kebenaran) — fallback ke
+        // nilai lama kalau RO belum punya satuan resmi di master data.
         outputUnit: roSatuan || editData.outputUnit || "",
         outcomeTarget: editData.outcomeTarget
           ? Number(editData.outcomeTarget)
           : undefined,
-        outcomeUnit: roSatuan || editData.outcomeUnit || "",
+        outcomeUnit:
+          editData.outcomeUnit || indikatorSatuanOptions?.[0]?.name || "",
         catatan: editData.catatan || "",
       });
     } else {
@@ -149,10 +154,10 @@ export function AlokasiFormDialog({
         sbsn: 0,
         kpbu: 0,
         outputUnit: roSatuan || "",
-        outcomeUnit: roSatuan || "",
+        outcomeUnit: indikatorSatuanOptions?.[0]?.name || "",
       });
     }
-  }, [editData, open, roSatuan]);
+  }, [editData, open, roSatuan, indikatorSatuanOptions]);
 
   const onSubmit = async (data: FormData) => {
     try {
@@ -306,13 +311,29 @@ export function AlokasiFormDialog({
                       setValueAs: toOptionalNumber,
                     })}
                   />
-                  <Input
-                    className={`h-10 w-24 shrink-0 ${roSatuan ? "bg-muted" : ""}`}
-                    placeholder="Satuan"
-                    readOnly={!!roSatuan}
-                    title={roSatuan ? "Satuan mengikuti RO" : undefined}
-                    {...register("outcomeUnit")}
-                  />
+                  {indikatorSatuanOptions && indikatorSatuanOptions.length > 0 ? (
+                    <Select
+                      value={watch("outcomeUnit") || ""}
+                      onValueChange={(v) => setValue("outcomeUnit", v)}
+                    >
+                      <SelectTrigger className="h-10 w-24 shrink-0 text-xs">
+                        <SelectValue placeholder="Satuan" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {indikatorSatuanOptions.map((s) => (
+                          <SelectItem key={s.id} value={s.name}>
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      className="h-10 w-24 shrink-0"
+                      placeholder="Satuan"
+                      {...register("outcomeUnit")}
+                    />
+                  )}
                 </div>
               </div>
             </div>

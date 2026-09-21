@@ -598,40 +598,21 @@ export default function ProyekPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex gap-3 flex-1">
-          <div className="relative flex-1 max-w-sm">
-            <Search
-              size={16}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              placeholder="Cari nama proyek..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-        </div>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={toggleAllGroups}
-          className="shrink-0 text-xs"
-        >
-          {allCollapsed ? (
-            <Maximize2 size={13} className="mr-1.5" />
-          ) : (
-            <Minimize2 size={13} className="mr-1.5" />
-          )}
-          {allCollapsed ? "Buka Semua" : "Tutup Semua"}
-        </Button>
-      </div>
-
-      {/* Filter Program/Kegiatan/KRO/RO/Balai — cascading, opsi dari data
-          yang sudah termuat di halaman ini. */}
+      {/* Search + filter Program/Kegiatan/KRO/RO/Balai — satu baris sejajar,
+          opsi filter dari data yang sudah termuat di halaman ini. */}
       <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative w-full max-w-sm">
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            placeholder="Cari nama proyek..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
         <select
           value={filterPeriode}
           onChange={(e) => {
@@ -733,6 +714,20 @@ export default function ProyekPage() {
             Reset filter
           </button>
         )}
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={toggleAllGroups}
+          className="shrink-0 text-xs ml-auto"
+        >
+          {allCollapsed ? (
+            <Maximize2 size={13} className="mr-1.5" />
+          ) : (
+            <Minimize2 size={13} className="mr-1.5" />
+          )}
+          {allCollapsed ? "Buka Semua" : "Tutup Semua"}
+        </Button>
       </div>
 
       {/* Sub-header kolom tahun — sekali saja untuk seluruh daftar */}
@@ -1004,13 +999,14 @@ export default function ProyekPage() {
                                           </div>
                                         </div>
 
-                                        {/* Row proyek cuma nilai total di kiri —
-                                            per-tahun sudah ada di row Balai/Kegiatan
-                                            di atas & row Paket di bawah, jadi di sini
-                                            tidak diulang. */}
+                                        {/* Kolom Total — sejajar dengan header "TOTAL" &
+                                            kolom Total di row Balai/Kegiatan di atas.
+                                            Placeholder kosong sejumlah kolom tahun supaya
+                                            lebar bloknya sama (rincian per tahun sudah ada
+                                            di row Balai/Kegiatan/Paket, tidak diulang di sini). */}
                                         <div className="hidden md:flex items-center gap-4 shrink-0">
-                                          <div className="w-24 shrink-0 text-right">
-                                            <p className="text-xs font-bold">
+                                          <div className="w-24 shrink-0 text-right border-r pr-3">
+                                            <p className="text-xs font-bold tabular-nums">
                                               {formatRupiahShort(total.rencana)}
                                             </p>
                                             {renderRealisasiAgregat(
@@ -1018,6 +1014,12 @@ export default function ProyekPage() {
                                               total.rencana,
                                             )}
                                           </div>
+                                          {groups.years.map((year) => (
+                                            <div
+                                              key={year}
+                                              className="w-24 shrink-0"
+                                            />
+                                          ))}
                                         </div>
 
                                         <div

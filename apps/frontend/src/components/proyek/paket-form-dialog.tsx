@@ -546,7 +546,9 @@ export function PaketFormDialog({
                         )
                         .map((i) => (
                           <SelectItem key={i.id} value={i.id}>
-                            {i.nama} ({i.satuan})
+                            {i.nama}
+                            {(i.satuanList?.length ?? 0) > 0 &&
+                              ` (${i.satuanList!.map((s) => s.satuan.name).join(", ")})`}
                           </SelectItem>
                         ))}
                     </SelectContent>

@@ -99,9 +99,15 @@ export function exportMasterToExcel(
             ...KOSONG,
             "Kode RO": ro.code,
             RO: ro.name,
-            "Satuan RO": ro.satuan ?? "",
+            "Satuan RO": ro.satuan?.name ?? "",
             "Indikator RO": (iroByRo.get(ro.id) ?? [])
-              .map((i) => `${i.nama} (${i.satuan})`)
+              .map(
+                (i) =>
+                  `${i.nama} (${(i.satuanList ?? [])
+                    .map((s: any) => s.satuan?.name)
+                    .filter(Boolean)
+                    .join(", ")})`,
+              )
               .join("; "),
           });
 

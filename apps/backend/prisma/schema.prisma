@@ -221,12 +221,15 @@ model RO {
   code   String  @db.VarChar(10)
   // Satuan resmi RO (kolom "Satuan RO" di referensi 1.xlsx, mis. "Unit",
   // "Km", "Dokumen") — dipakai untuk mengunci field Satuan Output Target
-  // pada Alokasi, bukan input teks bebas.
-  satuan String? @db.VarChar(50)
+  // pada Alokasi, bukan input teks bebas. Dari master Satuan (dropdown),
+  // bukan text bebas, supaya format konsisten antar RO.
+  satuanId String?
+  satuan   Satuan? @relation(fields: [satuanId], references: [id])
 
   indikatorRO IndikatorRO[]
   paket       Paket[]
   komponen    Komponen[]
+  provinsi    RoProvinsi[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -234,16 +237,47 @@ model RO {
   @@map("ro")
 }
 
+/// Provinsi cakupan RO — 1 RO bisa mencakup banyak provinsi.
+model RoProvinsi {
+  id           String @id @default(cuid())
+  roId         String @db.VarChar(20)
+  ro           RO     @relation(fields: [roId], references: [id], onDelete: Cascade)
+  provinceId   String @db.VarChar(10)
+  provinceName String @db.VarChar(100)
+
+  @@unique([roId, provinceId])
+  @@map("ro_provinsi")
+}
+
+// =============================================
+// MASTER: Satuan (dropdown, dipakai RO/Komponen/Indikator RO)
+// =============================================
+
+model Satuan {
+  id   String @id @default(cuid())
+  name String @unique @db.VarChar(50)
+
+  ro          RO[]
+  komponen    Komponen[]
+  indikatorRo IndikatorRoSatuan[]
+
+  createdAt DateTime @default(now())
+
+  @@map("satuan")
+}
+
 // =============================================
 // MASTER: Komponen (anak dari RO)
 // =============================================
 
 model Komponen {
-  id   String @id @default(cuid())
-  roId String @db.VarChar(20)
-  ro   RO     @relation(fields: [roId], references: [id])
-  code String @db.VarChar(10)
-  name String @db.VarChar(255)
+  id       String  @id @default(cuid())
+  roId     String  @db.VarChar(20)
+  ro       RO      @relation(fields: [roId], references: [id])
+  code     String  @db.VarChar(10)
+  name     String  @db.VarChar(255)
+  satuanId String?
+  satuan   Satuan? @relation(fields: [satuanId], references: [id])
 
   paket Paket[]
 
@@ -255,15 +289,27 @@ model Komponen {
 }
 
 model IndikatorRO {
-  id     String @id @default(cuid())
-  roId   String @db.VarChar(20)
-  ro     RO     @relation(fields: [roId], references: [id])
-  nama   String @db.VarChar(255)
-  satuan String @db.VarChar(50)
+  id   String @id @default(cuid())
+  roId String @db.VarChar(20)
+  ro   RO     @relation(fields: [roId], references: [id])
+  nama String @db.VarChar(255)
 
-  paket Paket[]
+  satuanList IndikatorRoSatuan[]
+  paket      Paket[]
 
   @@map("indikator_ro")
+}
+
+/// Join table: 1 Indikator RO bisa punya banyak satuan.
+model IndikatorRoSatuan {
+  id            String      @id @default(cuid())
+  indikatorRoId String
+  indikatorRo   IndikatorRO @relation(fields: [indikatorRoId], references: [id], onDelete: Cascade)
+  satuanId      String
+  satuan        Satuan      @relation(fields: [satuanId], references: [id])
+
+  @@unique([indikatorRoId, satuanId])
+  @@map("indikator_ro_satuan")
 }
 
 // =============================================

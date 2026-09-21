@@ -1122,6 +1122,11 @@ export function ProyekFormDialog({
                             const komponenOptions = komponenList.filter(
                               (k) => k.roId === selectedRO?.id,
                             );
+                            const selectedIndikatorSatuan =
+                              (selectedRO?.indikatorRO ?? []).find(
+                                (ind) =>
+                                  ind.id === watch(`paket.${i}.indikatorRoId`),
+                              )?.satuanList ?? [];
                             return (
                               <div
                                 key={field.id}
@@ -1167,12 +1172,9 @@ export function ProyekFormDialog({
                                       const ro = roList.find((r) => r.id === v);
                                       setValue(
                                         `paket.${i}.outputUnit`,
-                                        ro?.satuan || "",
+                                        ro?.satuan?.name || "",
                                       );
-                                      setValue(
-                                        `paket.${i}.outcomeUnit`,
-                                        ro?.satuan || "",
-                                      );
+                                      setValue(`paket.${i}.outcomeUnit`, "");
                                       setValue(`paket.${i}.komponenId`, "");
                                       setValue(`paket.${i}.indikatorRoId`, "");
                                     }}
@@ -1251,12 +1253,20 @@ export function ProyekFormDialog({
                                         watch(`paket.${i}.indikatorRoId`) ||
                                         NONE
                                       }
-                                      onValueChange={(v) =>
+                                      onValueChange={(v) => {
                                         setValue(
                                           `paket.${i}.indikatorRoId`,
                                           v === NONE ? "" : v,
-                                        )
-                                      }
+                                        );
+                                        const ind = (
+                                          selectedRO?.indikatorRO ?? []
+                                        ).find((x) => x.id === v);
+                                        setValue(
+                                          `paket.${i}.outcomeUnit`,
+                                          ind?.satuanList?.[0]?.satuan.name ||
+                                            "",
+                                        );
+                                      }}
                                       disabled={!selectedRO}
                                     >
                                       <SelectTrigger className="h-9 text-xs">
@@ -1272,7 +1282,14 @@ export function ProyekFormDialog({
                                               key={ind.id}
                                               value={ind.id}
                                             >
-                                              {ind.nama} ({ind.satuan})
+                                              {ind.nama}
+                                              {(ind.satuanList?.length ?? 0) >
+                                                0 &&
+                                                ` (${ind
+                                                  .satuanList!.map(
+                                                    (s) => s.satuan.name,
+                                                  )
+                                                  .join(", ")})`}
                                             </SelectItem>
                                           ),
                                         )}
@@ -1456,18 +1473,44 @@ export function ProyekFormDialog({
                                           },
                                         )}
                                       />
-                                      <Input
-                                        className={`h-9 text-xs w-24 shrink-0 ${
-                                          watch(`paket.${i}.outcomeUnit`)
-                                            ? "bg-muted"
-                                            : ""
-                                        }`}
-                                        placeholder="Satuan"
-                                        readOnly={
-                                          !!watch(`paket.${i}.outcomeUnit`)
-                                        }
-                                        {...register(`paket.${i}.outcomeUnit`)}
-                                      />
+                                      {selectedIndikatorSatuan.length > 0 ? (
+                                        <Select
+                                          value={
+                                            watch(`paket.${i}.outcomeUnit`) ||
+                                            ""
+                                          }
+                                          onValueChange={(v) =>
+                                            setValue(
+                                              `paket.${i}.outcomeUnit`,
+                                              v,
+                                            )
+                                          }
+                                        >
+                                          <SelectTrigger className="h-9 text-xs w-24 shrink-0">
+                                            <SelectValue placeholder="Satuan" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {selectedIndikatorSatuan.map(
+                                              (s) => (
+                                                <SelectItem
+                                                  key={s.satuan.id}
+                                                  value={s.satuan.name}
+                                                >
+                                                  {s.satuan.name}
+                                                </SelectItem>
+                                              ),
+                                            )}
+                                          </SelectContent>
+                                        </Select>
+                                      ) : (
+                                        <Input
+                                          className="h-9 text-xs w-24 shrink-0"
+                                          placeholder="Satuan"
+                                          {...register(
+                                            `paket.${i}.outcomeUnit`,
+                                          )}
+                                        />
+                                      )}
                                     </div>
                                   </div>
                                 </div>

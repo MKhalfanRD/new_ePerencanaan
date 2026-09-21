@@ -11,12 +11,22 @@ import {
   Search,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SatuanCombobox, loadSatuan } from "@/components/master/satuan-combobox";
+import { wilayahApi, WilayahItem } from "@/lib/wilayah-api";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -67,12 +77,12 @@ const ID_MANUAL: Level[] = ["Program", "Kegiatan", "KRO", "RO"];
  * di-`reset()` ke form — kalau ikut terkirim, Prisma `.update()` menolaknya.
  */
 const FIELDS: Record<Level, string[]> = {
-  Program: ["id", "code", "name"],
-  Kegiatan: ["id", "code", "name"],
-  KRO: ["id", "code", "name"],
-  RO: ["id", "code", "name", "satuan"],
-  IRO: ["nama", "satuan"],
-  Komponen: ["code", "name"],
+  Program: ["code", "name"],
+  Kegiatan: ["code", "name"],
+  KRO: ["code", "name"],
+  RO: ["code", "name", "satuanId", "provinceIds"],
+  IRO: ["nama", "satuanIds"],
+  Komponen: ["code", "name", "satuanId"],
   Tahun: ["label", "startYear", "endYear", "isActive"],
 };
 
@@ -118,8 +128,22 @@ export function NomenklaturTab() {
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { isSubmitting },
   } = useForm<any>();
+  const watchSatuanId = watch("satuanId");
+  const watchSatuanIds: string[] = watch("satuanIds") || [];
+  const watchProvinceIds: string[] = watch("provinceIds") || [];
+  const [satuanOptions, setSatuanOptions] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const [provinceOptions, setProvinceOptions] = useState<WilayahItem[]>([]);
+
+  useEffect(() => {
+    loadSatuan().then(setSatuanOptions);
+    wilayahApi.getProvinces().then(setProvinceOptions);
+  }, []);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -216,16 +240,30 @@ export function NomenklaturTab() {
         kroCount++;
       }
 
+      // Satuan di file Excel masih teks bebas — resolve ke Satuan.id (upsert
+      // by name) supaya konsisten dengan dropdown, sama seperti SatuanCombobox.
+      const satuanIdByName = new Map<string, string>();
+      const resolveSatuanId = async (name?: string) => {
+        const trimmed = name?.trim();
+        if (!trimmed) return undefined;
+        if (satuanIdByName.has(trimmed)) return satuanIdByName.get(trimmed);
+        const res = await api.post("/master/satuan", { name: trimmed });
+        satuanIdByName.set(trimmed, res.data.id);
+        return res.data.id;
+      };
+
       const roIds = new Set(roList.map((r) => r.id));
       for (const r of parsed.ro) {
+        const satuanId = await resolveSatuanId(r.satuan);
         if (roIds.has(r.id)) {
           await api.patch(`${ENDPOINT.RO}/${r.id}`, {
             code: r.code,
             name: r.name,
-            satuan: r.satuan,
+            satuanId,
           });
         } else {
-          await api.post(ENDPOINT.RO, r);
+          const { satuan, ...rest } = r;
+          await api.post(ENDPOINT.RO, { ...rest, satuanId });
           roIds.add(r.id);
         }
         roCount++;
@@ -307,11 +345,15 @@ export function NomenklaturTab() {
 
   const bukaTambah = (level: Level, parentId?: string) => {
     setForm({ level, parentId });
-    reset({});
+    reset({ satuanIds: [], provinceIds: [] });
   };
   const bukaEdit = (level: Level, data: any) => {
     setForm({ level, data });
-    reset({ ...data });
+    reset({
+      ...data,
+      satuanIds: (data.satuanList ?? []).map((s: any) => s.satuanId),
+      provinceIds: (data.provinsi ?? []).map((p: any) => p.provinceId),
+    });
   };
 
   const onSubmit = async (values: any) => {
@@ -321,12 +363,21 @@ export function NomenklaturTab() {
     for (const f of FIELDS[level]) {
       if (values[f] !== undefined && values[f] !== "") payload[f] = values[f];
     }
-    if (data) delete payload.id; // id tidak bisa diubah saat edit
     if (parentId) {
       if (level === "Kegiatan") payload.programId = parentId;
       if (level === "KRO") payload.kegiatanId = parentId;
       if (level === "RO") payload.kroId = parentId;
       if (level === "IRO" || level === "Komponen") payload.roId = parentId;
+    }
+    // ID_MANUAL (Program/Kegiatan/KRO/RO): id = kode nomenklatur, ID-nya
+    // dijamin unik lewat parent-chain (bukan diketik manual oleh user).
+    // Program/Kegiatan tidak chained (id = code sendiri); KRO/RO chained
+    // ke id parent supaya tetap unik meski kode-nya sama di kegiatan lain.
+    if (!data && ID_MANUAL.includes(level)) {
+      payload.id =
+        level === "KRO" || level === "RO"
+          ? `${parentId}.${payload.code}`
+          : payload.code;
     }
     if (level === "Tahun") {
       payload.startYear = Number(payload.startYear);
@@ -396,7 +447,7 @@ export function NomenklaturTab() {
 
   const Aksi = ({ level, item }: { level: Level; item: any }) => (
     <div
-      className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100"
+      className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100"
       onClick={(e) => e.stopPropagation()}
     >
       <Button
@@ -646,7 +697,18 @@ export function NomenklaturTab() {
                                                       variant="outline"
                                                       className="shrink-0 text-[9px]"
                                                     >
-                                                      {ro.satuan}
+                                                      {ro.satuan.name}
+                                                    </Badge>
+                                                  )}
+                                                  {(ro.provinsi ?? []).length > 0 && (
+                                                    <Badge
+                                                      variant="outline"
+                                                      className="shrink-0 text-[9px]"
+                                                      title={ro.provinsi
+                                                        .map((p: any) => p.provinceName)
+                                                        .join(", ")}
+                                                    >
+                                                      {ro.provinsi.length} provinsi
                                                     </Badge>
                                                   )}
                                                   <Aksi level="RO" item={ro} />
@@ -664,7 +726,12 @@ export function NomenklaturTab() {
                                                         className="group/chip inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700"
                                                       >
                                                         <Cek level="IRO" id={i.id} />
-                                                        IRO: {i.nama} ({i.satuan})
+                                                        IRO: {i.nama} (
+                                                        {(i.satuanList ?? [])
+                                                          .map((s: any) => s.satuan?.name)
+                                                          .filter(Boolean)
+                                                          .join(", ")}
+                                                        )
                                                         <button
                                                           onClick={() =>
                                                             bukaEdit("IRO", i)
@@ -866,44 +933,63 @@ export function NomenklaturTab() {
                   <Label>
                     Satuan <span className="text-destructive">*</span>
                   </Label>
-                  <Input className="h-10" placeholder="Ha / Km / Unit" {...register("satuan")} />
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {watchSatuanIds.map((id) => {
+                      const s = satuanOptions.find((o) => o.id === id);
+                      return (
+                        <Badge
+                          key={id}
+                          variant="secondary"
+                          className="gap-1 pr-1"
+                        >
+                          {s?.name ?? id}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setValue(
+                                "satuanIds",
+                                watchSatuanIds.filter((x) => x !== id),
+                              )
+                            }
+                            className="hover:text-destructive"
+                          >
+                            <X size={10} />
+                          </button>
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                  <SatuanCombobox
+                    value={null}
+                    onChange={(id) => {
+                      if (!watchSatuanIds.includes(id)) {
+                        setValue("satuanIds", [...watchSatuanIds, id]);
+                      }
+                      loadSatuan().then(setSatuanOptions);
+                    }}
+                    placeholder="Tambah satuan..."
+                  />
                 </div>
               </>
             ) : (
               <>
-                <div
-                  className={cn(
-                    "gap-4",
-                    ID_MANUAL.includes(form?.level as Level)
-                      ? "grid grid-cols-2"
-                      : "space-y-4",
+                <div className="space-y-2">
+                  <Label>
+                    Kode <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    className="h-10"
+                    placeholder={
+                      form?.level === "Komponen" ? "Contoh: 300" : undefined
+                    }
+                    disabled={!!form?.data && ID_MANUAL.includes(form?.level as Level)}
+                    {...register("code")}
+                  />
+                  {ID_MANUAL.includes(form?.level as Level) && !form?.data && (
+                    <p className="text-xs text-muted-foreground">
+                      Kode ini juga jadi ID unik — tidak bisa diubah lagi setelah disimpan.
+                    </p>
                   )}
-                >
-                  {ID_MANUAL.includes(form?.level as Level) && (
-                    <div className="space-y-2">
-                      <Label>
-                        ID <span className="text-destructive">*</span>
-                      </Label>
-                      <Input
-                        className="h-10"
-                        placeholder="Contoh: FC, 7694, 7694.CBG"
-                        disabled={!!form?.data}
-                        {...register("id")}
-                      />
-                    </div>
-                  )}
-                  <div className="space-y-2">
-                    <Label>
-                      Kode <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      className="h-10"
-                      placeholder={
-                        form?.level === "Komponen" ? "Contoh: 300" : undefined
-                      }
-                      {...register("code")}
-                    />
-                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>
@@ -911,14 +997,68 @@ export function NomenklaturTab() {
                   </Label>
                   <Input className="h-10" {...register("name")} />
                 </div>
+                {(form?.level === "RO" || form?.level === "Komponen") && (
+                  <div className="space-y-2">
+                    <Label>Satuan</Label>
+                    <SatuanCombobox
+                      value={watchSatuanId}
+                      onChange={(id) => setValue("satuanId", id)}
+                    />
+                  </div>
+                )}
                 {form?.level === "RO" && (
                   <div className="space-y-2">
-                    <Label>Satuan RO</Label>
-                    <Input
-                      className="h-10"
-                      placeholder="Unit / Km / Dokumen"
-                      {...register("satuan")}
-                    />
+                    <Label>Provinsi</Label>
+                    <p className="text-xs text-muted-foreground">
+                      1 RO bisa mencakup banyak provinsi.
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {watchProvinceIds.map((id) => {
+                        const p = provinceOptions.find((o) => o.id === id);
+                        return (
+                          <Badge
+                            key={id}
+                            variant="secondary"
+                            className="gap-1 pr-1"
+                          >
+                            {p?.name ?? id}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setValue(
+                                  "provinceIds",
+                                  watchProvinceIds.filter((x) => x !== id),
+                                )
+                              }
+                              className="hover:text-destructive"
+                            >
+                              <X size={10} />
+                            </button>
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                    <Select
+                      value=""
+                      onValueChange={(id) => {
+                        if (!watchProvinceIds.includes(id)) {
+                          setValue("provinceIds", [...watchProvinceIds, id]);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue placeholder="Tambah provinsi..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {provinceOptions
+                          .filter((p) => !watchProvinceIds.includes(p.id))
+                          .map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
               </>

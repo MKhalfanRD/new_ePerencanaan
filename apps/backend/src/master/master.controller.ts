@@ -65,6 +65,12 @@ export class MasterController {
     return this.masterService.getKomponen();
   }
 
+  @ApiOperation({ summary: 'Daftar semua Satuan' })
+  @Get('satuan')
+  getSatuan() {
+    return this.masterService.getSatuan();
+  }
+
   @ApiOperation({ summary: 'Daftar Prioritas Nasional (PN, dengan PP & KP)' })
   @Get('prioritas-nasional')
   getPrioritasNasional() {
@@ -304,6 +310,14 @@ export class MasterController {
   @Post('kro/bulk-delete')
   bulkDeleteKRO(@Body('ids') ids: string[]) {
     return this.masterService.bulkDeleteKRO(ids);
+  }
+
+  // ========== SATUAN (creatable combobox) ==========
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('satuan')
+  createSatuan(@Body() dto: { name: string }) {
+    return this.masterService.createSatuan(dto);
   }
 
   // ========== CRUD RO ==========

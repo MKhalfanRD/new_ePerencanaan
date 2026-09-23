@@ -1,21 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useForm, useFieldArray, FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import {
-  Loader2,
-  Plus,
-  Trash2,
-  X,
-  MapPin,
-  ScrollText,
-  Target,
-  Tags,
-  FileText,
-  ClipboardCheck,
-} from "lucide-react";
+import { Loader2, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -40,6 +29,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { FieldControl } from "@/components/master/field-control";
+import { cn } from "@/lib/utils";
+import {
+  isItemWide,
+  TAB_GRID_CLASS,
+  KEGIATAN_GRID_CLASS,
+  TAB_ICONS,
+  TAB_DEFAULT_DESCRIPTIONS,
+} from "@/lib/form-item-width";
+import type { TabKey } from "@/lib/form-item-width";
 import api from "@/lib/api";
 import {
   Balai,
@@ -61,8 +60,51 @@ interface KegiatanOpt {
   name: string;
   code: string;
   program: { id: string; name: string; code: string };
-  _count: { evaluasiItem: number };
+  formTemplate?: { id: string } | null;
 }
+
+export interface FormItemOption {
+  id: string;
+  value: string;
+  label: string;
+  isActive?: boolean;
+  score?: number | null;
+}
+export interface FormItemNode {
+  id: string;
+  key: string;
+  label: string;
+  fieldType: string;
+  thresholdValue?: number | null;
+  conditionItemId?: string | null;
+  conditionValue?: string | null;
+  width?: "HALF" | "FULL" | null;
+  isActive?: boolean;
+  score?: number | null;
+  required?: boolean;
+  options: FormItemOption[];
+}
+export interface FormTabNode {
+  id: string;
+  key: string;
+  label: string;
+  description: string | null;
+  isActive?: boolean;
+  bobot?: number | null;
+  sections: {
+    id: string;
+    key: string;
+    label: string;
+    isActive?: boolean;
+    items: FormItemNode[];
+  }[];
+}
+interface FormTemplateTree {
+  tabs: FormTabNode[];
+}
+
+type FormValueEntry = { value?: string | boolean | number; note?: string };
+
 interface PkpnOpt {
   id: string;
   name: string;
@@ -152,11 +194,47 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
+// Kontrak yang diimplementasikan kanvas Master Data (form-proyek-tab.tsx) —
+// dialog ini cuma manggil fungsi ini utk render header tab & body section,
+// semua state/mutation/DnD CRUD-nya tetap tinggal di form-proyek-tab.tsx.
+// Ini yang bikin kanvas admin & form user PERSIS sama tanpa 2 file JSX
+// terpisah yang gampang desync.
+export interface ProyekFormAdminHandlers {
+  tabHeader: (tabKey: TabKey, tab: FormTabNode | undefined) => React.ReactNode;
+  sectionsBody: (
+    tabKey: TabKey,
+    tabId: string,
+    sections: FormTabNode["sections"],
+    renderItem: (item: FormItemNode) => React.ReactNode,
+    gridClass: string,
+  ) => React.ReactNode;
+  note: (tabKey: TabKey) => React.ReactNode;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
   editData?: Proyek | null;
+  // Dipakai kanvas Master Data untuk menampilkan UI form user asli sebagai
+  // pratinjau — kegiatan dikunci ke `initialKegiatanId`, tidak ada submit.
+  previewMode?: boolean;
+  // Dipakai kanvas Master Data buat MENGELOLA struktur template (bukan
+  // sekadar pratinjau) — field baku (balaiId dst) tetap tampil PERSIS sama
+  // dengan form asli, tapi section/item generik dirender lewat
+  // `adminHandlers` supaya admin bisa toggle/drag/edit/hapus/tambah.
+  adminMode?: boolean;
+  adminHandlers?: ProyekFormAdminHandlers;
+  // Tanam langsung di halaman (tanpa Sheet/modal/backdrop) — dipakai kanvas
+  // Master Data supaya kelola form tampil begitu kegiatan dipilih, tidak
+  // perlu buka dialog lagi.
+  embedded?: boolean;
+  // Naikkan angka ini (mis. counter) tiap kali form-proyek-tab.tsx berhasil
+  // ubah struktur template (toggle/tambah/hapus/dst) — dipakai trigger
+  // refetch `formTemplate` di sini, karena mode admin TIDAK simpan salinan
+  // template terpisah (dialog ini satu-satunya sumber datanya).
+  adminRefreshToken?: number;
+  initialKegiatanId?: string;
 }
 
 const TABS = [
@@ -165,6 +243,8 @@ const TABS = [
   { value: "kriteria", label: "Kriteria Teknis" },
   { value: "pemaketan", label: "Pemaketan" },
   { value: "tagging", label: "Tagging" },
+  { value: "valuasi", label: "Valuasi Proyek" },
+  { value: "kinerja", label: "Kinerja Proyek" },
   { value: "dokumen", label: "Dokumen & Catatan" },
   { value: "evaluasi", label: "Evaluasi Proyek" },
 ] as const;
@@ -203,6 +283,28 @@ const FIELD_TO_TAB: Record<string, (typeof TABS)[number]["value"]> = {
   catatanSspsda: "dokumen",
 };
 
+// Field yang dirender lewat renderer khusus di atas (BUKAN FieldControl
+// generik) — renderer-nya TIDAK PERNAH baca item.options/item.score sama
+// sekali (lihat identitasRenderers dst di bawah), jadi kalau admin edit opsi
+// dropdown/skor field ini di kanvas Master Data, perubahannya diam-diam
+// tidak akan pernah muncul di form asli. Dipakai form-proyek-tab.tsx buat
+// menyembunyikan bagian edit yang percuma itu. (Pengecualian: "kategoriProyek"
+// TIDAK masuk sini walau juga renderer khusus — opsinya beneran dipakai,
+// lihat tab Valuasi.)
+export const BAKU_ITEM_KEYS = new Set<string>([
+  ...Object.keys(FIELD_TO_TAB),
+  "dokumenPendukung",
+]);
+
+// Subset BAKU_ITEM_KEYS yang kolomnya NOT NULL di tabel Proyek (lihat
+// schema.prisma) — wajib-nya dikunci di zod `schema`, TIDAK BISA dibikin
+// opsional dari kanvas admin walau field lain di BAKU_ITEM_KEYS bisa.
+export const ALWAYS_REQUIRED_BAKU_KEYS = new Set<string>([
+  "balaiId",
+  "periodeId",
+  "projectName",
+]);
+
 function SectionHeader({
   icon: Icon,
   title,
@@ -232,6 +334,12 @@ export function ProyekFormDialog({
   onClose,
   onSuccess,
   editData,
+  previewMode = false,
+  adminMode = false,
+  adminHandlers,
+  adminRefreshToken,
+  embedded = false,
+  initialKegiatanId,
 }: Props) {
   const [activeTab, setActiveTab] = useState<string>(TABS[0].value);
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(
@@ -252,6 +360,13 @@ export function ProyekFormDialog({
   const [wsSearch, setWsSearch] = useState("");
   const [kegiatanList, setKegiatanList] = useState<KegiatanOpt[]>([]);
   const [selectedKegiatanId, setSelectedKegiatanId] = useState("");
+
+  const [formTemplate, setFormTemplate] = useState<FormTemplateTree | null>(
+    null,
+  );
+  const [formValuesMap, setFormValuesMap] = useState<
+    Record<string, { value?: string | boolean | number; note?: string }>
+  >({});
 
   const [pnList, setPnList] = useState<PrioritasNasional[]>([]);
   const [selectedPnId, setSelectedPnId] = useState("");
@@ -281,14 +396,22 @@ export function ProyekFormDialog({
     { id: string; fileName: string; filePath: string }[]
   >([]);
 
+  // Field UPLOAD di form dinamis (per FormItem) — pola sama seperti
+  // pendingFiles/dokumenList di atas, tapi per-item (key = FormItem.key):
+  // belum ada proyekId (create) -> ditahan di pendingItemFiles, diupload
+  // setelah proyek dibuat; sudah ada proyekId (edit) -> upload langsung.
+  const [pendingItemFiles, setPendingItemFiles] = useState<
+    Record<string, File>
+  >({});
+  const [uploadingItemKeys, setUploadingItemKeys] = useState<Set<string>>(
+    new Set(),
+  );
+  const [itemDokumen, setItemDokumen] = useState<
+    Record<string, { id: string; fileName: string }>
+  >({});
+
   const [preview, setPreview] = useState<{
     skorEvaluasi: number | null;
-    items: {
-      id: string;
-      name: string;
-      metodeName: string;
-      keterangan?: string;
-    }[];
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
@@ -410,7 +533,15 @@ export function ProyekFormDialog({
       setSelectedSkId(
         editData.indikatorSasaranKegiatan?.sasaranKegiatan.id ?? "",
       );
-      setDokumenList(editData.dokumenPendukung ?? []);
+      const semuaDokumen = editData.dokumenPendukung ?? [];
+      setDokumenList(semuaDokumen.filter((d) => !d.formItemId));
+      setItemDokumen(
+        Object.fromEntries(
+          semuaDokumen
+            .filter((d) => d.formItemId)
+            .map((d) => [d.formItemId as string, d]),
+        ),
+      );
     } else {
       setSelectedPnId("");
       setSelectedPpId("");
@@ -418,6 +549,8 @@ export function ProyekFormDialog({
       setSelectedSpId("");
       setSelectedSkId("");
       setDokumenList([]);
+      setItemDokumen({});
+      setPendingItemFiles({});
       reset({
         kewenangan: "PUSAT",
         kebutuhanTanah: false,
@@ -434,24 +567,975 @@ export function ProyekFormDialog({
     }
   }, [editData, open]);
 
-  // Cuma 4 kegiatan (Irwa/Supan/Bendungan/Air Tanah) yang punya EvaluasiItem
-  // di master data — itu yang menentukan tab lengkap vs tab minimal, bukan
-  // daftar kegiatan hardcode. Belum pilih kegiatan -> anggap true (tampilkan
-  // semua tab dulu, jangan bikin tab tiba-tiba hilang sebelum sempat pilih).
+  useEffect(() => {
+    if ((previewMode || adminMode) && open) {
+      setSelectedKegiatanId(initialKegiatanId ?? "");
+    }
+  }, [previewMode, adminMode, open, initialKegiatanId]);
+
+  // Template Form Proyek aktif kegiatan terpilih — dipakai render tab
+  // Valuasi (dropdown Kategori Proyek) & Kinerja (checkbox per kategori),
+  // dan (mode admin) seluruh section/item generik tiap tab. Mode admin
+  // fetch tanpa activeOnly supaya section/item nonaktif tetap kelihatan
+  // (admin butuh toggle balik), mode lain cuma yang aktif (persis form asli).
+  useEffect(() => {
+    if (!open || !selectedKegiatanId) {
+      setFormTemplate(null);
+      return;
+    }
+    api
+      .get(
+        `/master/form-template/${selectedKegiatanId}${adminMode ? "" : "?activeOnly=true"}`,
+      )
+      .then((res) => setFormTemplate(res.data))
+      .catch(() => setFormTemplate(null));
+  }, [open, selectedKegiatanId, adminMode, adminRefreshToken]);
+
+  // Isi ulang formValuesMap dari data proyek yang diedit (ProyekFormValue).
+  useEffect(() => {
+    if (!open) return;
+    if (!editData?.formValues?.length) {
+      setFormValuesMap({});
+      return;
+    }
+    const map: typeof formValuesMap = {};
+    for (const fv of editData.formValues) {
+      // Checkbox polos tercentang tidak menyimpan value/valueText/valueNumber
+      // apa pun — cuma keberadaan barisnya = "dicentang" (lihat
+      // proyek.service.ts hitungEvaluasi). Kalau ketiganya kosong & item ini
+      // tidak punya opsi, itu tandanya checkbox true, bukan field kosong.
+      const value =
+        fv.option?.value ??
+        fv.valueNumber ??
+        fv.valueText ??
+        (fv.option ? undefined : true);
+      map[fv.item.key] = {
+        value,
+        note: fv.option ? (fv.valueText ?? undefined) : undefined,
+      };
+    }
+    setFormValuesMap(map);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editData, open]);
+
+  const setFormValue = (
+    key: string,
+    patch: { value?: string | boolean | number; note?: string },
+  ) =>
+    setFormValuesMap((prev) => ({
+      ...prev,
+      [key]: { ...prev[key], ...patch },
+    }));
+
+  const kategoriProyekValue = formValuesMap["kategoriProyek"]?.value as
+    | string
+    | undefined;
+
+  const valuasiItems =
+    formTemplate?.tabs
+      .find((t) => t.key === "valuasi")
+      ?.sections.flatMap((s) => s.items) ?? [];
+  const kategoriProyekItem = valuasiItems.find((i) => i.key === "kategoriProyek");
+
+  const kinerjaItems = (
+    formTemplate?.tabs
+      .find((t) => t.key === "kinerja")
+      ?.sections.flatMap((s) => s.items) ?? []
+  ).filter(
+    (i) => !i.conditionItemId || i.conditionValue === kategoriProyekValue,
+  );
+
+  // formTemplate di-fetch dengan activeOnly=true (lihat useEffect di atas) —
+  // jadi tab/item yang MUNCUL di situ sudah pasti aktif, yang tidak muncul
+  // berarti dinonaktifkan admin di kanvas Master Data. Belum ada template
+  // (kegiatan belum dipilih/belum sempat fetch) -> anggap semua aktif,
+  // jangan sampai form kosong sebelum sempat pilih kegiatan.
+  const TAB_KEY_MAP: Record<(typeof TABS)[number]["value"], string> = {
+    identitas: "identitas",
+    dasar: "dasar",
+    kriteria: "kesiapan",
+    pemaketan: "pemaketan",
+    tagging: "tematik",
+    valuasi: "valuasi",
+    kinerja: "kinerja",
+    dokumen: "dokumen",
+    evaluasi: "evaluasi",
+  };
+  // Non-admin: template di-fetch dengan activeOnly=true, jadi tab yang
+  // MUNCUL di situ sudah pasti aktif. Admin: fetch full tree, jadi cek
+  // `isActive` eksplisit (tab tetap ada di tree walau nonaktif).
+  const isTabActive = (value: (typeof TABS)[number]["value"]) => {
+    if (!formTemplate) return true;
+    const tab = formTemplate.tabs.find((t) => t.key === TAB_KEY_MAP[value]);
+    if (!tab) return false;
+    return adminMode ? tab.isActive !== false : true;
+  };
+
+  // Header tab (icon/judul/deskripsi) — icon & judul default dari config
+  // statis (sama urutan/isi dengan kanvas Master Data), deskripsi ikut apa
+  // yang diisi admin di sana (FormTab.description), fallback ke teks default
+  // kalau admin belum pernah isi.
+  const tabHeader = (value: (typeof TABS)[number]["value"]) => {
+    const tabKey = TAB_KEY_MAP[value] as TabKey;
+    const node = formTemplate?.tabs.find((t) => t.key === tabKey);
+    return {
+      icon: TAB_ICONS[tabKey],
+      title: node?.label || TABS.find((t) => t.value === value)!.label,
+      description: node?.description || TAB_DEFAULT_DESCRIPTIONS[tabKey],
+    };
+  };
+  const renderTabHeader = (value: (typeof TABS)[number]["value"]) => {
+    const tabKey = TAB_KEY_MAP[value] as TabKey;
+    return adminMode && adminHandlers ? (
+      adminHandlers.tabHeader(
+        tabKey,
+        formTemplate?.tabs.find((t) => t.key === tabKey),
+      )
+    ) : (
+      <SectionHeader {...tabHeader(value)} />
+    );
+  };
+
+  // Section aktif (sudah urut `order`) milik 1 tab, langsung dari
+  // formTemplate — dipakai renderTemplatedTab supaya urutan & pengelompokan
+  // field 100% ikut apa yang diatur admin di kanvas Master Data (termasuk
+  // utk field BAKU aplikasi, bukan cuma field custom).
+  const templateSections = (value: (typeof TABS)[number]["value"]) =>
+    formTemplate?.tabs.find((t) => t.key === TAB_KEY_MAP[value])?.sections ??
+    [];
+
+  // Render 1 tab dari section+item template: tiap item dicek dulu ke
+  // `renderers` (field baku, JSX-nya sudah ada & spesifik per field) — kalau
+  // key-nya tidak ada di situ, dianggap field custom & dirender generik
+  // lewat FieldControl. Judul section cuma ditampilkan mulai section ke-2
+  // (section pertama sudah terwakili oleh SectionHeader tab).
+  const renderTemplatedTab = (
+    value: (typeof TABS)[number]["value"],
+    renderers: Record<string, (item: FormItemNode) => React.ReactNode>,
+    gridClass: string,
+  ) => {
+    const sections = templateSections(value);
+    const renderItem = (item: FormItemNode): React.ReactNode =>
+      renderers[item.key] ? (
+        renderers[item.key](item)
+      ) : (
+        <div key={item.id} className={cn(isItemWide(item) && "col-span-full")}>
+          <FieldControl
+            mode="fill"
+            item={item}
+            value={formValuesMap[item.key]}
+            onChange={(patch) => setFormValue(item.key, patch)}
+            uploadedFileName={
+              pendingItemFiles[item.id]?.name ?? itemDokumen[item.id]?.fileName
+            }
+            uploading={uploadingItemKeys.has(item.id)}
+            onUpload={(files) => uploadItemFile(item, files)}
+            onRemoveUpload={() => hapusItemFile(item)}
+          />
+        </div>
+      );
+
+    if (adminMode && adminHandlers) {
+      const tabKey = TAB_KEY_MAP[value] as TabKey;
+      const tabId = formTemplate?.tabs.find((t) => t.key === tabKey)?.id ?? "";
+      return adminHandlers.sectionsBody(tabKey, tabId, sections, renderItem, gridClass);
+    }
+
+    return (
+      <div className="space-y-5">
+        {sections.map((section) => (
+          <div key={section.id} className="space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground pl-12">
+              {section.label}
+            </p>
+            <div className={cn(gridClass, "pl-12")}>
+              {section.items.map(renderItem)}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // ===== Renderer field baku per tab — JSX PERSIS sama seperti sebelumnya,
+  // cuma dipindah jadi fungsi keyed-by-item.key & label dari item.label
+  // (bukan string hardcode lagi) supaya ikut apa yang diedit admin. =====
+
+  const identitasRenderers: Record<string, (item: FormItemNode) => React.ReactNode> = {
+    balaiId: (item) => (
+      <div key={item.id} className="space-y-2">
+        <Label>
+          {item.label} <span className="text-destructive">*</span>
+        </Label>
+        <Select
+          value={watch("balaiId")?.toString()}
+          onValueChange={(v) => setValue("balaiId", Number(v))}
+          onOpenChange={(o) => o && setBalaiSearch("")}
+        >
+          <SelectTrigger className="w-full h-10">
+            <SelectValue placeholder="Pilih balai pelaksana" />
+          </SelectTrigger>
+          <SelectContent>
+            {balaiList.length > 20 && (
+              <SelectSearchBox
+                value={balaiSearch}
+                onChange={setBalaiSearch}
+                placeholder="Cari balai..."
+              />
+            )}
+            {balaiList
+              .filter(
+                (b) =>
+                  !balaiSearch ||
+                  `${b.shortName ?? ""} ${b.name}`
+                    .toLowerCase()
+                    .includes(balaiSearch.toLowerCase()),
+              )
+              .map((b) => (
+                <SelectItem key={b.id} value={b.id.toString()}>
+                  {b.shortName && (
+                    <span className="font-medium">{b.shortName}</span>
+                  )}
+                  <span
+                    className={
+                      b.shortName
+                        ? "text-muted-foreground ml-2"
+                        : "font-medium"
+                    }
+                  >
+                    {b.shortName ? `— ${b.name}` : b.name}
+                  </span>
+                  {!b.isActive && (
+                    <span className="text-destructive ml-2 text-xs">
+                      (nonaktif)
+                    </span>
+                  )}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+        {errors.balaiId && (
+          <p className="text-destructive text-xs">{errors.balaiId.message}</p>
+        )}
+      </div>
+    ),
+    periodeId: (item) => (
+      <div key={item.id} className="space-y-2">
+        <Label>
+          {item.label} <span className="text-destructive">*</span>
+        </Label>
+        <Select
+          value={watch("periodeId")?.toString()}
+          onValueChange={(v) => setValue("periodeId", Number(v))}
+        >
+          <SelectTrigger className="w-full h-10">
+            <SelectValue placeholder="Pilih periode anggaran" />
+          </SelectTrigger>
+          <SelectContent>
+            {periodeList.map((p) => (
+              <SelectItem key={p.id} value={p.id.toString()}>
+                <span className="font-medium">{p.label}</span>
+                {p.isActive && (
+                  <Badge variant="default" className="ml-2 text-xs py-0">
+                    Aktif
+                  </Badge>
+                )}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {errors.periodeId && (
+          <p className="text-destructive text-xs">
+            {errors.periodeId.message}
+          </p>
+        )}
+      </div>
+    ),
+    projectName: (item) => (
+      <div key={item.id} className={cn("space-y-2", isItemWide(item) && "col-span-full")}>
+        <Label>
+          {item.label} <span className="text-destructive">*</span>
+        </Label>
+        <Input
+          className="h-10"
+          placeholder="Contoh: Pembangunan Sumur Air Tanah di Kota Palangkaraya"
+          {...register("projectName")}
+        />
+        {errors.projectName && (
+          <p className="text-destructive text-xs">
+            {errors.projectName.message}
+          </p>
+        )}
+      </div>
+    ),
+    wilayahSungaiId: (item) => (
+      <div key={item.id} className="space-y-2">
+        <Label>
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+        <Select
+          value={watch("wilayahSungaiId") || NONE}
+          onValueChange={(v) =>
+            setValue("wilayahSungaiId", v === NONE ? "" : v)
+          }
+          onOpenChange={(o) => o && setWsSearch("")}
+        >
+          <SelectTrigger className="w-full h-10">
+            <SelectValue placeholder="Pilih wilayah sungai" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+            {wilayahSungaiList.length > 20 && (
+              <SelectSearchBox
+                value={wsSearch}
+                onChange={setWsSearch}
+                placeholder="Cari wilayah sungai..."
+              />
+            )}
+            {wilayahSungaiList
+              .filter((w) =>
+                !wsSearch
+                  ? true
+                  : w.name.toLowerCase().includes(wsSearch.toLowerCase()),
+              )
+              .map((w) => (
+                <SelectItem key={w.id} value={w.id}>
+                  {w.name}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+      </div>
+    ),
+  };
+
+  const dasarRenderers: Record<string, (item: FormItemNode) => React.ReactNode> = {
+    sumberUsulanProyek: (item) => (
+      <div key={item.id} className={cn("space-y-2", isItemWide(item) && "col-span-full")}>
+        <Label>
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+        <Select
+          value={watch("sumberUsulanProyek") || NONE}
+          onValueChange={(v) =>
+            setValue("sumberUsulanProyek", v === NONE ? undefined : v, {
+              shouldDirty: true,
+            })
+          }
+        >
+          <SelectTrigger className="h-10 w-full">
+            <SelectValue placeholder="Pilih sumber usulan" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+            {sumberUsulanList.map((s) => (
+              <SelectItem key={s.id} value={s.name}>
+                {s.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    ),
+    sumberUsulanLainnya: (item) => {
+      const sumber = watch("sumberUsulanProyek");
+      if (
+        sumber !== "Pemerintah Daerah" &&
+        sumber !== "Kementerian/Lembaga" &&
+        sumber !== "Lainnya"
+      ) {
+        return null;
+      }
+      return (
+        <div key={item.id} className={cn("space-y-2", isItemWide(item) && "col-span-full")}>
+          <Label>
+            {sumber === "Pemerintah Daerah"
+              ? "Pemerintah Daerah yang Mengusulkan"
+              : sumber === "Kementerian/Lembaga"
+                ? "Kementerian/Lembaga yang Mengusulkan"
+                : item.label}
+          </Label>
+          <Input className="h-10" {...register("sumberUsulanLainnya")} />
+        </div>
+      );
+    },
+    justifikasiProyek: (item) => (
+      <div key={item.id} className={cn("space-y-2", isItemWide(item) && "col-span-full")}>
+        <Label>
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+        <Textarea
+          placeholder="Jelaskan alasan/latar belakang pelaksanaan proyek ini"
+          {...register("justifikasiProyek")}
+        />
+      </div>
+    ),
+  };
+
+  const kriteriaStatusMeta: Record<
+    string,
+    { tahunField: keyof FormData }
+  > = {
+    statusStudiLayak: { tahunField: "tahunStudiLayak" },
+    statusDed: { tahunField: "tahunDed" },
+    statusDokumenLingkungan: { tahunField: "tahunDokumenLingkungan" },
+    statusLarap: { tahunField: "tahunLarap" },
+  };
+  const renderKriteriaStatus = (item: FormItemNode) => {
+    const statusField = item.key as
+      | "statusStudiLayak"
+      | "statusDed"
+      | "statusDokumenLingkungan"
+      | "statusLarap";
+    const tahunField = kriteriaStatusMeta[statusField].tahunField;
+    const status = watch(statusField);
+    return (
+      <div key={item.id} className="space-y-2">
+        <Label className="text-xs">{item.label}</Label>
+        <Select value={status} onValueChange={(v) => setValue(statusField, v as any)}>
+          <SelectTrigger className="h-9 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="RENCANA">Rencana</SelectItem>
+            <SelectItem value="SUDAH_ADA">Sudah Ada</SelectItem>
+            <SelectItem value="TIDAK_PERLU">Tidak Perlu</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input
+          type="number"
+          placeholder="Tahun"
+          className="h-9 text-xs"
+          disabled={status === "TIDAK_PERLU"}
+          {...register(tahunField, { setValueAs: toOptionalNumber })}
+        />
+      </div>
+    );
+  };
+  const kriteriaRenderers: Record<string, (item: FormItemNode) => React.ReactNode> = {
+    statusStudiLayak: renderKriteriaStatus,
+    statusDed: renderKriteriaStatus,
+    statusDokumenLingkungan: renderKriteriaStatus,
+    statusLarap: renderKriteriaStatus,
+    kebutuhanTanah: (item) => (
+      <div key={item.id} className="space-y-2">
+        <Label className="text-xs">{item.label}</Label>
+        <Select
+          value={watch("kebutuhanTanah") ? "ya" : "tidak"}
+          onValueChange={(v) => setValue("kebutuhanTanah", v === "ya")}
+        >
+          <SelectTrigger className="h-9 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="tidak">Tidak Ada</SelectItem>
+            <SelectItem value="ya">Ada</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    ),
+    kewenangan: (item) => (
+      <div key={item.id} className="space-y-2">
+        <Label className="text-xs">{item.label}</Label>
+        <Select value={watch("kewenangan")} onValueChange={(v) => setValue("kewenangan", v as any)}>
+          <SelectTrigger className="h-9 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="PUSAT">Pusat</SelectItem>
+            <SelectItem value="DAERAH">Daerah</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    ),
+  };
+
+  const taggingRenderers: Record<string, (item: FormItemNode) => React.ReactNode> = {
+    kegiatanPrioritasId: (item) => (
+      <div key={item.id} className={cn("space-y-2", isItemWide(item) && "col-span-full")}>
+        <p className="text-xs font-medium text-muted-foreground">{item.label}</p>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label>Prioritas Nasional (PN)</Label>
+            <Select
+              value={selectedPnId || NONE}
+              onValueChange={(v) => {
+                const id = v === NONE ? "" : v;
+                setSelectedPnId(id);
+                setSelectedPpId("");
+                setValue("kegiatanPrioritasId", "");
+              }}
+            >
+              <SelectTrigger className="h-10 w-full min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
+                <SelectValue placeholder="Pilih PN" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+                {pnList.map((pn) => (
+                  <SelectItem key={pn.id} value={pn.id}>
+                    <span className="font-mono text-[10px] mr-1 shrink-0">
+                      {pn.code}
+                    </span>
+                    <span className="min-w-0 truncate">{pn.name}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Program Prioritas (PP)</Label>
+            <Select
+              value={selectedPpId || NONE}
+              onValueChange={(v) => {
+                const id = v === NONE ? "" : v;
+                setSelectedPpId(id);
+                setValue("kegiatanPrioritasId", "");
+              }}
+              disabled={!selectedPnId}
+            >
+              <SelectTrigger className="h-10 w-full min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
+                <SelectValue placeholder="Pilih PN dulu" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+                {(
+                  pnList.find((pn) => pn.id === selectedPnId)
+                    ?.programPrioritas ?? []
+                ).map((pp) => (
+                  <SelectItem key={pp.id} value={pp.id}>
+                    <span className="font-mono text-[10px] mr-1 shrink-0">
+                      {pp.code}
+                    </span>
+                    <span className="min-w-0 truncate">{pp.name}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Kegiatan Prioritas (KP)</Label>
+            <Select
+              value={watch("kegiatanPrioritasId") || NONE}
+              onValueChange={(v) =>
+                setValue("kegiatanPrioritasId", v === NONE ? "" : v)
+              }
+              disabled={!selectedPpId}
+            >
+              <SelectTrigger className="h-10 w-full min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
+                <SelectValue placeholder="Pilih PP dulu" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+                {(
+                  pnList
+                    .find((pn) => pn.id === selectedPnId)
+                    ?.programPrioritas.find((pp) => pp.id === selectedPpId)
+                    ?.kegiatanPrioritas ?? []
+                ).map((kp) => (
+                  <SelectItem key={kp.id} value={kp.id}>
+                    <span className="font-mono text-[10px] mr-1 shrink-0">
+                      {kp.code}
+                    </span>
+                    <span className="min-w-0 truncate">{kp.name}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+    ),
+    indikatorSasaranProgramId: (item) => (
+      <React.Fragment key={item.id}>
+        <div className="space-y-2">
+          <Label>Sasaran Program (SP)</Label>
+          <Select
+            value={selectedSpId || NONE}
+            onValueChange={(v) => {
+              const id = v === NONE ? "" : v;
+              setSelectedSpId(id);
+              setValue("indikatorSasaranProgramId", "");
+            }}
+          >
+            <SelectTrigger className="w-full h-9 text-xs min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
+              <SelectValue placeholder="Pilih (opsional)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+              {spOptionsFiltered.map((sp) => (
+                <SelectItem key={sp.id} value={sp.id}>
+                  <span className="min-w-0 truncate">{sp.name}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+          <Select
+            value={watch("indikatorSasaranProgramId") || NONE}
+            onValueChange={(v) =>
+              setValue("indikatorSasaranProgramId", v === NONE ? "" : v)
+            }
+            disabled={!selectedSpId}
+            onOpenChange={(o) => o && setIspSearch("")}
+          >
+            <SelectTrigger className="w-full h-9 text-xs">
+              <SelectValue
+                placeholder={selectedSpId ? "Pilih (opsional)" : "Pilih SP dulu"}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+              {ispOptions.length > 20 && (
+                <SelectSearchBox
+                  value={ispSearch}
+                  onChange={setIspSearch}
+                  placeholder="Cari ISP..."
+                />
+              )}
+              {ispOptions
+                .filter(
+                  (i) =>
+                    !ispSearch ||
+                    i.name.toLowerCase().includes(ispSearch.toLowerCase()),
+                )
+                .map((i) => (
+                  <SelectItem key={i.id} value={i.id}>
+                    {i.name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </React.Fragment>
+    ),
+    indikatorSasaranKegiatanId: (item) => (
+      <React.Fragment key={item.id}>
+        <div className="space-y-2">
+          <Label>Sasaran Kegiatan (SK)</Label>
+          <Select
+            value={selectedSkId || NONE}
+            onValueChange={(v) => {
+              const id = v === NONE ? "" : v;
+              setSelectedSkId(id);
+              setValue("indikatorSasaranKegiatanId", "");
+            }}
+          >
+            <SelectTrigger className="w-full h-9 text-xs min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
+              <SelectValue placeholder="Pilih (opsional)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+              {skOptionsFiltered.map((sk) => (
+                <SelectItem key={sk.id} value={sk.id}>
+                  <span className="min-w-0 truncate">{sk.name}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+          <Select
+            value={watch("indikatorSasaranKegiatanId") || NONE}
+            onValueChange={(v) =>
+              setValue("indikatorSasaranKegiatanId", v === NONE ? "" : v)
+            }
+            disabled={!selectedSkId}
+            onOpenChange={(o) => o && setIskSearch("")}
+          >
+            <SelectTrigger className="w-full h-9 text-xs">
+              <SelectValue
+                placeholder={selectedSkId ? "Pilih (opsional)" : "Pilih SK dulu"}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+              {iskOptions.length > 20 && (
+                <SelectSearchBox
+                  value={iskSearch}
+                  onChange={setIskSearch}
+                  placeholder="Cari ISK..."
+                />
+              )}
+              {iskOptions
+                .filter(
+                  (i) =>
+                    !iskSearch ||
+                    i.name.toLowerCase().includes(iskSearch.toLowerCase()),
+                )
+                .map((i) => (
+                  <SelectItem key={i.id} value={i.id}>
+                    {i.name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </React.Fragment>
+    ),
+    tematikRenjaId: (item) => (
+      <div key={item.id} className="space-y-2">
+        <Label>
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+        <Select
+          value={watch("tematikRenjaId") || NONE}
+          onValueChange={(v) => setValue("tematikRenjaId", v === NONE ? "" : v)}
+        >
+          <SelectTrigger className="w-full h-9 text-xs">
+            <SelectValue placeholder="Pilih (opsional)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+            {tematikList.map((t) => (
+              <SelectItem key={t.id} value={t.id}>
+                {t.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    ),
+    pkpnId: (item) => (
+      <div key={item.id} className="space-y-2">
+        <Label>
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+        <Select
+          value={watch("pkpnId") || NONE}
+          onValueChange={(v) => setValue("pkpnId", v === NONE ? "" : v)}
+        >
+          <SelectTrigger className="w-full h-9 text-xs">
+            <SelectValue placeholder="Pilih (opsional)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+            {pkpnList.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    ),
+    fkb: (item) => (
+      <label
+        key={item.id}
+        className="flex items-center gap-2 text-xs font-medium self-end pb-2 cursor-pointer"
+      >
+        <input
+          type="checkbox"
+          className="h-3.5 w-3.5 rounded border-input"
+          checked={watch("fkb")}
+          onChange={(e) => setValue("fkb", e.target.checked)}
+        />
+        {item.label}
+      </label>
+    ),
+    fkw: (item) => (
+      <label
+        key={item.id}
+        className="flex items-center gap-2 text-xs font-medium self-end pb-2 cursor-pointer"
+      >
+        <input
+          type="checkbox"
+          className="h-3.5 w-3.5 rounded border-input"
+          checked={watch("fkw")}
+          onChange={(e) => setValue("fkw", e.target.checked)}
+        />
+        {item.label}
+      </label>
+    ),
+    mpa: (item) => (
+      <label
+        key={item.id}
+        className="flex items-center gap-2 text-xs font-medium self-end pb-2 cursor-pointer"
+      >
+        <input
+          type="checkbox"
+          className="h-3.5 w-3.5 rounded border-input"
+          checked={watch("mpa")}
+          onChange={(e) => setValue("mpa", e.target.checked)}
+        />
+        {item.label}
+      </label>
+    ),
+    taggingDinamis: (item) => (
+      <div key={item.id} className={cn("space-y-2", isItemWide(item) && "col-span-full")}>
+        <Label>
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+        <Select
+          value={NONE}
+          onValueChange={(v) => {
+            if (v !== NONE) tambahTaggingDinamis(v);
+          }}
+        >
+          <SelectTrigger className="h-9 text-xs w-full">
+            <SelectValue placeholder="Tambah tag..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE} disabled>
+              Tambah tag...
+            </SelectItem>
+            {taggingDinamisMaster
+              .filter((t) => !taggingDinamis.includes(t.name))
+              .map((t) => (
+                <SelectItem key={t.id} value={t.name}>
+                  {t.name}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+        <div className="flex flex-wrap gap-2">
+          {taggingDinamis.map((t) => (
+            <Badge key={t} variant="secondary" className="gap-1">
+              {t}
+              <button
+                type="button"
+                onClick={() => hapusTaggingDinamis(t)}
+                className="ml-1 hover:text-destructive"
+              >
+                <X size={11} />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      </div>
+    ),
+  };
+
+  const dokumenRenderers: Record<string, (item: FormItemNode) => React.ReactNode> = {
+    dokumenPendukung: (item) => (
+      <div key={item.id} className="space-y-2">
+        <Label>
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+        <input
+          type="file"
+          multiple
+          className="block w-full text-xs text-foreground file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            if (!files.length) return;
+            if (isEdit) {
+              uploadDokumen(editData!.id, files);
+            } else {
+              setPendingFiles((prev) => [...prev, ...files]);
+            }
+            e.target.value = "";
+          }}
+        />
+        {uploadingDokumen && (
+          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <Loader2 size={12} className="animate-spin" /> Mengupload...
+          </p>
+        )}
+        {!isEdit && pendingFiles.length > 0 && (
+          <div className="space-y-1.5">
+            {pendingFiles.map((f, idx) => (
+              <div
+                key={idx}
+                className="flex items-center justify-between rounded-lg border px-3 py-2 text-xs"
+              >
+                <span className="truncate">{f.name}</span>
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() =>
+                    setPendingFiles((prev) => prev.filter((_, i) => i !== idx))
+                  }
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            ))}
+            <p className="text-xs text-muted-foreground">
+              File di atas akan diupload setelah proyek disimpan.
+            </p>
+          </div>
+        )}
+        {isEdit && dokumenList.length > 0 && (
+          <div className="space-y-1.5">
+            {dokumenList.map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center justify-between rounded-lg border px-3 py-2 text-xs"
+              >
+                <a
+                  href={`${api.defaults.baseURL}/uploads/${d.filePath}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="truncate hover:underline"
+                >
+                  {d.fileName}
+                </a>
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => hapusDokumen(d.id)}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    ),
+    catatanPembina: (item) => (
+      <div key={item.id} className="space-y-2">
+        <Label className="text-xs">
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+        <Textarea {...register("catatanPembina")} />
+      </div>
+    ),
+    catatanSspsda: (item) => (
+      <div key={item.id} className="space-y-2">
+        <Label className="text-xs">
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+        <Textarea {...register("catatanSspsda")} />
+      </div>
+    ),
+  };
+
   const hasEvaluasi =
     !selectedKegiatanId ||
-    (kegiatanList.find((k) => k.id === selectedKegiatanId)?._count
-      ?.evaluasiItem ?? 0) > 0;
-  const visibleTabs = hasEvaluasi
+    !!kegiatanList.find((k) => k.id === selectedKegiatanId)?.formTemplate;
+  // Mode admin selalu lihat SEMUA tab (termasuk nonaktif, supaya bisa
+  // ditoggle balik) — mode lain cuma tab yang aktif, persis form asli.
+  const visibleTabs = adminMode
     ? TABS
-    : TABS.filter((t) => t.value === "identitas" || t.value === "pemaketan");
+    : hasEvaluasi
+      ? TABS.filter((t) => isTabActive(t.value))
+      : TABS.filter((t) => t.value === "identitas" || t.value === "pemaketan");
 
   useEffect(() => {
     if (!visibleTabs.some((t) => t.value === activeTab)) {
       setActiveTab("identitas");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasEvaluasi]);
+  }, [hasEvaluasi, formTemplate]);
 
   const allTabsVisited = visibleTabs.every((t) => visitedTabs.has(t.value));
 
@@ -515,23 +1599,97 @@ export function ProyekFormDialog({
     }
   };
 
+  const postItemFile = async (proyekId: string, itemId: string, file: File) => {
+    const formData = new FormData();
+    formData.append("files", file);
+    formData.append("formItemId", itemId);
+    const res = await api.post(`/proyek/${proyekId}/dokumen`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data[0] as { id: string; fileName: string };
+  };
+
+  // Upload file utk field bertipe UPLOAD di form dinamis, per FormItem.
+  // Proyek belum ada (create) -> file ditahan dulu (pendingItemFiles),
+  // diupload sekaligus setelah "Buat Proyek" sukses (lihat onSubmit).
+  // Proyek sudah ada (edit) -> upload langsung, ditag formItemId.
+  const uploadItemFile = async (item: FormItemNode, files: File[]) => {
+    const file = files[0];
+    if (!file) return;
+    if (!isEdit) {
+      setPendingItemFiles((prev) => ({ ...prev, [item.id]: file }));
+      return;
+    }
+    setUploadingItemKeys((prev) => new Set(prev).add(item.id));
+    try {
+      const doc = await postItemFile(editData!.id, item.id, file);
+      setItemDokumen((prev) => ({ ...prev, [item.id]: doc }));
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal upload file");
+    } finally {
+      setUploadingItemKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  };
+
+  const hapusItemFile = async (item: FormItemNode) => {
+    if (pendingItemFiles[item.id]) {
+      setPendingItemFiles((prev) => {
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
+      return;
+    }
+    const doc = itemDokumen[item.id];
+    if (!doc) return;
+    try {
+      await api.delete(`/proyek/dokumen/${doc.id}`);
+      setItemDokumen((prev) => {
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal hapus file");
+    }
+  };
+
   // Skor evaluasi live: dihitung ulang tiap field yang mempengaruhi deteksi
-  // berubah (lihat evaluasi-deteksi.ts di backend), bukan menunggu submit.
+  // berubah (lihat form-skor.ts di backend), bukan menunggu submit.
   // Debounce 500ms — cukup lama untuk tidak spam API tiap ketikan, cukup
   // pendek supaya tetap terasa "langsung".
+  // formValuesMap -> payload backend (FormValueDto[]) — cuma kirim yang
+  // benar-benar terisi (dropdown kepilih atau checkbox tercentang).
+  const buildFormValues = () =>
+    Object.entries(formValuesMap)
+      .filter(([, v]) => v.value !== undefined && v.value !== "")
+      .map(([key, v]) => ({ key, value: v.value, note: v.note }));
+
   const watchedForPreview = watch();
   const paket0Form = watchedForPreview.paket?.[0];
   const roIdPreview = isEdit ? editData?.paket?.[0]?.roId : paket0Form?.roId;
   const previewKey = JSON.stringify({
     roIdPreview,
+    formValuesMap,
     sumberUsulanProyek: watchedForPreview.sumberUsulanProyek,
     kegiatanPrioritasId: watchedForPreview.kegiatanPrioritasId,
-    tahunDed: watchedForPreview.tahunDed,
-    tahunDokumenLingkungan: watchedForPreview.tahunDokumenLingkungan,
+    statusStudiLayak: watchedForPreview.statusStudiLayak,
+    statusDed: watchedForPreview.statusDed,
+    statusLarap: watchedForPreview.statusLarap,
+    statusDokumenLingkungan: watchedForPreview.statusDokumenLingkungan,
     kebutuhanTanah: watchedForPreview.kebutuhanTanah,
     kewenangan: watchedForPreview.kewenangan,
     pkpnId: watchedForPreview.pkpnId,
+    indikatorSasaranProgramId: watchedForPreview.indikatorSasaranProgramId,
+    indikatorSasaranKegiatanId: watchedForPreview.indikatorSasaranKegiatanId,
     tematikRenjaId: watchedForPreview.tematikRenjaId,
+    fkb: watchedForPreview.fkb,
+    fkw: watchedForPreview.fkw,
+    mpa: watchedForPreview.mpa,
     taggingDinamis: watchedForPreview.taggingDinamis,
     dana: isEdit
       ? undefined
@@ -579,16 +1737,27 @@ export function ProyekFormDialog({
           roId: roIdPreview,
           sumberUsulanProyek: watchedForPreview.sumberUsulanProyek,
           kegiatanPrioritasId: watchedForPreview.kegiatanPrioritasId,
-          tahunDed: watchedForPreview.tahunDed,
-          tahunDokumenLingkungan: watchedForPreview.tahunDokumenLingkungan,
+          statusStudiLayak: watchedForPreview.statusStudiLayak,
+          statusDed: watchedForPreview.statusDed,
+          statusLarap: watchedForPreview.statusLarap,
+          statusDokumenLingkungan: watchedForPreview.statusDokumenLingkungan,
           kebutuhanTanah: watchedForPreview.kebutuhanTanah,
           kewenangan: watchedForPreview.kewenangan,
           pkpnId: watchedForPreview.pkpnId,
+          indikatorSasaranProgramId:
+            watchedForPreview.indikatorSasaranProgramId,
+          indikatorSasaranKegiatanId:
+            watchedForPreview.indikatorSasaranKegiatanId,
           tematikRenjaId: watchedForPreview.tematikRenjaId,
+          fkb: watchedForPreview.fkb,
+          fkw: watchedForPreview.fkw,
+          mpa: watchedForPreview.mpa,
           taggingDinamis: watchedForPreview.taggingDinamis,
           totalDana,
           outputTarget,
           outcomeTarget,
+          formValues: buildFormValues(),
+          proyekId: editData?.id,
         })
         .then((res) => setPreview(res.data))
         .catch(() => setPreview(null))
@@ -622,12 +1791,16 @@ export function ProyekFormDialog({
     try {
       if (isEdit) {
         const { paket, ...rest } = data;
-        await api.patch(`/proyek/${editData!.id}`, bersihkanFkKosong(rest));
+        await api.patch(`/proyek/${editData!.id}`, {
+          ...bersihkanFkKosong(rest),
+          formValues: buildFormValues(),
+        });
         toast.success("Proyek berhasil diperbarui");
       } else {
         const { paket, ...rest } = data;
         const payload = {
           ...bersihkanFkKosong(rest),
+          formValues: buildFormValues(),
           paket: paket.map((p) => ({
             name: p.name,
             roId: p.roId,
@@ -658,6 +1831,15 @@ export function ProyekFormDialog({
         if (pendingFiles.length) {
           await uploadDokumen(res.data.id, pendingFiles);
         }
+        const stagedItemFiles = Object.entries(pendingItemFiles);
+        if (stagedItemFiles.length) {
+          await Promise.all(
+            stagedItemFiles.map(([itemId, file]) =>
+              postItemFile(res.data.id, itemId, file),
+            ),
+          );
+          setPendingItemFiles({});
+        }
         toast.success("Proyek berhasil dibuat");
       }
       onSuccess();
@@ -666,9 +1848,58 @@ export function ProyekFormDialog({
     }
   };
 
+  // Nilai kosong generik (string/number/boolean/array) — dipakai baik utk
+  // item generik (lewat formValuesMap) maupun field baku non-wajib-baku
+  // (lewat watch(), react-hook-form).
+  const isEmptyValue = (v: unknown) =>
+    v == null || v === "" || (Array.isArray(v) && v.length === 0);
+
   // Validasi gagal (mis. Nama Proyek kosong) tapi field itu ada di tab yang
   // sedang tidak aktif — tanpa ini tombol submit terkesan "tidak ngaruh"
   // karena error-nya tidak kelihatan sama sekali.
+  // Validasi "wajib diisi" utk item generik DAN field baku yang boleh
+  // dibuat opsional (item.required cuma data kosong tanpa ini — supaya
+  // beneran ngefek, dicek manual di sini sebelum submit, sama seperti
+  // onInvalid: loncat ke tab yang error + toast). `balaiId`/`periodeId`/
+  // `projectName` DIKECUALIKAN — kolomnya NOT NULL di database (lihat
+  // model Proyek), jadi wajib-nya dikunci lewat zod `schema` di atas, tidak
+  // bisa dibikin opsional dari kanvas admin.
+  const findMissingRequiredItem = () => {
+    if (!formTemplate) return null;
+    for (const tabNode of formTemplate.tabs) {
+      if (tabNode.isActive === false) continue;
+      const tabValue = TABS.find(
+        (t) => TAB_KEY_MAP[t.value] === tabNode.key,
+      )?.value;
+      if (!tabValue) continue;
+      for (const section of tabNode.sections) {
+        if (section.isActive === false) continue;
+        for (const item of section.items) {
+          if (
+            item.isActive === false ||
+            !item.required ||
+            ALWAYS_REQUIRED_BAKU_KEYS.has(item.key)
+          )
+            continue;
+          const isBaku = BAKU_ITEM_KEYS.has(item.key);
+          const isEmpty = isBaku
+            ? item.key === "dokumenPendukung"
+              ? isEdit
+                ? dokumenList.length === 0
+                : pendingFiles.length === 0
+              : isEmptyValue(watch(item.key as keyof FormData))
+            : item.fieldType === "UPLOAD"
+              ? !pendingItemFiles[item.id] && !itemDokumen[item.id]
+              : item.fieldType === "CHECKBOX"
+                ? !formValuesMap[item.key]?.value
+                : isEmptyValue(formValuesMap[item.key]?.value);
+          if (isEmpty) return { tabValue, label: item.label };
+        }
+      }
+    }
+    return null;
+  };
+
   const onInvalid = (errs: FieldErrors<FormData>) => {
     const firstField = Object.keys(errs)[0];
     const tab = firstField ? FIELD_TO_TAB[firstField] : undefined;
@@ -681,25 +1912,11 @@ export function ProyekFormDialog({
     );
   };
 
-  return (
-    <Sheet
-      open={open}
-      onOpenChange={(isOpen) => {
-        if (!isOpen) onClose();
-      }}
-    >
-      <SheetContent
-        layer="1"
-        className="!p-0"
-        onInteractOutside={(e) => e.preventDefault()}
-      >
-        <SheetHeader className="gap-2 pb-4">
-          <SheetTitle className="text-lg leading-snug">
-            {isEdit ? "Edit Proyek" : "Buat Proyek"}
-          </SheetTitle>
-        </SheetHeader>
-
-        {loadingMaster ? (
+  // Body tab (spinner saat loading, atau Tabs lengkap) dihitung SEKALI di
+  // sini, dipakai baik dibungkus Sheet (modal, mode fill/preview) maupun
+  // ditanam langsung inline di halaman (mode admin embedded) — supaya
+  // markup-nya selalu identik di kedua tempat.
+  const tabsBody = loadingMaster ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="animate-spin text-muted-foreground" size={28} />
             <span className="ml-3 text-sm text-muted-foreground">
@@ -713,7 +1930,7 @@ export function ProyekFormDialog({
               setActiveTab(v);
               setVisitedTabs((prev) => new Set(prev).add(v));
             }}
-            className="flex-1 min-h-0"
+            className={cn("flex-1 min-h-0", embedded && "flex-none")}
           >
             <div className="px-6 pt-2">
               <TabsList className="w-full flex-nowrap">
@@ -721,171 +1938,40 @@ export function ProyekFormDialog({
                   <TabsTrigger
                     key={t.value}
                     value={t.value}
-                    className="text-xs"
+                    className={cn(
+                      "text-xs gap-1.5",
+                      adminMode && !isTabActive(t.value) && "opacity-50",
+                    )}
                   >
+                    {adminMode && (
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full",
+                          isTabActive(t.value)
+                            ? "bg-emerald-500"
+                            : "bg-slate-300",
+                        )}
+                      />
+                    )}
                     {t.label}
                   </TabsTrigger>
                 ))}
               </TabsList>
             </div>
 
-            <SheetBody className="px-6 py-6">
+            <SheetBody
+              className={cn(
+                "px-6 py-6",
+                embedded && "flex-none overflow-visible",
+              )}
+            >
               {/* === TAB 1: IDENTITAS PROYEK === */}
               <TabsContent value="identitas" className="space-y-5">
-                <SectionHeader
-                  icon={MapPin}
-                  title="Identitas Proyek"
-                  description="Informasi dasar mengenai proyek dan unit pelaksana"
-                />
-                <div className="grid grid-cols-2 gap-5 pl-12">
-                  <div className="space-y-2">
-                    <Label>
-                      Balai <span className="text-destructive">*</span>
-                    </Label>
-                    <Select
-                      value={watch("balaiId")?.toString()}
-                      onValueChange={(v) => setValue("balaiId", Number(v))}
-                      onOpenChange={(o) => o && setBalaiSearch("")}
-                    >
-                      <SelectTrigger className="w-full h-10">
-                        <SelectValue placeholder="Pilih balai pelaksana" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {balaiList.length > 20 && (
-                          <SelectSearchBox
-                            value={balaiSearch}
-                            onChange={setBalaiSearch}
-                            placeholder="Cari balai..."
-                          />
-                        )}
-                        {balaiList
-                          .filter(
-                            (b) =>
-                              !balaiSearch ||
-                              `${b.shortName ?? ""} ${b.name}`
-                                .toLowerCase()
-                                .includes(balaiSearch.toLowerCase()),
-                          )
-                          .map((b) => (
-                            <SelectItem key={b.id} value={b.id.toString()}>
-                              {b.shortName && (
-                                <span className="font-medium">
-                                  {b.shortName}
-                                </span>
-                              )}
-                              <span
-                                className={
-                                  b.shortName
-                                    ? "text-muted-foreground ml-2"
-                                    : "font-medium"
-                                }
-                              >
-                                {b.shortName ? `— ${b.name}` : b.name}
-                              </span>
-                              {!b.isActive && (
-                                <span className="text-destructive ml-2 text-xs">
-                                  (nonaktif)
-                                </span>
-                              )}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                    {errors.balaiId && (
-                      <p className="text-destructive text-xs">
-                        {errors.balaiId.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>
-                      Periode <span className="text-destructive">*</span>
-                    </Label>
-                    <Select
-                      value={watch("periodeId")?.toString()}
-                      onValueChange={(v) => setValue("periodeId", Number(v))}
-                    >
-                      <SelectTrigger className="w-full h-10">
-                        <SelectValue placeholder="Pilih periode anggaran" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {periodeList.map((p) => (
-                          <SelectItem key={p.id} value={p.id.toString()}>
-                            <span className="font-medium">{p.label}</span>
-                            {p.isActive && (
-                              <Badge
-                                variant="default"
-                                className="ml-2 text-xs py-0"
-                              >
-                                Aktif
-                              </Badge>
-                            )}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {errors.periodeId && (
-                      <p className="text-destructive text-xs">
-                        {errors.periodeId.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="col-span-2 space-y-2">
-                    <Label>
-                      Nama Proyek <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      className="h-10"
-                      placeholder="Contoh: Pembangunan Sumur Air Tanah di Kota Palangkaraya"
-                      {...register("projectName")}
-                    />
-                    {errors.projectName && (
-                      <p className="text-destructive text-xs">
-                        {errors.projectName.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Wilayah Sungai</Label>
-                    <Select
-                      value={watch("wilayahSungaiId") || NONE}
-                      onValueChange={(v) =>
-                        setValue("wilayahSungaiId", v === NONE ? "" : v)
-                      }
-                      onOpenChange={(o) => o && setWsSearch("")}
-                    >
-                      <SelectTrigger className="w-full h-10">
-                        <SelectValue placeholder="Pilih wilayah sungai" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                        {wilayahSungaiList.length > 20 && (
-                          <SelectSearchBox
-                            value={wsSearch}
-                            onChange={setWsSearch}
-                            placeholder="Cari wilayah sungai..."
-                          />
-                        )}
-                        {wilayahSungaiList
-                          .filter((w) =>
-                            !wsSearch
-                              ? true
-                              : w.name
-                                  .toLowerCase()
-                                  .includes(wsSearch.toLowerCase()),
-                          )
-                          .map((w) => (
-                            <SelectItem key={w.id} value={w.id}>
-                              {w.name}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
+                {renderTabHeader("identitas")}
+                {/* Kegiatan bukan FormItem (dipakai menentukan template-nya
+                    sendiri, jadi tidak bisa ikut diatur di kanvas) — tetap
+                    field tersendiri di luar loop template, selalu tampil. */}
+                <div className={cn(KEGIATAN_GRID_CLASS, "pl-12 mb-5")}>
                   <div className="space-y-2">
                     <Label>Kegiatan</Label>
                     <Select
@@ -893,7 +1979,7 @@ export function ProyekFormDialog({
                       onValueChange={(v) =>
                         setSelectedKegiatanId(v === NONE ? "" : v)
                       }
-                      disabled={isEdit}
+                      disabled={isEdit || previewMode}
                     >
                       <SelectTrigger className="h-10 w-full min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
                         <SelectValue placeholder="Pilih kegiatan" />
@@ -912,164 +1998,45 @@ export function ProyekFormDialog({
                     </Select>
                   </div>
                 </div>
+                {renderTemplatedTab(
+                  "identitas",
+                  identitasRenderers,
+                  TAB_GRID_CLASS.identitas!,
+                )}
               </TabsContent>
 
               {/* === TAB 2: DASAR PELAKSANAAN === */}
               <TabsContent value="dasar" className="space-y-5">
-                <SectionHeader
-                  icon={ScrollText}
-                  title="Dasar Pelaksanaan"
-                  description="Sumber usulan dan justifikasi proyek — dipakai untuk deteksi skor evaluasi otomatis"
-                />
-                <div className="grid grid-cols-2 gap-5 pl-12">
-                  <div className="col-span-2 space-y-2">
-                    <Label>Sumber Usulan Proyek</Label>
-                    <Select
-                      value={watch("sumberUsulanProyek") || NONE}
-                      onValueChange={(v) =>
-                        setValue("sumberUsulanProyek", v === NONE ? undefined : v, {
-                          shouldDirty: true,
-                        })
-                      }
-                    >
-                      <SelectTrigger className="h-10 w-full">
-                        <SelectValue placeholder="Pilih sumber usulan" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                        {sumberUsulanList.map((s) => (
-                          <SelectItem key={s.id} value={s.name}>
-                            {s.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {(watch("sumberUsulanProyek") === "Pemerintah Daerah" ||
-                    watch("sumberUsulanProyek") === "Kementerian/Lembaga" ||
-                    watch("sumberUsulanProyek") === "Lainnya") && (
-                    <div className="col-span-2 space-y-2">
-                      <Label>
-                        {watch("sumberUsulanProyek") === "Pemerintah Daerah"
-                          ? "Pemerintah Daerah yang Mengusulkan"
-                          : watch("sumberUsulanProyek") ===
-                              "Kementerian/Lembaga"
-                            ? "Kementerian/Lembaga yang Mengusulkan"
-                            : "Sumber Usulan Lainnya"}
-                      </Label>
-                      <Input
-                        className="h-10"
-                        {...register("sumberUsulanLainnya")}
-                      />
-                    </div>
-                  )}
-
-                  <div className="col-span-2 space-y-2">
-                    <Label>Justifikasi Proyek</Label>
-                    <Textarea
-                      placeholder="Jelaskan alasan/latar belakang pelaksanaan proyek ini"
-                      {...register("justifikasiProyek")}
-                    />
-                  </div>
-                </div>
+                {renderTabHeader("dasar")}
+                {renderTemplatedTab(
+                  "dasar",
+                  dasarRenderers,
+                  TAB_GRID_CLASS.dasar!,
+                )}
               </TabsContent>
 
               {/* === TAB 3: KRITERIA TEKNIS === */}
               <TabsContent value="kriteria" className="space-y-5">
-                <SectionHeader
-                  icon={FileText}
-                  title="Kriteria Teknis"
-                  description="Kesiapan dokumen teknis — dipakai untuk deteksi skor evaluasi otomatis"
-                />
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-5 pl-12">
-                  {(
-                    [
-                      ["Studi Kelayakan", "statusStudiLayak", "tahunStudiLayak"],
-                      ["DED", "statusDed", "tahunDed"],
-                      [
-                        "Dokumen Lingkungan",
-                        "statusDokumenLingkungan",
-                        "tahunDokumenLingkungan",
-                      ],
-                      ["LARAP", "statusLarap", "tahunLarap"],
-                    ] as const
-                  ).map(([label, statusField, tahunField]) => {
-                    const status = watch(statusField);
-                    return (
-                      <div key={tahunField} className="space-y-2">
-                        <Label className="text-xs">{label}</Label>
-                        <Select
-                          value={status}
-                          onValueChange={(v) => setValue(statusField, v as any)}
-                        >
-                          <SelectTrigger className="h-9 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="RENCANA">Rencana</SelectItem>
-                            <SelectItem value="SUDAH_ADA">
-                              Sudah Ada
-                            </SelectItem>
-                            <SelectItem value="TIDAK_PERLU">
-                              Tidak Perlu
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          type="number"
-                          placeholder="Tahun"
-                          className="h-9 text-xs"
-                          disabled={status === "TIDAK_PERLU"}
-                          {...register(tahunField, {
-                            setValueAs: toOptionalNumber,
-                          })}
-                        />
-                      </div>
-                    );
-                  })}
-                  <div className="space-y-2">
-                    <Label className="text-xs">Kebutuhan Tanah</Label>
-                    <Select
-                      value={watch("kebutuhanTanah") ? "ya" : "tidak"}
-                      onValueChange={(v) =>
-                        setValue("kebutuhanTanah", v === "ya")
-                      }
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="tidak">Tidak Ada</SelectItem>
-                        <SelectItem value="ya">Ada</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Kewenangan</Label>
-                    <Select
-                      value={watch("kewenangan")}
-                      onValueChange={(v) => setValue("kewenangan", v as any)}
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="PUSAT">Pusat</SelectItem>
-                        <SelectItem value="DAERAH">Daerah</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+                {renderTabHeader("kriteria")}
+                {renderTemplatedTab(
+                  "kriteria",
+                  kriteriaRenderers,
+                  TAB_GRID_CLASS.kesiapan!,
+                )}
               </TabsContent>
 
               {/* === TAB 4: PEMAKETAN === */}
               <TabsContent value="pemaketan" className="space-y-5">
-                {isEdit ? (
+                {adminMode && adminHandlers ? (
+                  <>
+                    {renderTabHeader("pemaketan")}
+                    {adminHandlers.note("pemaketan")}
+                  </>
+                ) : isEdit ? (
                   <div className="pl-12 space-y-3">
                     <SectionHeader
-                      icon={Target}
-                      title="Pemaketan"
+                      icon={TAB_ICONS.pemaketan}
+                      title={tabHeader("pemaketan").title}
                       description="Paket pekerjaan proyek ini"
                     />
                     {editData!.paket.length === 0 ? (
@@ -1104,8 +2071,8 @@ export function ProyekFormDialog({
                   <div className="space-y-5">
                     <div className="flex items-center justify-between">
                       <SectionHeader
-                        icon={Target}
-                        title="Pemaketan"
+                        icon={TAB_ICONS.pemaketan}
+                        title={tabHeader("pemaketan").title}
                         description="Tambah paket pekerjaan di bawah proyek ini beserta alokasi tahun berjalan"
                       />
                       <Button
@@ -1554,494 +2521,131 @@ export function ProyekFormDialog({
 
               {/* === TAB 5: TAGGING === */}
               <TabsContent value="tagging" className="space-y-6">
-                <div className="space-y-5">
-                  <SectionHeader
-                    icon={Target}
-                    title="RPJMN — PN / PP / KP"
-                    description="Kegiatan Prioritas RPJMN yang didukung proyek ini"
-                  />
-                  <div className="pl-12 grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label>Prioritas Nasional (PN)</Label>
-                      <Select
-                        value={selectedPnId || NONE}
-                        onValueChange={(v) => {
-                          const id = v === NONE ? "" : v;
-                          setSelectedPnId(id);
-                          setSelectedPpId("");
-                          setValue("kegiatanPrioritasId", "");
-                        }}
-                      >
-                        <SelectTrigger className="h-10 w-full min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
-                          <SelectValue placeholder="Pilih PN" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                          {pnList.map((pn) => (
-                            <SelectItem key={pn.id} value={pn.id}>
-                              <span className="font-mono text-[10px] mr-1 shrink-0">
-                                {pn.code}
-                              </span>
-                              <span className="min-w-0 truncate">
-                                {pn.name}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Program Prioritas (PP)</Label>
-                      <Select
-                        value={selectedPpId || NONE}
-                        onValueChange={(v) => {
-                          const id = v === NONE ? "" : v;
-                          setSelectedPpId(id);
-                          setValue("kegiatanPrioritasId", "");
-                        }}
-                        disabled={!selectedPnId}
-                      >
-                        <SelectTrigger className="h-10 w-full min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
-                          <SelectValue placeholder="Pilih PN dulu" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                          {(
-                            pnList.find((pn) => pn.id === selectedPnId)
-                              ?.programPrioritas ?? []
-                          ).map((pp) => (
-                            <SelectItem key={pp.id} value={pp.id}>
-                              <span className="font-mono text-[10px] mr-1 shrink-0">
-                                {pp.code}
-                              </span>
-                              <span className="min-w-0 truncate">
-                                {pp.name}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Kegiatan Prioritas (KP)</Label>
-                      <Select
-                        value={watch("kegiatanPrioritasId") || NONE}
-                        onValueChange={(v) =>
-                          setValue("kegiatanPrioritasId", v === NONE ? "" : v)
-                        }
-                        disabled={!selectedPpId}
-                      >
-                        <SelectTrigger className="h-10 w-full min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
-                          <SelectValue placeholder="Pilih PP dulu" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                          {(
-                            pnList
-                              .find((pn) => pn.id === selectedPnId)
-                              ?.programPrioritas.find(
-                                (pp) => pp.id === selectedPpId,
-                              )?.kegiatanPrioritas ?? []
-                          ).map((kp) => (
-                            <SelectItem key={kp.id} value={kp.id}>
-                              <span className="font-mono text-[10px] mr-1 shrink-0">
-                                {kp.code}
-                              </span>
-                              <span className="min-w-0 truncate">
-                                {kp.name}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </div>
+                {renderTabHeader("tagging")}
+                {renderTemplatedTab(
+                  "tagging",
+                  taggingRenderers,
+                  TAB_GRID_CLASS.tematik!,
+                )}
+              </TabsContent>
 
-                <div className="space-y-5">
-                  <SectionHeader
-                    icon={Target}
-                    title="RENSTRA — SP/ISP, SK/ISK"
-                    description="Indikator Sasaran Program & Sasaran Kegiatan"
-                  />
-                  <div className="pl-12 grid grid-cols-2 gap-4">
+              {/* === TAB: VALUASI PROYEK === Kategori Proyek dipilih manual;
+                  3 kriteria rasio dana/output/outcome dihitung OTOMATIS
+                  server-side dari alokasi paket vs ambang batas Master Data
+                  (lihat form-skor.ts) — tidak ada input manual untuk itu. */}
+              <TabsContent value="valuasi" className="space-y-5">
+                {renderTabHeader("valuasi")}
+                {adminMode && adminHandlers ? (
+                  renderTemplatedTab("valuasi", {}, TAB_GRID_CLASS.valuasi!)
+                ) : (
+                <div className="pl-12 space-y-4 max-w-md">
+                  {kategoriProyekItem ? (
                     <div className="space-y-2">
-                      <Label>Sasaran Program (SP)</Label>
+                      <Label className="text-xs">{kategoriProyekItem.label}</Label>
                       <Select
-                        value={selectedSpId || NONE}
-                        onValueChange={(v) => {
-                          const id = v === NONE ? "" : v;
-                          setSelectedSpId(id);
-                          setValue("indikatorSasaranProgramId", "");
-                        }}
-                      >
-                        <SelectTrigger className="w-full h-9 text-xs min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
-                          <SelectValue placeholder="Pilih (opsional)" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                          {spOptionsFiltered.map((sp) => (
-                            <SelectItem key={sp.id} value={sp.id}>
-                              <span className="min-w-0 truncate">
-                                {sp.name}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Sasaran Kegiatan (SK)</Label>
-                      <Select
-                        value={selectedSkId || NONE}
-                        onValueChange={(v) => {
-                          const id = v === NONE ? "" : v;
-                          setSelectedSkId(id);
-                          setValue("indikatorSasaranKegiatanId", "");
-                        }}
-                      >
-                        <SelectTrigger className="w-full h-9 text-xs min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
-                          <SelectValue placeholder="Pilih (opsional)" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                          {skOptionsFiltered.map((sk) => (
-                            <SelectItem key={sk.id} value={sk.id}>
-                              <span className="min-w-0 truncate">
-                                {sk.name}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Indikator Sasaran Program (ISP)</Label>
-                      <Select
-                        value={watch("indikatorSasaranProgramId") || NONE}
+                        value={kategoriProyekValue ?? NONE}
                         onValueChange={(v) =>
-                          setValue(
-                            "indikatorSasaranProgramId",
-                            v === NONE ? "" : v,
-                          )
+                          setFormValue("kategoriProyek", {
+                            value: v === NONE ? undefined : v,
+                          })
                         }
-                        disabled={!selectedSpId}
-                        onOpenChange={(o) => o && setIspSearch("")}
                       >
-                        <SelectTrigger className="w-full h-9 text-xs">
-                          <SelectValue
-                            placeholder={
-                              selectedSpId
-                                ? "Pilih (opsional)"
-                                : "Pilih SP dulu"
-                            }
-                          />
+                        <SelectTrigger className="w-full h-10">
+                          <SelectValue placeholder="Pilih kategori proyek" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                          {ispOptions.length > 20 && (
-                            <SelectSearchBox
-                              value={ispSearch}
-                              onChange={setIspSearch}
-                              placeholder="Cari ISP..."
+                          <SelectItem value={NONE}>— Belum dipilih —</SelectItem>
+                          {kategoriProyekItem.options.map((o) => (
+                            <SelectItem key={o.id} value={o.value}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Kegiatan ini belum punya template Valuasi di Master Data.
+                    </p>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">
+                    Kriteria rasio anggaran terhadap output/outcome dihitung
+                    otomatis dari alokasi paket, tidak perlu diisi manual.
+                  </p>
+                </div>
+                )}
+              </TabsContent>
+
+              {/* === TAB: KINERJA PROYEK === checkbox + catatan, daftar item
+                  mengikuti Kategori Proyek yang dipilih di tab Valuasi. */}
+              <TabsContent value="kinerja" className="space-y-5">
+                {renderTabHeader("kinerja")}
+                {adminMode && adminHandlers ? (
+                  renderTemplatedTab("kinerja", {}, TAB_GRID_CLASS.kinerja!)
+                ) : (
+                <div className="pl-12 space-y-3">
+                  {!kategoriProyekValue ? (
+                    <div className="rounded-xl border-2 border-dashed p-6 text-center text-muted-foreground text-xs">
+                      Pilih Kategori Proyek di tab Valuasi dulu.
+                    </div>
+                  ) : kinerjaItems.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Belum ada kriteria kinerja untuk kategori ini.
+                    </p>
+                  ) : (
+                    kinerjaItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-start gap-2.5 rounded-lg border px-3 py-2.5"
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 mt-0.5 accent-primary shrink-0"
+                          checked={!!formValuesMap[item.key]?.value}
+                          onChange={(e) =>
+                            setFormValue(item.key, { value: e.target.checked })
+                          }
+                        />
+                        <div className="flex-1 space-y-1.5">
+                          <p className="text-xs leading-snug">{item.label}</p>
+                          {!!formValuesMap[item.key]?.value && (
+                            <Input
+                              className="h-8 text-xs"
+                              placeholder="Catatan/justifikasi (opsional)"
+                              value={formValuesMap[item.key]?.note ?? ""}
+                              onChange={(e) =>
+                                setFormValue(item.key, { note: e.target.value })
+                              }
                             />
                           )}
-                          {ispOptions
-                            .filter(
-                              (i) =>
-                                !ispSearch ||
-                                i.name
-                                  .toLowerCase()
-                                  .includes(ispSearch.toLowerCase()),
-                            )
-                            .map((i) => (
-                              <SelectItem key={i.id} value={i.id}>
-                                {i.name}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Indikator Sasaran Kegiatan (ISK)</Label>
-                      <Select
-                        value={watch("indikatorSasaranKegiatanId") || NONE}
-                        onValueChange={(v) =>
-                          setValue(
-                            "indikatorSasaranKegiatanId",
-                            v === NONE ? "" : v,
-                          )
-                        }
-                        disabled={!selectedSkId}
-                        onOpenChange={(o) => o && setIskSearch("")}
-                      >
-                        <SelectTrigger className="w-full h-9 text-xs">
-                          <SelectValue
-                            placeholder={
-                              selectedSkId
-                                ? "Pilih (opsional)"
-                                : "Pilih SK dulu"
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                          {iskOptions.length > 20 && (
-                            <SelectSearchBox
-                              value={iskSearch}
-                              onChange={setIskSearch}
-                              placeholder="Cari ISK..."
-                            />
-                          )}
-                          {iskOptions
-                            .filter(
-                              (i) =>
-                                !iskSearch ||
-                                i.name
-                                  .toLowerCase()
-                                  .includes(iskSearch.toLowerCase()),
-                            )
-                            .map((i) => (
-                              <SelectItem key={i.id} value={i.id}>
-                                {i.name}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-5">
-                  <SectionHeader
-                    icon={Tags}
-                    title="RENJA — Tematik & PKPN"
-                    description="Tematik Renja, PKPN, dan tagging FKB/FKW/MPA"
-                  />
-                  <div className="pl-12 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Tematik RENJA</Label>
-                        <Select
-                          value={watch("tematikRenjaId") || NONE}
-                          onValueChange={(v) =>
-                            setValue("tematikRenjaId", v === NONE ? "" : v)
-                          }
-                        >
-                          <SelectTrigger className="w-full h-9 text-xs">
-                            <SelectValue placeholder="Pilih (opsional)" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                            {tematikList.map((t) => (
-                              <SelectItem key={t.id} value={t.id}>
-                                {t.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label>PKPN</Label>
-                        <Select
-                          value={watch("pkpnId") || NONE}
-                          onValueChange={(v) =>
-                            setValue("pkpnId", v === NONE ? "" : v)
-                          }
-                        >
-                          <SelectTrigger className="w-full h-9 text-xs">
-                            <SelectValue placeholder="Pilih (opsional)" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                            {pkpnList.map((p) => (
-                              <SelectItem key={p.id} value={p.id}>
-                                {p.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-5">
-                      {(["fkb", "fkw", "mpa"] as const).map((key) => (
-                        <label
-                          key={key}
-                          className="flex items-center gap-2 text-xs font-medium uppercase cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            className="h-3.5 w-3.5 rounded border-input"
-                            checked={watch(key)}
-                            onChange={(e) => setValue(key, e.target.checked)}
-                          />
-                          {key}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
+                    ))
+                  )}
                 </div>
-
-                <div className="space-y-5">
-                  <SectionHeader
-                    icon={Tags}
-                    title="Tagging Dinamis"
-                    description="Pilih dari master data — bisa lebih dari satu"
-                  />
-                  <div className="pl-12 space-y-3">
-                    <Select
-                      value={NONE}
-                      onValueChange={(v) => {
-                        if (v !== NONE) tambahTaggingDinamis(v);
-                      }}
-                    >
-                      <SelectTrigger className="h-9 text-xs w-full">
-                        <SelectValue placeholder="Tambah tag..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE} disabled>
-                          Tambah tag...
-                        </SelectItem>
-                        {taggingDinamisMaster
-                          .filter((t) => !taggingDinamis.includes(t.name))
-                          .map((t) => (
-                            <SelectItem key={t.id} value={t.name}>
-                              {t.name}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                    <div className="flex flex-wrap gap-2">
-                      {taggingDinamis.map((t) => (
-                        <Badge key={t} variant="secondary" className="gap-1">
-                          {t}
-                          <button
-                            type="button"
-                            onClick={() => hapusTaggingDinamis(t)}
-                            className="ml-1 hover:text-destructive"
-                          >
-                            <X size={11} />
-                          </button>
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                )}
               </TabsContent>
 
               {/* === TAB 6: DOKUMEN & CATATAN === */}
               <TabsContent value="dokumen" className="space-y-6">
-                <div className="space-y-5">
-                  <SectionHeader
-                    icon={FileText}
-                    title="Dokumen Pendukung"
-                    description="Upload dokumen pendukung proyek (bisa lebih dari satu file)"
-                  />
-                  <div className="pl-12 space-y-3">
-                    <input
-                      type="file"
-                      multiple
-                      className="block w-full text-xs text-foreground file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
-                      onChange={(e) => {
-                        const files = Array.from(e.target.files ?? []);
-                        if (!files.length) return;
-                        if (isEdit) {
-                          uploadDokumen(editData!.id, files);
-                        } else {
-                          setPendingFiles((prev) => [...prev, ...files]);
-                        }
-                        e.target.value = "";
-                      }}
-                    />
-                    {uploadingDokumen && (
-                      <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                        <Loader2 size={12} className="animate-spin" />{" "}
-                        Mengupload...
-                      </p>
-                    )}
-                    {!isEdit && pendingFiles.length > 0 && (
-                      <div className="space-y-1.5">
-                        {pendingFiles.map((f, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-center justify-between rounded-lg border px-3 py-2 text-xs"
-                          >
-                            <span className="truncate">{f.name}</span>
-                            <button
-                              type="button"
-                              className="text-muted-foreground hover:text-destructive"
-                              onClick={() =>
-                                setPendingFiles((prev) =>
-                                  prev.filter((_, i) => i !== idx),
-                                )
-                              }
-                            >
-                              <X size={13} />
-                            </button>
-                          </div>
-                        ))}
-                        <p className="text-xs text-muted-foreground">
-                          File di atas akan diupload setelah proyek disimpan.
-                        </p>
-                      </div>
-                    )}
-                    {isEdit && dokumenList.length > 0 && (
-                      <div className="space-y-1.5">
-                        {dokumenList.map((d) => (
-                          <div
-                            key={d.id}
-                            className="flex items-center justify-between rounded-lg border px-3 py-2 text-xs"
-                          >
-                            <a
-                              href={`${api.defaults.baseURL}/uploads/${d.filePath}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="truncate hover:underline"
-                            >
-                              {d.fileName}
-                            </a>
-                            <button
-                              type="button"
-                              className="text-muted-foreground hover:text-destructive"
-                              onClick={() => hapusDokumen(d.id)}
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-5">
-                  <SectionHeader
-                    icon={ScrollText}
-                    title="Catatan"
-                    description="Catatan pembina dan SSPSDA"
-                  />
-                  <div className="pl-12 space-y-4">
-                    <div className="space-y-2">
-                      <Label className="text-xs">Catatan Pembina</Label>
-                      <Textarea {...register("catatanPembina")} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs">Catatan SSPSDA</Label>
-                      <Textarea {...register("catatanSspsda")} />
-                    </div>
-                  </div>
-                </div>
+                {renderTabHeader("dokumen")}
+                {renderTemplatedTab(
+                  "dokumen",
+                  dokumenRenderers,
+                  TAB_GRID_CLASS.dokumen!,
+                )}
               </TabsContent>
 
-              {/* === TAB 7: EVALUASI PROYEK === read-only, dihitung otomatis
-                  & LIVE dari isian tab lain (lihat evaluasi-deteksi.ts) —
-                  tidak ada checkbox manual, tidak perlu klik submit dulu. */}
+              {/* === TAB 10: EVALUASI PROYEK === read-only, dihitung otomatis
+                  & LIVE dari isian tab Dasar Pelaksanaan/Kesiapan Teknis/
+                  Tematik/Valuasi/Kinerja sesuai template Form Proyek
+                  (Master Data) kegiatan yang dipilih — lihat form-skor.ts
+                  di backend. */}
               <TabsContent value="evaluasi" className="space-y-5">
-                <SectionHeader
-                  icon={ClipboardCheck}
-                  title="Evaluasi Proyek"
-                  description="Skor dihitung otomatis & langsung dari isian tab Dasar Pelaksanaan, Kriteria Teknis, dan Tagging"
-                />
+                {renderTabHeader("evaluasi")}
+                {adminMode && adminHandlers ? (
+                  adminHandlers.note("evaluasi")
+                ) : (
                 <div className="pl-12 space-y-4">
                   {!roIdPreview ? (
                     <div className="rounded-xl border-2 border-dashed p-6 text-center text-muted-foreground text-xs">
@@ -2049,82 +2653,105 @@ export function ProyekFormDialog({
                       kegiatan dari RO paket pertama.
                     </div>
                   ) : (
-                    <>
-                      <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-3">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Skor Evaluasi
-                        </span>
-                        <span className="text-2xl font-bold text-primary flex items-center gap-2">
-                          {previewLoading && (
-                            <Loader2 size={16} className="animate-spin" />
-                          )}
-                          {preview?.skorEvaluasi
-                            ? `${(preview.skorEvaluasi * 100).toFixed(1)}%`
-                            : "Belum ada yang terdeteksi"}
-                        </span>
-                      </div>
-
-                      {!preview || preview.items.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          Belum ada kriteria yang terdeteksi terpenuhi.
-                        </p>
-                      ) : (
-                        Object.entries(
-                          preview.items.reduce<
-                            Record<string, typeof preview.items>
-                          >((acc, item) => {
-                            (acc[item.metodeName] ??= []).push(item);
-                            return acc;
-                          }, {}),
-                        ).map(([metode, items]) => (
-                          <div key={metode} className="space-y-2">
-                            <p className="text-xs font-semibold text-muted-foreground">
-                              {metode}
-                            </p>
-                            <div className="rounded-xl border divide-y">
-                              {items.map((item) => (
-                                <div key={item.id} className="px-3.5 py-2.5">
-                                  <p className="text-xs leading-snug">
-                                    {item.name}
-                                  </p>
-                                  {item.keterangan && (
-                                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                                      {item.keterangan}
-                                    </p>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </>
+                    <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-3">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Skor Evaluasi
+                      </span>
+                      <span className="text-2xl font-bold text-primary flex items-center gap-2">
+                        {previewLoading && (
+                          <Loader2 size={16} className="animate-spin" />
+                        )}
+                        {preview?.skorEvaluasi != null
+                          ? `${(preview.skorEvaluasi * 100).toFixed(1)}%`
+                          : "0%"}
+                      </span>
+                    </div>
                   )}
                 </div>
+                )}
               </TabsContent>
             </SheetBody>
           </Tabs>
-        )}
+  );
+
+  if (embedded) {
+    return (
+      <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+        {tabsBody}
+      </div>
+    );
+  }
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) onClose();
+      }}
+    >
+      <SheetContent
+        layer="1"
+        className="!p-0"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
+        <SheetHeader className="gap-2 pb-4">
+          <SheetTitle className="text-lg leading-snug">
+            {previewMode
+              ? "Pratinjau Form Proyek"
+              : adminMode
+                ? "Kelola Form Proyek"
+                : isEdit
+                  ? "Edit Proyek"
+                  : "Buat Proyek"}
+          </SheetTitle>
+        </SheetHeader>
+
+        {tabsBody}
 
         <SheetFooter className="flex-col items-end gap-1.5 sm:flex-row sm:items-center">
-          {!isEdit && !allTabsVisited && (
-            <p className="text-xs text-muted-foreground mr-auto">
-              Kunjungi semua tab dulu sebelum menyimpan
-            </p>
+          {previewMode || adminMode ? (
+            <>
+              <p className="text-xs text-muted-foreground mr-auto">
+                {adminMode
+                  ? "Mode kelola form — perubahan tersimpan otomatis"
+                  : "Mode pratinjau — perubahan tidak disimpan"}
+              </p>
+              <Button type="button" variant="outline" onClick={onClose}>
+                Tutup
+              </Button>
+            </>
+          ) : (
+            <>
+              {!isEdit && !allTabsVisited && (
+                <p className="text-xs text-muted-foreground mr-auto">
+                  Kunjungi semua tab dulu sebelum menyimpan
+                </p>
+              )}
+              <Button type="button" variant="outline" onClick={onClose}>
+                Batal
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  const missing = findMissingRequiredItem();
+                  if (missing) {
+                    setActiveTab(missing.tabValue);
+                    toast.error(`Lengkapi field wajib "${missing.label}"`);
+                    return;
+                  }
+                  handleSubmit(onSubmit, onInvalid)();
+                }}
+                disabled={
+                  isSubmitting || loadingMaster || (!isEdit && !allTabsVisited)
+                }
+              >
+                {isSubmitting && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                {isEdit ? "Simpan Perubahan" : "Buat Proyek"}
+              </Button>
+            </>
           )}
-          <Button type="button" variant="outline" onClick={onClose}>
-            Batal
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSubmit(onSubmit, onInvalid)}
-            disabled={
-              isSubmitting || loadingMaster || (!isEdit && !allTabsVisited)
-            }
-          >
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEdit ? "Simpan Perubahan" : "Buat Proyek"}
-          </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>

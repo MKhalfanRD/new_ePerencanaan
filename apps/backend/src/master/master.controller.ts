@@ -137,16 +137,18 @@ export class MasterController {
     return this.masterService.getIndikatorRO();
   }
 
-  @ApiOperation({ summary: 'Item evaluasi (MCA), opsional filter kegiatanId' })
-  @Get('evaluasi-item')
-  getEvaluasiItem(@Query('kegiatanId') kegiatanId?: string) {
-    return this.masterService.getEvaluasiItem(kegiatanId);
-  }
-
-  @ApiOperation({ summary: 'Daftar metode evaluasi (dengan bobot)' })
-  @Get('metode-evaluasi')
-  getMetodeEvaluasi() {
-    return this.masterService.getMetodeEvaluasi();
+  @ApiOperation({
+    summary:
+      'Template Form Proyek 1 kegiatan (tree tab/section/item/opsi). ' +
+      'activeOnly=true dipakai form Proyek (cuma yang aktif); tanpa itu ' +
+      'dipakai kanvas Master Data (semua, buat template kosong kalau belum ada)',
+  })
+  @Get('form-template/:kegiatanId')
+  getFormTemplate(
+    @Param('kegiatanId') kegiatanId: string,
+    @Query('activeOnly') activeOnly?: string,
+  ) {
+    return this.masterService.getFormTemplate(kegiatanId, activeOnly === 'true');
   }
 
   @ApiOperation({ summary: 'Daftar semua Role' })
@@ -661,54 +663,87 @@ export class MasterController {
     return this.masterService.bulkDeleteWilayahSungai(ids);
   }
 
-  // ========== CRUD METODE EVALUASI ==========
+  // ========== CRUD FORM PROYEK (kanvas Master Data) ==========
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRATOR')
-  @Post('metode-evaluasi')
-  createMetodeEvaluasi(@Body() dto: any) {
-    return this.masterService.createMetodeEvaluasi(dto);
+  @Patch('form-tab/:id')
+  updateFormTab(@Param('id') id: string, @Body() dto: any) {
+    return this.masterService.updateFormTab(id, dto);
   }
 
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRATOR')
-  @Patch('metode-evaluasi/:id')
-  updateMetodeEvaluasi(@Param('id') id: string, @Body() dto: any) {
-    return this.masterService.updateMetodeEvaluasi(id, dto);
+  @Post('form-section')
+  createFormSection(@Body() dto: any) {
+    return this.masterService.createFormSection(dto);
   }
 
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRATOR')
-  @Delete('metode-evaluasi/:id')
-  deleteMetodeEvaluasi(@Param('id') id: string) {
-    return this.masterService.deleteMetodeEvaluasi(id);
-  }
-
-  // ========== CRUD EVALUASI ITEM (poin per metode) ==========
-  @UseGuards(RolesGuard)
-  @Roles('ADMINISTRATOR')
-  @Post('evaluasi-item')
-  createEvaluasiItem(@Body() dto: any) {
-    return this.masterService.createEvaluasiItem(dto);
+  @Patch('form-section/:id')
+  updateFormSection(@Param('id') id: string, @Body() dto: any) {
+    return this.masterService.updateFormSection(id, dto);
   }
 
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRATOR')
-  @Patch('evaluasi-item/:id')
-  updateEvaluasiItem(@Param('id') id: string, @Body() dto: any) {
-    return this.masterService.updateEvaluasiItem(id, dto);
+  @Delete('form-section/:id')
+  deleteFormSection(@Param('id') id: string) {
+    return this.masterService.deleteFormSection(id);
   }
 
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRATOR')
-  @Delete('evaluasi-item/:id')
-  deleteEvaluasiItem(@Param('id') id: string) {
-    return this.masterService.deleteEvaluasiItem(id);
+  @Post('form-item')
+  createFormItem(@Body() dto: any) {
+    return this.masterService.createFormItem(dto);
   }
 
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRATOR')
-  @Post('evaluasi-item/bulk-delete')
-  bulkDeleteEvaluasiItem(@Body('ids') ids: string[]) {
-    return this.masterService.bulkDeleteEvaluasiItem(ids);
+  @Patch('form-item/:id')
+  updateFormItem(@Param('id') id: string, @Body() dto: any) {
+    return this.masterService.updateFormItem(id, dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Delete('form-item/:id')
+  deleteFormItem(@Param('id') id: string) {
+    return this.masterService.deleteFormItem(id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('form-item-option')
+  createFormItemOption(@Body() dto: any) {
+    return this.masterService.createFormItemOption(dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Patch('form-item-option/:id')
+  updateFormItemOption(@Param('id') id: string, @Body() dto: any) {
+    return this.masterService.updateFormItemOption(id, dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Delete('form-item-option/:id')
+  deleteFormItemOption(@Param('id') id: string) {
+    return this.masterService.deleteFormItemOption(id);
+  }
+
+  @ApiOperation({
+    summary: 'Duplikat seluruh template form (tab/section/item/opsi) dari kegiatan lain',
+  })
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('form-template/:kegiatanId/clone-from/:sourceKegiatanId')
+  cloneFormTemplate(
+    @Param('kegiatanId') kegiatanId: string,
+    @Param('sourceKegiatanId') sourceKegiatanId: string,
+  ) {
+    return this.masterService.cloneFormTemplate(kegiatanId, sourceKegiatanId);
   }
 }

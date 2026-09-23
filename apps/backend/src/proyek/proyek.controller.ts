@@ -116,6 +116,7 @@ export class ProyekController {
       type: 'object',
       properties: {
         files: { type: 'array', items: { type: 'string', format: 'binary' } },
+        formItemId: { type: 'string', nullable: true },
       },
     },
   })
@@ -145,8 +146,14 @@ export class ProyekController {
     @Param('id') id: string,
     @UploadedFiles() files: Express.Multer.File[],
     @CurrentUser() user: any,
+    @Body('formItemId') formItemId?: string,
   ) {
-    return this.proyekService.tambahDokumen(id, files, user.userId);
+    return this.proyekService.tambahDokumen(
+      id,
+      files,
+      user.userId,
+      formItemId || undefined,
+    );
   }
 
   @ApiOperation({ summary: 'Hapus 1 dokumen pendukung' })

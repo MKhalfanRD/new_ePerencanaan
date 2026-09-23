@@ -14,10 +14,19 @@ import { CreateProyekDto } from './dto/create-proyek.dto';
 import { UpdateProyekDto } from './dto/update-proyek.dto';
 import { QueryProyekDto } from './dto/query-proyek.dto';
 import { generateKodeProyek } from '../common/kode-generator';
-import { hitungSkorEvaluasi } from './evaluasi-skor';
-import { deteksiEvaluasiItemIds, ValuasiRatios } from './evaluasi-deteksi';
+import {
+  hitungSkorEvaluasi,
+  ScoringTabDef,
+  ItemValueLookup,
+} from './form-skor';
 import { LINTAS_KEGIATAN, roleEfektif } from '../auth/role';
-import { PreviewSkorDto } from './dto/preview-skor.dto';
+import { PreviewSkorDto, FormValueDto } from './dto/preview-skor.dto';
+
+interface ValuasiRatios {
+  danaPerOutput?: number | null;
+  danaPerOutcome?: number | null;
+  outputPerOutcome?: number | null;
+}
 
 /** Ringkasan dana/output/outcome satu paket — dipakai untuk rasio Valuasi
  * (lihat hitungRasioValuasi). Diisi dari sumber yang beda-beda tergantung
@@ -95,8 +104,54 @@ const proyekInclude = Prisma.validator<Prisma.ProyekInclude>()({
   indikatorSasaranKegiatan: true,
   tematikRenja: true,
   dokumenPendukung: true,
-  evaluasi: { include: { item: { include: { metode: true } } } },
+  formValues: { include: { item: true, option: true } },
 });
+
+/** FormItem.key yang dibackup kolom Proyek tetap — nilainya dibaca langsung
+ * dari input, TIDAK disimpan lagi ke ProyekFormValue (sudah ada tempatnya).
+ * Dipertahankan supaya admin bisa nonaktifkan/atur score-nya di tab Dasar
+ * Pelaksanaan/Kesiapan Teknis/Tematik tanpa nambah tabel baru. */
+const FIXED_ITEM_KEYS = new Set([
+  'sumberUsulanProyek',
+  'statusStudiLayak',
+  'statusDed',
+  'statusLarap',
+  'statusDokumenLingkungan',
+  'kewenangan',
+  'kebutuhanTanah',
+  'kegiatanPrioritasId',
+  'pkpnId',
+  'indikatorSasaranProgramId',
+  'indikatorSasaranKegiatanId',
+  'tematikRenjaId',
+  'fkb',
+  'fkw',
+  'mpa',
+  'taggingDinamis',
+]);
+
+/** FormItem.key rasio Valuasi -> field ValuasiRatios yang jadi nilai
+ * pembandingnya (lihat FormItem.thresholdValue & form-skor.ts). */
+const RATIO_ITEM_KEYS: Record<string, keyof ValuasiRatios> = {
+  rasioAnggaranOutput: 'danaPerOutput',
+  rasioAnggaranOutcome: 'danaPerOutcome',
+  rasioOutputOutcome: 'outputPerOutcome',
+};
+
+const scoringTabInclude = Prisma.validator<Prisma.FormTabInclude>()({
+  sections: {
+    where: { isActive: true },
+    include: {
+      items: {
+        where: { isActive: true },
+        include: { options: { where: { isActive: true } } },
+      },
+    },
+  },
+});
+type FormTabScoring = Prisma.FormTabGetPayload<{
+  include: typeof scoringTabInclude;
+}>;
 
 /**
  * Batas kegiatan yang boleh dilihat/diubah seorang user. SUPER_ADMIN &
@@ -124,33 +179,30 @@ export class ProyekService {
   ) {}
 
   /**
-   * Skor evaluasi TIDAK diterima dari client — dideteksi otomatis dari
-   * field proyek + kegiatan paket pertama (lihat evaluasi-deteksi.ts).
-   * Kegiatan diturunkan dari RO paket pertama karena daftar EvaluasiItem
-   * beda per kegiatan (Irwa/Supan/Bendungan/Air Tanah).
+   * Skor evaluasi dihitung dari struktur Form Proyek (Master Data) kegiatan
+   * paket pertama, bukan lagi checklist tetap (lihat form-skor.ts). Item
+   * yang dibackup kolom Proyek tetap (Dasar Pelaksanaan/Kesiapan
+   * Teknis/Tematik) nilainya diambil dari `input`; item Valuasi dari rasio
+   * dana/output/outcome; sisanya (Kategori Proyek, Kinerja) dari
+   * `formValues` yang dikirim client.
    */
   private async hitungEvaluasi(
     tx: Prisma.TransactionClient,
-    input: {
-      sumberUsulanProyek?: string | null;
-      kegiatanPrioritasId?: string | null;
-      tahunDed?: number | null;
-      tahunDokumenLingkungan?: number | null;
-      kebutuhanTanah?: boolean | null;
-      kewenangan?: string | null;
-      pkpnId?: string | null;
-      tematikRenjaId?: string | null;
-      taggingDinamis?: string[] | null;
-    },
+    input: any,
     roIdPaketPertama: string | undefined,
     paketSekarang?: PaketRingkas,
+    formValues?: FormValueDto[],
+    // Proyek yang SUDAH ada (edit, atau recalc setelah upload) — dipakai
+    // buat cek field UPLOAD ("terisi" = ada DokumenPendukung, bukan dari
+    // formValues yang memang tidak pernah membawa file). undefined saat
+    // proyek baru pertama kali dibuat (belum punya id, belum ada file).
+    proyekIdUntukUpload?: string,
   ): Promise<{
     skorEvaluasi: number | null;
-    itemIds: string[];
-    keterangan: Record<string, string>;
+    formValueCreates: Prisma.ProyekFormValueCreateManyProyekInput[];
   }> {
     if (!roIdPaketPertama) {
-      return { skorEvaluasi: null, itemIds: [], keterangan: {} };
+      return { skorEvaluasi: null, formValueCreates: [] };
     }
     const ro = await tx.rO.findUnique({
       where: { id: roIdPaketPertama },
@@ -158,123 +210,132 @@ export class ProyekService {
     });
     const kegiatanId = ro?.kro.kegiatanId;
     if (!kegiatanId) {
-      return { skorEvaluasi: null, itemIds: [], keterangan: {} };
+      return { skorEvaluasi: null, formValueCreates: [] };
     }
 
-    const [semuaItem, metodeList, tematikRenja] = await Promise.all([
-      tx.evaluasiItem.findMany({
-        where: { kegiatanId },
-        select: { id: true, name: true, metodeId: true, score: true },
-      }),
-      tx.metodeEvaluasi.findMany({ select: { id: true, bobot: true } }),
-      input.tematikRenjaId
-        ? tx.tematikRenja.findUnique({ where: { id: input.tematikRenjaId } })
-        : null,
-    ]);
-
-    const valuasi = await this.hitungRasioValuasi(
-      tx,
-      kegiatanId,
-      paketSekarang,
-    );
-
-    const { itemIds, keterangan } = deteksiEvaluasiItemIds(
-      {
-        sumberUsulanProyek: input.sumberUsulanProyek,
-        kegiatanPrioritasId: input.kegiatanPrioritasId,
-        tahunDed: input.tahunDed,
-        tahunDokumenLingkungan: input.tahunDokumenLingkungan,
-        kebutuhanTanah: input.kebutuhanTanah,
-        kewenangan: input.kewenangan,
-        pkpnId: input.pkpnId,
-        tematikRenjaName: tematikRenja?.name,
-        taggingDinamis: input.taggingDinamis,
-      },
-      semuaItem,
-      valuasi,
-    );
-
-    const bobotMetode = new Map(metodeList.map((m) => [m.id, m.bobot]));
-    const dicentang = semuaItem.filter((i) => itemIds.includes(i.id));
-    const skorEvaluasi = hitungSkorEvaluasi(semuaItem, dicentang, bobotMetode);
-
-    return { skorEvaluasi, itemIds, keterangan };
-  }
-
-  /** Rasio dana/output/outcome paket ini dibanding rata-rata paket lain di
-   * kegiatan yang sama — dipakai 3 item Valuasi ("Rasio anggaran terhadap
-   * output/outcome", "Rasio Output terhadap Outcome"). Item Valuasi lain
-   * (multiguna, luas baku sawah, dst.) sengaja tidak dihitung — tidak ada
-   * data pendukungnya di skema saat ini.
-   *
-   * `paketSekarang` diterima langsung dari pemanggil (bukan di-query lewat
-   * roId di sini) — paket yang baru dibuat/di-preview belum tentu ada di DB,
-   * dan query by roId bisa nyasar ke paket proyek LAIN yang kebetulan pakai
-   * RO yang sama. */
-  private async hitungRasioValuasi(
-    tx: Prisma.TransactionClient,
-    kegiatanId: string,
-    paketSekarang: PaketRingkas | undefined,
-  ): Promise<ValuasiRatios> {
-    const paketLain = await tx.paket.findMany({
-      where: { ro: { kro: { kegiatanId } }, deletedAt: null },
-      select: {
-        alokasi: {
-          select: { total: true, outputTarget: true, outcomeTarget: true },
-        },
-      },
+    const formTabs = await tx.formTab.findMany({
+      where: { template: { kegiatanId }, isActive: true, bobot: { not: null } },
+      include: scoringTabInclude,
+    });
+    // Item generik (formValues) bisa ada di TAB APAPUN (termasuk tab
+    // struktural non-skoring, mis. Identitas) — query terpisah tanpa filter
+    // bobot supaya field tambahan admin di tab manapun tetap tersimpan.
+    const allActiveTabs = await tx.formTab.findMany({
+      where: { template: { kegiatanId }, isActive: true },
+      include: scoringTabInclude,
     });
 
-    const ratio = (
-      p: { alokasi: { total: any; outputTarget: any; outcomeTarget: any }[] },
-      key: 'outputTarget' | 'outcomeTarget',
-    ) => {
-      const totalDana = p.alokasi.reduce((s, a) => s + Number(a.total), 0);
-      const totalTarget = p.alokasi.reduce(
-        (s, a) => s + Number(a[key] ?? 0),
-        0,
-      );
-      return totalTarget > 0 ? totalDana / totalTarget : null;
-    };
-    const ratioOutputOutcome = (p: {
-      alokasi: { outputTarget: any; outcomeTarget: any }[];
-    }) => {
-      const output = p.alokasi.reduce(
-        (s, a) => s + Number(a.outputTarget ?? 0),
-        0,
-      );
-      const outcome = p.alokasi.reduce(
-        (s, a) => s + Number(a.outcomeTarget ?? 0),
-        0,
-      );
-      return outcome > 0 ? output / outcome : null;
-    };
-
-    const rata = (nilai: (number | null)[]) => {
-      const valid = nilai.filter((n): n is number => n != null);
-      return valid.length
-        ? valid.reduce((s, n) => s + n, 0) / valid.length
-        : null;
-    };
-
-    if (!paketSekarang) {
-      return {};
+    const valuasi = this.hitungRasioValuasi(paketSekarang);
+    const genericValues = new Map(
+      (formValues ?? []).map((f) => [f.key, f.value]),
+    );
+    const activeConditionValues: Record<string, string> = {};
+    for (const f of formValues ?? []) {
+      if (typeof f.value === 'string') activeConditionValues[f.key] = f.value;
     }
+
+    const allItems = allActiveTabs.flatMap((t) =>
+      t.sections.flatMap((s) => s.items),
+    );
+
+    // Field UPLOAD: "terisi" ditentukan dari ada/tidaknya DokumenPendukung
+    // yang di-tag ke item ini, bukan dari formValues (yang tidak pernah
+    // membawa file — lihat field-control.tsx/proyek-form-dialog.tsx).
+    const uploadItemIds = allItems
+      .filter((i) => i.fieldType === 'UPLOAD')
+      .map((i) => i.id);
+    const uploadedKeys = new Set<string>();
+    if (proyekIdUntukUpload && uploadItemIds.length) {
+      const dokumen = await tx.dokumenPendukung.findMany({
+        where: {
+          proyekId: proyekIdUntukUpload,
+          formItemId: { in: uploadItemIds },
+        },
+        select: { formItemId: true },
+      });
+      const uploadedItemIds = new Set(dokumen.map((d) => d.formItemId));
+      for (const i of allItems) {
+        if (uploadedItemIds.has(i.id)) uploadedKeys.add(i.key);
+      }
+    }
+
+    const lookup: ItemValueLookup = (key) => {
+      if (FIXED_ITEM_KEYS.has(key)) return input[key];
+      if (key in RATIO_ITEM_KEYS) return valuasi[RATIO_ITEM_KEYS[key]];
+      if (uploadedKeys.has(key)) return true;
+      return genericValues.get(key);
+    };
+    const tabs: ScoringTabDef[] = formTabs.map((t) => ({
+      bobot: t.bobot,
+      items: t.sections
+        .flatMap((s) => s.items)
+        .filter(
+          (i) =>
+            !i.conditionItemId ||
+            activeConditionValues[i.conditionItemId] === i.conditionValue,
+        )
+        .map((i) => ({
+          key: i.key,
+          score: i.score,
+          isActive: true,
+          thresholdValue: i.thresholdValue,
+          options: i.options.map((o) => ({
+            value: o.value,
+            score: o.score,
+            isActive: true,
+          })),
+        })),
+    }));
+
+    const skorEvaluasi = hitungSkorEvaluasi(tabs, lookup);
+
+    // Simpan cuma item yang BUKAN backed kolom fixed/rasio — itu sudah
+    // tersimpan di kolomnya sendiri (mis. Kategori Proyek, item Kinerja).
+    const formValueCreates: Prisma.ProyekFormValueCreateManyProyekInput[] =
+      [];
+    for (const f of formValues ?? []) {
+      if (FIXED_ITEM_KEYS.has(f.key) || f.key in RATIO_ITEM_KEYS) continue;
+      const item = allItems.find((i) => i.key === f.key);
+      if (!item) continue;
+      // Checkbox tanpa opsi yang tidak dicentang (value === false, tanpa
+      // catatan) tidak perlu baris sama sekali — konsisten dengan "tidak
+      // ada baris = tidak dicentang" yang dipakai form-skor.ts & hidrasi
+      // formValuesMap di frontend.
+      if (!item.options.length && f.value === false && !f.note) continue;
+      const option = item.options.find((o) => o.value === String(f.value));
+      formValueCreates.push({
+        itemId: item.id,
+        optionId: option?.id,
+        valueText: option
+          ? f.note
+          : typeof f.value === 'string'
+            ? f.value
+            : f.note,
+        valueNumber: typeof f.value === 'number' ? f.value : undefined,
+      });
+    }
+
+    return { skorEvaluasi, formValueCreates };
+  }
+
+  /** Rasio dana/output/outcome paket ini — dipakai item Valuasi yang
+   * membandingkan rasio ke ambang batas admin (FormItem.thresholdValue,
+   * kolom "Standar (S)" di sheet). `paketSekarang` diterima langsung dari
+   * pemanggil (bukan di-query lewat roId) — paket yang baru dibuat/preview
+   * belum tentu ada di DB. */
+  private hitungRasioValuasi(paketSekarang?: PaketRingkas): ValuasiRatios {
+    if (!paketSekarang) return {};
     const { totalDana, outputTarget, outcomeTarget } = paketSekarang;
     return {
       danaPerOutput: outputTarget > 0 ? totalDana / outputTarget : null,
       danaPerOutcome: outcomeTarget > 0 ? totalDana / outcomeTarget : null,
-      outputPerOutcome: outcomeTarget > 0 ? outputTarget / outcomeTarget : null,
-      rataDanaPerOutput: rata(paketLain.map((p) => ratio(p, 'outputTarget'))),
-      rataDanaPerOutcome: rata(paketLain.map((p) => ratio(p, 'outcomeTarget'))),
-      rataOutputPerOutcome: rata(paketLain.map(ratioOutputOutcome)),
+      outputPerOutcome:
+        outcomeTarget > 0 ? outputTarget / outcomeTarget : null,
     };
   }
 
   /** Preview skor evaluasi tanpa menyimpan apa pun — dipakai form Proyek
-   * (create maupun edit) supaya tab Evaluasi ter-update live. Reload
-   * EvaluasiItem untuk itemIds hasil deteksi supaya breakdown per-metode
-   * bisa ditampilkan tanpa proyek harus tersimpan dulu. */
+   * (create maupun edit) supaya tab Evaluasi ter-update live. */
   async previewEvaluasi(dto: PreviewSkorDto) {
     const paketSekarang: PaketRingkas | undefined =
       dto.totalDana != null ||
@@ -287,29 +348,16 @@ export class ProyekService {
           }
         : undefined;
 
-    const { skorEvaluasi, itemIds, keterangan } = await this.hitungEvaluasi(
+    const { skorEvaluasi } = await this.hitungEvaluasi(
       this.prisma,
       dto,
       dto.roId,
       paketSekarang,
+      dto.formValues,
+      dto.proyekId,
     );
 
-    if (!itemIds.length) {
-      return { skorEvaluasi, items: [] };
-    }
-    const items = await this.prisma.evaluasiItem.findMany({
-      where: { id: { in: itemIds } },
-      include: { metode: true },
-    });
-    return {
-      skorEvaluasi,
-      items: items.map((i) => ({
-        id: i.id,
-        name: i.name,
-        metodeName: i.metode.name,
-        keterangan: keterangan[i.id],
-      })),
-    };
+    return { skorEvaluasi };
   }
 
   async create(dto: CreateProyekDto, userId: string, userRole?: string) {
@@ -345,11 +393,12 @@ export class ProyekService {
             outcomeTarget: alokasi0.outcomeTarget ?? 0,
           }
         : undefined;
-      const { skorEvaluasi, itemIds, keterangan } = await this.hitungEvaluasi(
+      const { skorEvaluasi, formValueCreates } = await this.hitungEvaluasi(
         tx,
         dto,
         paket0?.roId,
         paketSekarang,
+        dto.formValues,
       );
 
       return tx.proyek.create({
@@ -367,13 +416,8 @@ export class ProyekService {
           wilayahSungaiId: dto.wilayahSungaiId,
           kegiatanPrioritasId: dto.kegiatanPrioritasId,
           skorEvaluasi,
-          evaluasi: itemIds.length
-            ? {
-                create: itemIds.map((itemId) => ({
-                  itemId,
-                  keterangan: keterangan[itemId] || undefined,
-                })),
-              }
+          formValues: formValueCreates.length
+            ? { create: formValueCreates }
             : undefined,
           tahunStudiLayak: dto.tahunStudiLayak,
           statusStudiLayak: dto.statusStudiLayak as any,
@@ -611,15 +655,16 @@ export class ProyekService {
         }
       : undefined;
 
-    // Skor evaluasi dihitung ulang tiap kali proyek disimpan — tidak ada
-    // lagi "kirim = ganti, tidak dikirim = biarkan", karena field ini sudah
-    // tidak diterima dari client sama sekali (lihat evaluasi-deteksi.ts).
+    // Skor evaluasi dihitung ulang tiap kali proyek disimpan dari struktur
+    // Form Proyek (Master Data) — lihat hitungEvaluasi/form-skor.ts.
     // Bukan $transaction — cuma pembacaan sebelum satu nested-write .update().
-    const { skorEvaluasi, itemIds, keterangan } = await this.hitungEvaluasi(
+    const { skorEvaluasi, formValueCreates } = await this.hitungEvaluasi(
       this.prisma,
       { ...proyek, ...dto },
       paket0?.roId,
       paketSekarang,
+      dto.formValues,
+      id,
     );
 
     const updated = await this.prisma.proyek.update({
@@ -627,12 +672,9 @@ export class ProyekService {
       data: {
         // kodeProyek sengaja tidak diikutkan — permanen sejak dibuat.
         skorEvaluasi,
-        evaluasi: {
+        formValues: {
           deleteMany: {},
-          create: itemIds.map((itemId) => ({
-            itemId,
-            keterangan: keterangan[itemId] || undefined,
-          })),
+          create: formValueCreates,
         },
         balaiId: dto.balaiId,
         periodeId: dto.periodeId,
@@ -693,6 +735,7 @@ export class ProyekService {
     proyekId: string,
     files: Express.Multer.File[],
     userId: string,
+    formItemId?: string,
   ) {
     const proyek = await this.prisma.proyek.findUnique({
       where: { id: proyekId },
@@ -702,21 +745,95 @@ export class ProyekService {
       throw new BadRequestException('Tidak ada file yang diupload');
     }
 
-    const created = await this.prisma.dokumenPendukung.createMany({
-      data: files.map((f) => ({
-        proyekId,
-        fileName: f.originalname,
-        // Path relatif terhadap folder uploads/ — disajikan statis di
-        // /uploads/... (lihat app.useStaticAssets di main.ts).
-        filePath: `proyek/${proyekId}/${f.filename}`,
-        mimeType: f.mimetype,
-        size: f.size,
-        uploadedById: userId,
-      })),
-    });
+    // create() satu-satu (bukan createMany) supaya baris yang baru dibuat
+    // (dengan id-nya) bisa langsung dikembalikan ke frontend.
+    const created = await Promise.all(
+      files.map((f) =>
+        this.prisma.dokumenPendukung.create({
+          data: {
+            proyekId,
+            formItemId,
+            fileName: f.originalname,
+            // Path relatif terhadap folder uploads/ — disajikan statis di
+            // /uploads/... (lihat app.useStaticAssets di main.ts).
+            filePath: `proyek/${proyekId}/${f.filename}`,
+            mimeType: f.mimetype,
+            size: f.size,
+            uploadedById: userId,
+          },
+        }),
+      ),
+    );
+
+    // File yang di-tag ke field UPLOAD di form dinamis mengubah skor
+    // evaluasi (lihat hitungEvaluasi) — hitung ulang & simpan.
+    if (formItemId) {
+      await this.recalcSkorEvaluasi(proyekId);
+    }
 
     await this.invalidateCache(proyekId);
     return created;
+  }
+
+  /** Hitung ulang skorEvaluasi proyek dari data yang SUDAH tersimpan (paket +
+   * ProyekFormValue + DokumenPendukung) — dipakai setelah upload file ke
+   * field UPLOAD, karena skor awal saat create/update belum tahu file itu
+   * (di-upload belakangan, lihat pola staging di proyek-form-dialog.tsx). */
+  private async recalcSkorEvaluasi(proyekId: string) {
+    const proyek = await this.prisma.proyek.findUnique({
+      where: { id: proyekId },
+      include: {
+        paket: {
+          orderBy: { createdAt: Prisma.SortOrder.asc },
+          take: 1,
+          include: {
+            alokasi: {
+              select: { total: true, outputTarget: true, outcomeTarget: true },
+            },
+          },
+        },
+        formValues: { include: { item: true, option: true } },
+      },
+    });
+    if (!proyek) return;
+
+    const paket0 = proyek.paket?.[0];
+    const paketSekarang: PaketRingkas | undefined = paket0
+      ? {
+          totalDana: paket0.alokasi.reduce((s, a) => s + Number(a.total), 0),
+          outputTarget: paket0.alokasi.reduce(
+            (s, a) => s + Number(a.outputTarget ?? 0),
+            0,
+          ),
+          outcomeTarget: paket0.alokasi.reduce(
+            (s, a) => s + Number(a.outcomeTarget ?? 0),
+            0,
+          ),
+        }
+      : undefined;
+
+    const formValues: FormValueDto[] = proyek.formValues.map((fv) => ({
+      key: fv.item.key,
+      value:
+        fv.option?.value ??
+        fv.valueText ??
+        fv.valueNumber ??
+        fv.valueDate?.toISOString(),
+    }));
+
+    const { skorEvaluasi } = await this.hitungEvaluasi(
+      this.prisma,
+      proyek,
+      paket0?.roId,
+      paketSekarang,
+      formValues,
+      proyekId,
+    );
+
+    await this.prisma.proyek.update({
+      where: { id: proyekId },
+      data: { skorEvaluasi },
+    });
   }
 
   async hapusDokumen(docId: string) {

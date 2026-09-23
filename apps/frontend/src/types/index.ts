@@ -37,21 +37,17 @@ export interface PrioritasNasional {
   }[];
 }
 
-export interface MetodeEvaluasi {
+/** Isian 1 FormItem (Form Proyek, Master Data) pada sebuah Proyek —
+ * dicocokkan ke item/opsi lewat FormItem.key, lihat form-proyek-tab.tsx &
+ * form-skor.ts di backend. */
+export interface ProyekFormValue {
   id: string;
-  name: string;
-  /** 0..1, mis. 0.4 = 40% */
-  bobot: number;
-  urutan: number;
-}
-
-export interface EvaluasiItem {
-  id: string;
-  kegiatanId: string;
-  metodeId: string;
-  metode?: MetodeEvaluasi;
-  name: string;
-  score: number;
+  itemId: string;
+  item: { key: string; label: string };
+  optionId?: string | null;
+  option?: { value: string; label: string } | null;
+  valueText?: string | null;
+  valueNumber?: number | null;
 }
 
 export interface Balai {
@@ -187,6 +183,9 @@ export interface DokumenPendukung {
   mimeType: string;
   size: number;
   createdAt: string;
+  // Diisi kalau dokumen ini adalah jawaban field UPLOAD di form dinamis
+  // (bukan dokumen umum tab "Dokumen & Catatan").
+  formItemId?: string | null;
 }
 
 export interface Proyek {
@@ -251,7 +250,7 @@ export interface Proyek {
   /** Skor MCA 0..1, dideteksi & dihitung otomatis oleh backend — TIDAK
    * pernah diisi manual dari form. */
   skorEvaluasi?: string | null;
-  evaluasi?: { itemId: string; keterangan?: string; item: EvaluasiItem }[];
+  formValues?: ProyekFormValue[];
 
   paket: Paket[];
   createdBy: {

@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { FormValueDto } from './preview-skor.dto';
 
 export class AlokasiDto {
   @ApiProperty({ example: 2025 })
@@ -286,4 +287,13 @@ export class CreateProyekDto {
   @ValidateNested({ each: true })
   @Type(() => PaketDto)
   paket?: PaketDto[];
+
+  // Isian tab Valuasi/Kinerja & "Kategori Proyek" — item yang tidak
+  // dibackup kolom Proyek tetap, lihat FormValueDto.
+  @ApiPropertyOptional({ type: [FormValueDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FormValueDto)
+  formValues?: FormValueDto[];
 }

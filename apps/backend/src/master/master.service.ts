@@ -64,8 +64,8 @@ export class MasterService {
       include: {
         program: true,
         // dipakai frontend buat nentuin tab evaluasi tampil atau tidak
-        // (kegiatan punya evaluasi kalau ada baris EvaluasiItem)
-        _count: { select: { evaluasiItem: true } },
+        // (kegiatan punya evaluasi kalau sudah punya FormTemplate).
+        formTemplate: { select: { id: true } },
       },
       orderBy: { name: 'asc' },
     });
@@ -114,31 +114,234 @@ export class MasterService {
       create: { name },
     });
   }
-  /** Metode evaluasi (dulu enum KriteriaEvaluasi) — bobotnya dipakai
-   * hitungSkorEvaluasi() di proyek.service. */
-  getMetodeEvaluasi() {
-    return this.prisma.metodeEvaluasi.findMany({
-      orderBy: { urutan: 'asc' },
+  // ========== FORM PROYEK (kanvas Master Data, per Kegiatan) ==========
+  private readonly formTemplateInclude = {
+    tabs: {
+      orderBy: { order: 'asc' as const },
+      include: {
+        sections: {
+          orderBy: { order: 'asc' as const },
+          include: {
+            items: {
+              orderBy: { order: 'asc' as const },
+              include: { options: { orderBy: { order: 'asc' as const } } },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  /** Tree lengkap template 1 kegiatan. Dibuat otomatis kalau belum ada
+   * supaya kanvas Master Data selalu punya sesuatu untuk diedit. Dengan
+   * activeOnly=true, tab/section/item/opsi yang nonaktif dibuang — ini yang
+   * dipakai form Proyek untuk merender dirinya. */
+  async getFormTemplate(kegiatanId: string, activeOnly = false) {
+    let template = await this.prisma.formTemplate.findUnique({
+      where: { kegiatanId },
+      include: this.formTemplateInclude,
     });
-  }
-  createMetodeEvaluasi(dto: any) {
-    return this.prisma.metodeEvaluasi.create({ data: dto });
-  }
-  updateMetodeEvaluasi(id: string, dto: any) {
-    return this.prisma.metodeEvaluasi.update({ where: { id }, data: dto });
-  }
-  async deleteMetodeEvaluasi(id: string) {
-    await this.prisma.metodeEvaluasi.delete({ where: { id } });
-    return { message: 'Metode evaluasi berhasil dihapus' };
+    if (!template) {
+      template = await this.prisma.formTemplate.create({
+        data: { kegiatanId },
+        include: this.formTemplateInclude,
+      });
+    }
+    if (!activeOnly) return template;
+
+    return {
+      ...template,
+      tabs: template.tabs
+        .filter((t) => t.isActive)
+        .map((t) => ({
+          ...t,
+          sections: t.sections
+            .filter((s) => s.isActive)
+            .map((s) => ({
+              ...s,
+              items: s.items
+                .filter((i) => i.isActive)
+                .map((i) => ({
+                  ...i,
+                  options: i.options.filter((o) => o.isActive),
+                })),
+            })),
+        })),
+    };
   }
 
-  /** Item evaluasi (MCA). Difilter per kegiatan supaya form proyek cuma
-   * menarik daftar yang relevan, bukan seluruh master. */
-  getEvaluasiItem(kegiatanId?: string) {
-    return this.prisma.evaluasiItem.findMany({
-      where: kegiatanId ? { kegiatanId } : undefined,
-      include: { metode: true, kegiatan: true },
-      orderBy: [{ metode: { urutan: 'asc' } }, { name: 'asc' }],
+  updateFormTab(id: string, dto: any) {
+    return this.prisma.formTab.update({
+      where: { id },
+      data: {
+        label: dto.label,
+        isActive: dto.isActive,
+        bobot: dto.bobot,
+        order: dto.order,
+        description: dto.description,
+      },
+    });
+  }
+
+  createFormSection(dto: any) {
+    return this.prisma.formSection.create({
+      data: {
+        tabId: dto.tabId,
+        key: dto.key,
+        label: dto.label,
+        order: dto.order ?? 0,
+      },
+    });
+  }
+  updateFormSection(id: string, dto: any) {
+    return this.prisma.formSection.update({
+      where: { id },
+      data: {
+        label: dto.label,
+        isActive: dto.isActive,
+        order: dto.order,
+      },
+    });
+  }
+  async deleteFormSection(id: string) {
+    await this.prisma.formSection.delete({ where: { id } });
+    return { message: 'Section dihapus' };
+  }
+
+  createFormItem(dto: any) {
+    return this.prisma.formItem.create({
+      data: {
+        sectionId: dto.sectionId,
+        key: dto.key,
+        label: dto.label,
+        fieldType: dto.fieldType,
+        order: dto.order ?? 0,
+        required: dto.required ?? false,
+        score: dto.score,
+        bobot: dto.bobot,
+        thresholdValue: dto.thresholdValue,
+        conditionItemId: dto.conditionItemId,
+        conditionValue: dto.conditionValue,
+        width: dto.width,
+      },
+    });
+  }
+  updateFormItem(id: string, dto: any) {
+    return this.prisma.formItem.update({
+      where: { id },
+      data: {
+        label: dto.label,
+        fieldType: dto.fieldType,
+        isActive: dto.isActive,
+        required: dto.required,
+        order: dto.order,
+        score: dto.score,
+        bobot: dto.bobot,
+        thresholdValue: dto.thresholdValue,
+        conditionItemId: dto.conditionItemId,
+        conditionValue: dto.conditionValue,
+        width: dto.width,
+      },
+    });
+  }
+  async deleteFormItem(id: string) {
+    await this.prisma.formItem.delete({ where: { id } });
+    return { message: 'Item dihapus' };
+  }
+
+  createFormItemOption(dto: any) {
+    return this.prisma.formItemOption.create({
+      data: {
+        itemId: dto.itemId,
+        value: dto.value,
+        label: dto.label,
+        order: dto.order ?? 0,
+        score: dto.score,
+        bobot: dto.bobot,
+      },
+    });
+  }
+  updateFormItemOption(id: string, dto: any) {
+    return this.prisma.formItemOption.update({
+      where: { id },
+      data: {
+        value: dto.value,
+        label: dto.label,
+        isActive: dto.isActive,
+        order: dto.order,
+        score: dto.score,
+        bobot: dto.bobot,
+      },
+    });
+  }
+  async deleteFormItemOption(id: string) {
+    await this.prisma.formItemOption.delete({ where: { id } });
+    return { message: 'Opsi dihapus' };
+  }
+
+  /** Duplikat seluruh tab/section/item/opsi kegiatan sumber ke kegiatan
+   * target — dipakai admin supaya tidak mengisi kerangka dari nol tiap
+   * kegiatan baru (isi/skor/bobot tetap bisa disesuaikan lagi sesudahnya).
+   * Menimpa template kegiatan target kalau sudah ada. */
+  async cloneFormTemplate(kegiatanId: string, sourceKegiatanId: string) {
+    const source = await this.prisma.formTemplate.findUnique({
+      where: { kegiatanId: sourceKegiatanId },
+      include: this.formTemplateInclude,
+    });
+    if (!source) {
+      throw new BadRequestException('Template kegiatan sumber belum ada');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.formTemplate.deleteMany({ where: { kegiatanId } });
+      return tx.formTemplate.create({
+        data: {
+          kegiatanId,
+          tabs: {
+            create: source.tabs.map((t) => ({
+              key: t.key,
+              label: t.label,
+              order: t.order,
+              isActive: t.isActive,
+              bobot: t.bobot,
+              sections: {
+                create: t.sections.map((s) => ({
+                  key: s.key,
+                  label: s.label,
+                  order: s.order,
+                  isActive: s.isActive,
+                  items: {
+                    create: s.items.map((i) => ({
+                      key: i.key,
+                      label: i.label,
+                      fieldType: i.fieldType,
+                      order: i.order,
+                      isActive: i.isActive,
+                      required: i.required,
+                      score: i.score,
+                      bobot: i.bobot,
+                      thresholdValue: i.thresholdValue,
+                      conditionItemId: i.conditionItemId,
+                      conditionValue: i.conditionValue,
+                      options: {
+                        create: i.options.map((o) => ({
+                          value: o.value,
+                          label: o.label,
+                          order: o.order,
+                          isActive: o.isActive,
+                          score: o.score,
+                          bobot: o.bobot,
+                        })),
+                      },
+                    })),
+                  },
+                })),
+              },
+            })),
+          },
+        },
+        include: this.formTemplateInclude,
+      });
     });
   }
   // Indikator RENJA (lihat docs-planning/fitur-paket/04-rekonsiliasi-referensi.md)
@@ -461,28 +664,6 @@ export class MasterService {
       message: `${result.count} Komponen berhasil dihapus`,
       count: result.count,
     };
-  }
-
-  // ========== EVALUASI ITEM (poin per metode) ==========
-  createEvaluasiItem(dto: any) {
-    return this.prisma.evaluasiItem.create({
-      data: dto,
-      include: { metode: true },
-    });
-  }
-  updateEvaluasiItem(id: string, dto: any) {
-    return this.prisma.evaluasiItem.update({
-      where: { id },
-      data: dto,
-      include: { metode: true },
-    });
-  }
-  async deleteEvaluasiItem(id: string) {
-    await this.prisma.evaluasiItem.delete({ where: { id } });
-    return { message: 'Item evaluasi berhasil dihapus' };
-  }
-  bulkDeleteEvaluasiItem(ids: string[]) {
-    return this.bulkDelete(this.prisma.evaluasiItem, ids, 'Item evaluasi');
   }
 
   // ========== PRIORITAS NASIONAL (PN) ==========

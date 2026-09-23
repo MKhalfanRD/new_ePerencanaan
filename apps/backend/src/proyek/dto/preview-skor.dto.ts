@@ -5,8 +5,28 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+/**
+ * 1 baris isian utk FormItem yang TIDAK dibackup kolom Proyek tetap (tab
+ * Valuasi/Kinerja & item "Kategori Proyek") — dicocokkan by `key`
+ * (FormItem.key), bukan id, supaya tetap valid lintas kegiatan/clone
+ * template. `value` string = value opsi terpilih (dropdown) ATAU
+ * boolean/angka utk item tanpa opsi (checkbox/fieldbox). `note` = teks
+ * tambahan opsional (kolom "fieldbox" di sheet, mis. justifikasi kinerja).
+ */
+export class FormValueDto {
+  @ApiProperty() @IsString() key: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  value?: string | number | boolean | null;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() note?: string;
+}
 
 /**
  * Body untuk POST /proyek/preview-skor — hitung skor evaluasi tanpa
@@ -20,23 +40,9 @@ export class PreviewSkorDto {
   @IsString()
   roId: string;
 
-  @ApiPropertyOptional({
-    enum: [
-      'PEMERINTAH_DAERAH',
-      'KEMENTERIAN_LEMBAGA',
-      'MASYARAKAT',
-      'TINDAK_LANJUT_RENAKSI',
-      'LAINNYA',
-    ],
-  })
+  @ApiPropertyOptional({ description: 'Nama dari master data Sumber Usulan Proyek' })
   @IsOptional()
-  @IsEnum([
-    'PEMERINTAH_DAERAH',
-    'KEMENTERIAN_LEMBAGA',
-    'MASYARAKAT',
-    'TINDAK_LANJUT_RENAKSI',
-    'LAINNYA',
-  ])
+  @IsString()
   sumberUsulanProyek?: string;
 
   @ApiPropertyOptional()
@@ -44,15 +50,25 @@ export class PreviewSkorDto {
   @IsString()
   kegiatanPrioritasId?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: ['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'] })
   @IsOptional()
-  @IsNumber()
-  tahunDed?: number;
+  @IsEnum(['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'])
+  statusStudiLayak?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: ['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'] })
   @IsOptional()
-  @IsNumber()
-  tahunDokumenLingkungan?: number;
+  @IsEnum(['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'])
+  statusDed?: string;
+
+  @ApiPropertyOptional({ enum: ['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'] })
+  @IsOptional()
+  @IsEnum(['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'])
+  statusLarap?: string;
+
+  @ApiPropertyOptional({ enum: ['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'] })
+  @IsOptional()
+  @IsEnum(['RENCANA', 'SUDAH_ADA', 'TIDAK_PERLU'])
+  statusDokumenLingkungan?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -72,7 +88,21 @@ export class PreviewSkorDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  indikatorSasaranProgramId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  indikatorSasaranKegiatanId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   tematikRenjaId?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() fkb?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() fkw?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() mpa?: boolean;
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
@@ -96,4 +126,19 @@ export class PreviewSkorDto {
   @IsOptional()
   @IsNumber()
   outcomeTarget?: number;
+
+  @ApiPropertyOptional({ type: [FormValueDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FormValueDto)
+  formValues?: FormValueDto[];
+
+  // Proyek yang sedang diedit — dipakai supaya field UPLOAD yang sudah
+  // terupload ikut kehitung "terisi" di preview live (lihat DokumenPendukung
+  // di hitungEvaluasi). Kosong saat bikin proyek baru.
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  proyekId?: string;
 }

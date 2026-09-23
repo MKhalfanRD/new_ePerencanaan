@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { BalaiTab } from "@/components/master/balai-tab";
 import { NomenklaturTab } from "@/components/master/nomenklatur-tab";
 import { WilayahSungaiTab } from "@/components/master/wilayah-sungai-tab";
-import { EvaluasiTab } from "@/components/master/evaluasi-tab";
+import { FormProyekTab } from "@/components/master/form-proyek-tab";
 import { PnppkpTab } from "@/components/master/pnppkp-tab";
 import { TaggingRenjaTab } from "@/components/master/tagging-renja-tab";
 import { SasaranTab } from "@/components/master/sasaran-tab";
@@ -27,7 +27,7 @@ const tabs = [
   { id: "nomenklatur", label: "Nomenklatur", icon: FolderTree },
   { id: "balai", label: "Balai", icon: Building2 },
   { id: "wilayah-sungai", label: "Wilayah Sungai", icon: Droplets },
-  { id: "evaluasi", label: "Evaluasi", icon: ClipboardCheck },
+  { id: "form-proyek", label: "Form Proyek", icon: ClipboardCheck },
   { id: "pnppkp", label: "PN / PP / KP", icon: Target },
   { id: "tagging-renja", label: "Tagging RENJA", icon: Tags },
   { id: "sasaran", label: "Sasaran SP / SK", icon: Flag },
@@ -69,7 +69,7 @@ export default function MasterPage() {
         {activeTab === "balai" && <BalaiTab />}
         {activeTab === "nomenklatur" && <NomenklaturTab />}
         {activeTab === "wilayah-sungai" && <WilayahSungaiTab />}
-        {activeTab === "evaluasi" && <EvaluasiTab />}
+        {activeTab === "form-proyek" && <FormProyekTab />}
         {activeTab === "pnppkp" && <PnppkpTab />}
         {activeTab === "tagging-renja" && <TaggingRenjaTab />}
         {activeTab === "sasaran" && <SasaranTab />}

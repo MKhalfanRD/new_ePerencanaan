@@ -188,7 +188,7 @@ model Kegiatan {
   kroList         KRO[]
   sasaranKegiatan SasaranKegiatan[]
   roles           Role[]
-  evaluasiItem    EvaluasiItem[]
+  formTemplate    FormTemplate?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -212,11 +212,11 @@ model KRO {
 }
 
 model RO {
-  id     String  @id @db.VarChar(20)
-  kroId  String  @db.VarChar(20)
-  kro    KRO     @relation(fields: [kroId], references: [id])
-  name   String  @db.VarChar(255)
-  code   String  @db.VarChar(10)
+  id       String  @id @db.VarChar(20)
+  kroId    String  @db.VarChar(20)
+  kro      KRO     @relation(fields: [kroId], references: [id])
+  name     String  @db.VarChar(255)
+  code     String  @db.VarChar(10)
   // Satuan resmi RO (kolom "Satuan RO" di referensi 1.xlsx, mis. "Unit",
   // "Km", "Dokumen") — dipakai untuk mengunci field Satuan Output Target
   // pada Alokasi, bukan input teks bebas. Dari master Satuan (dropdown),
@@ -450,56 +450,160 @@ model IndikatorSasaranKegiatan {
 // kegiatan. Bobot per item = score / total score metode * bobot metode
 // (lihat hitungSkorEvaluasi()).
 
-model MetodeEvaluasi {
-  id     String @id @default(cuid())
-  name   String @db.VarChar(150)
-  // Bobot metode ini terhadap skor total, 0..1 (mis. 0.4 = 40%). Tidak
-  // divalidasi harus total 1 di semua metode — itu urusan admin saat
-  // mengisi, biar fleksibel kalau metode ditambah/dihapus.
-  bobot  Float
-  urutan Int    @default(0) @db.SmallInt
+// ============================================================
+// FORM PROYEK — template dinamis per Kegiatan (kanvas Master Data).
+// Menggantikan MetodeEvaluasi/EvaluasiItem/ProyekEvaluasi: admin
+// mengatur tab/section/item/opsi (aktif/nonaktif + score/bobot) di
+// Master Data, form pembuatan Proyek merender & skor dihitung dari
+// struktur yang sama — lihat referensi 1.xlsx sheet "Form Proyek 7691".
+// ============================================================
 
-  item EvaluasiItem[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("metode_evaluasi")
+enum FormFieldType {
+  TEXT
+  NUMBER
+  DATE
+  DROPDOWN
+  CHECKBOX
+  FIELDBOX
+  UPLOAD
 }
 
-model EvaluasiItem {
+// Lebar tampilan field di grid form — nullable = ikut heuristik otomatis
+// per fieldType (lihat WIDE_FIELD_TYPES di frontend), diisi = admin
+// menimpa heuristik itu secara manual.
+enum FormFieldWidth {
+  HALF
+  FULL
+}
+
+model FormTemplate {
   id         String   @id @default(cuid())
-  kegiatanId String   @db.VarChar(10)
+  kegiatanId String   @unique @db.VarChar(10)
   kegiatan   Kegiatan @relation(fields: [kegiatanId], references: [id])
 
-  metodeId String
-  metode   MetodeEvaluasi @relation(fields: [metodeId], references: [id])
-
-  name  String @db.Text
-  // Bobot mentah item ini di dalam metodenya (kolom "Score" di excel).
-  score Int    @default(1) @db.SmallInt
-
-  proyek ProyekEvaluasi[]
+  tabs FormTab[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([kegiatanId, metodeId])
-  @@map("evaluasi_item")
+  @@map("form_template")
 }
 
-model ProyekEvaluasi {
+model FormTab {
+  id         String       @id @default(cuid())
+  templateId String
+  template   FormTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  // Slug tetap (identitas/dasar/lokasi/kesiapan/tematik/pemaketan/valuasi/
+  // kinerja/dokumen/evaluasi) — 10 tab tidak bisa ditambah/dihapus admin,
+  // cuma di-toggle aktif & diubah label/bobotnya.
+  key      String  @db.VarChar(50)
+  label    String  @db.VarChar(150)
+  order    Int     @default(0) @db.SmallInt
+  isActive Boolean @default(true)
+  // Bobot tab ini terhadap skor evaluasi total, 0..1 — hanya relevan utk
+  // tab skoring (dasar/kesiapan/tematik/valuasi/kinerja). Tab evaluasi
+  // read-only dihitung dari sini, bukan tab tersendiri yang berbobot.
+  bobot    Float?
+  // Subjudul di bawah judul tab pada form "Buat Proyek" — admin-editable,
+  // null = pakai teks default (TAB_DEFAULT_DESCRIPTIONS di frontend).
+  description String? @db.Text
+
+  sections FormSection[]
+
+  @@unique([templateId, key])
+  @@map("form_tab")
+}
+
+model FormSection {
+  id    String  @id @default(cuid())
+  tabId String
+  tab   FormTab @relation(fields: [tabId], references: [id], onDelete: Cascade)
+
+  key      String  @db.VarChar(50)
+  label    String  @db.VarChar(150)
+  order    Int     @default(0) @db.SmallInt
+  isActive Boolean @default(true)
+
+  items FormItem[]
+
+  @@map("form_section")
+}
+
+model FormItem {
+  id        String      @id @default(cuid())
+  sectionId String
+  section   FormSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  key       String          @db.VarChar(50)
+  label     String          @db.Text
+  fieldType FormFieldType
+  order     Int             @default(0) @db.SmallInt
+  isActive  Boolean         @default(true)
+  required  Boolean         @default(false)
+  width     FormFieldWidth?
+
+  // Dipakai kalau item TANPA opsi (mis. checkbox tunggal "Kewenangan
+  // Pusat"): score item itu sendiri & bobotnya dalam tab.
+  score Int?   @db.SmallInt
+  bobot Float?
+
+  // Khusus tab Valuasi: nilai proyek (dihitung server dari paket) vs
+  // ambang batas ini menentukan item ini "kena" atau tidak — persis kolom
+  // "Standar (S)" di sheet (mis. rasio dana/output < 20).
+  thresholdValue Float?
+
+  // Visibilitas kondisional — tampil hanya kalau item lain (mis. "Kategori
+  // Proyek") punya value == conditionValue. Dipakai tab Valuasi/Kinerja yang
+  // kriterianya beda utk "pembangunan jaringan" vs "rehabilitasi jaringan".
+  conditionItemId String?
+  conditionValue  String?
+
+  options FormItemOption[]
+  values  ProyekFormValue[]
+  dokumen DokumenPendukung[]
+
+  @@map("form_item")
+}
+
+model FormItemOption {
+  id     String   @id @default(cuid())
+  itemId String
+  item   FormItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  value    String  @db.VarChar(100)
+  label    String  @db.VarChar(255)
+  order    Int     @default(0) @db.SmallInt
+  isActive Boolean @default(true)
+  score    Int?    @db.SmallInt
+  bobot    Float?
+
+  values ProyekFormValue[]
+
+  @@map("form_item_option")
+}
+
+model ProyekFormValue {
+  id       String @id @default(cuid())
   proyekId String
   proyek   Proyek @relation(fields: [proyekId], references: [id], onDelete: Cascade)
 
   itemId String
-  item   EvaluasiItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  item   FormItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
-  keterangan String? @db.Text
+  optionId String?
+  option   FormItemOption? @relation(fields: [optionId], references: [id])
 
-  @@id([proyekId, itemId])
+  valueText   String?   @db.Text
+  valueNumber Float?
+  valueDate   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([proyekId, itemId])
   @@index([itemId])
-  @@map("proyek_evaluasi")
+  @@map("proyek_form_value")
 }
 
 // =============================================
@@ -653,13 +757,13 @@ model Proyek {
   // (dibuang, lihat docs-planning/audit-restrukturisasi-db-xlsx.md §3.3).
   // status* = kesiapan dokumen (Rencana/Sudah Ada/Tidak Perlu), dipasangkan
   // dengan kolom tahun masing-masing.
-  tahunStudiLayak        Int?                  @db.SmallInt
-  statusStudiLayak       StatusKriteriaTeknis? @default(RENCANA)
-  tahunDed               Int?                  @db.SmallInt
-  statusDed              StatusKriteriaTeknis? @default(RENCANA)
-  tahunLarap             Int?                  @db.SmallInt
-  statusLarap            StatusKriteriaTeknis? @default(RENCANA)
-  tahunDokumenLingkungan Int?                  @db.SmallInt
+  tahunStudiLayak         Int?                  @db.SmallInt
+  statusStudiLayak        StatusKriteriaTeknis? @default(RENCANA)
+  tahunDed                Int?                  @db.SmallInt
+  statusDed               StatusKriteriaTeknis? @default(RENCANA)
+  tahunLarap              Int?                  @db.SmallInt
+  statusLarap             StatusKriteriaTeknis? @default(RENCANA)
+  tahunDokumenLingkungan  Int?                  @db.SmallInt
   statusDokumenLingkungan StatusKriteriaTeknis? @default(RENCANA)
 
   // === TAGGING === pindah dari Paket ke sini (1 proyek = 1 set tagging,
@@ -706,7 +810,7 @@ model Proyek {
   deletedAt DateTime?
 
   paket            Paket[]
-  evaluasi         ProyekEvaluasi[]
+  formValues       ProyekFormValue[]
   dokumenPendukung DokumenPendukung[]
 
   @@index([balaiId])
@@ -721,6 +825,12 @@ model DokumenPendukung {
   proyekId String
   proyek   Proyek @relation(fields: [proyekId], references: [id], onDelete: Cascade)
 
+  // Diisi kalau file ini adalah jawaban field bertipe UPLOAD di form
+  // dinamis (bukan dokumen umum proyek) — dipakai form-skor.ts sebagai
+  // penanda item itu "terisi".
+  formItemId String?
+  formItem   FormItem? @relation(fields: [formItemId], references: [id], onDelete: Cascade)
+
   fileName String @db.VarChar(255) // nama asli file
   filePath String @db.VarChar(500) // path relatif di disk (mis. "proyek/<id>/<uuid>.pdf")
   mimeType String @db.VarChar(100)
@@ -732,6 +842,7 @@ model DokumenPendukung {
   createdAt DateTime @default(now())
 
   @@index([proyekId])
+  @@index([formItemId])
   @@map("dokumen_pendukung")
 }
 

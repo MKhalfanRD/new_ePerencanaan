@@ -100,8 +100,9 @@ const proyekInclude = Prisma.validator<Prisma.ProyekInclude>()({
     include: { programPrioritas: { include: { prioritasNasional: true } } },
   },
   pkpn: true,
-  indikatorSasaranProgram: true,
-  indikatorSasaranKegiatan: true,
+  // sasaran* ikut di-include: form edit butuh id-nya utk isi dropdown SP/SK.
+  indikatorSasaranProgram: { include: { sasaranProgram: true } },
+  indikatorSasaranKegiatan: { include: { sasaranKegiatan: true } },
   tematikRenja: true,
   dokumenPendukung: true,
   formValues: { include: { item: true, option: true } },

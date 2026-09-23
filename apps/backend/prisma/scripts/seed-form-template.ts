@@ -491,8 +491,11 @@ const FORCE = process.argv.includes('--force');
 async function seedKegiatan(kegiatanId: string, tabs: TabDef[]) {
   const existing = await prisma.formTemplate.findUnique({
     where: { kegiatanId },
+    include: { _count: { select: { tabs: true } } },
   });
-  if (existing && !FORCE) {
+  // Template kosong (0 tab) dibuat otomatis oleh getFormTemplate begitu
+  // halaman Master Data dibuka — tidak ada isi yang hilang, jadi boleh ditimpa.
+  if (existing && existing._count.tabs > 0 && !FORCE) {
     // Skip diam-diam kalau template sudah ada & bukan --force: script ini
     // deleteMany+create ulang SELURUH tree, jadi kalau dijalankan lagi
     // begitu saja akan MENGHAPUS section/item yang sudah ditambah admin

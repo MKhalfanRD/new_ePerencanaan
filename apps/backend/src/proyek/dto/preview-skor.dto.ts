@@ -46,6 +46,11 @@ export class PreviewSkorDto {
   @IsString()
   sumberUsulanProyek?: string;
 
+  // Field teks bawaan yang bisa diberi skor "jika terisi" / jadi pemicu
+  // field kondisional.
+  @ApiPropertyOptional() @IsOptional() @IsString() sumberUsulanLainnya?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() justifikasiProyek?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

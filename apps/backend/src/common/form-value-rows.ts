@@ -60,7 +60,8 @@ export function storedValue(fv: {
   valueNumber?: number | null;
   valueDate?: Date | null;
 }): unknown {
-  if (fv.item.fieldType === 'CHECKBOX' && fv.item.optionSource && fv.valueText) {
+  // Centang multi-pilih (master ATAU pilihan ketik sendiri) = JSON array.
+  if (fv.item.fieldType === 'CHECKBOX' && fv.valueText?.startsWith('[')) {
     try {
       return JSON.parse(fv.valueText);
     } catch {

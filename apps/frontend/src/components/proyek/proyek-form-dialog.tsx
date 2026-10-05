@@ -34,6 +34,8 @@ import {
   type FieldControlValue,
 } from "@/components/master/field-control";
 import { sourceRowsFor, subLabel, useSourceData } from "@/lib/option-sources";
+import { kondisiTerpenuhi } from "@/lib/form-condition";
+import { pilihanLengkap, skorField } from "@/lib/form-score";
 import {
   PaketLabel,
   PaketTemplateFields,
@@ -121,7 +123,6 @@ interface FormTemplateTree {
   tabs: FormTabNode[];
 }
 
-type FormValueEntry = FieldControlValue;
 
 interface PkpnOpt {
   id: string;
@@ -276,6 +277,8 @@ interface Props {
   // Naik tiap isi tabel master diubah dari kanvas ("Kelola data …") —
   // daftar Balai/PKPN/dst di form ikut di-fetch ulang.
   masterRefreshToken?: number;
+  // Kanvas admin perlu tahu tab yang sedang dibuka (panel "Atur tab").
+  onActiveTabChange?: (tabKey: string) => void;
   initialKegiatanId?: string;
 }
 
@@ -388,6 +391,7 @@ export function ProyekFormDialog({
   adminHandlers,
   adminRefreshToken,
   masterRefreshToken,
+  onActiveTabChange,
   embedded = false,
   initialKegiatanId,
 }: Props) {
@@ -666,7 +670,6 @@ export function ProyekFormDialog({
     }
     const map: typeof formValuesMap = fromFormValueRows(editData.formValues);
     setFormValuesMap(map);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editData, open]);
 
   const setFormValue = (
@@ -682,6 +685,18 @@ export function ProyekFormDialog({
     | string
     | undefined;
 
+  // Nilai isian 1 field (bawaan dari react-hook-form, custom dari
+  // formValuesMap) — dipakai cek "Tampil jika".
+  const itemValue = (key: string): unknown =>
+    BAKU_ITEM_KEYS.has(key)
+      ? watch(key as keyof FormData)
+      : formValuesMap[key]?.value;
+  // Kanvas admin selalu menampilkan semua field (supaya bisa diatur).
+  const isItemVisible = (item: FormItemNode) =>
+    adminMode ||
+    !item.conditionItemId ||
+    kondisiTerpenuhi(item.conditionValue, itemValue(item.conditionItemId));
+
   const valuasiItems =
     formTemplate?.tabs
       .find((t) => t.key === "valuasi")
@@ -692,9 +707,7 @@ export function ProyekFormDialog({
     formTemplate?.tabs
       .find((t) => t.key === "kinerja")
       ?.sections.flatMap((s) => s.items) ?? []
-  ).filter(
-    (i) => !i.conditionItemId || i.conditionValue === kategoriProyekValue,
-  );
+  ).filter((i) => isItemVisible(i));
 
   // formTemplate di-fetch dengan activeOnly=true (lihat useEffect di atas) —
   // jadi tab/item yang MUNCUL di situ sudah pasti aktif, yang tidak muncul
@@ -774,6 +787,34 @@ export function ProyekFormDialog({
     (adminRefreshToken ?? 0) + (masterRefreshToken ?? 0),
   );
 
+  // ===== Skor di layar (badge per field & total tab) — aturan sama dengan
+  // backend, lihat lib/form-score.ts. =====
+  const templateItemByKey = new Map(
+    (formTemplate?.tabs ?? [])
+      .flatMap((t) => t.sections.flatMap((s) => s.items))
+      .map((i) => [i.key, i] as const),
+  );
+  // Nilai mentah utk skor: upload = file benar-benar tersimpan/tertahan.
+  const nilaiSkor = (key: string): unknown => {
+    const it = templateItemByKey.get(key);
+    if (key === "dokumenPendukung")
+      return isEdit ? dokumenList.length > 0 : pendingFiles.length > 0;
+    if (it?.fieldType === "UPLOAD" && !BAKU_ITEM_KEYS.has(key))
+      return !!(pendingItemFiles[it.id] || itemDokumen[it.id]);
+    return itemValue(key);
+  };
+  const kolomTambahanDari = (
+    section: FormTabNode["sections"][number],
+    item: FormItemNode,
+  ) => section.items.filter((c) => c.conditionItemId === item.key);
+  const skorItem = (
+    section: FormTabNode["sections"][number],
+    item: FormItemNode,
+  ) => skorField(item, nilaiSkor, kolomTambahanDari(section, item));
+
+  // Field yang selalu lebar penuh walau renderer-nya sendiri (lokasi).
+  const SELALU_PENUH = new Set(["provinceId", "latitude"]);
+
   const renderTemplatedTab = (
     value: (typeof TABS)[number]["value"],
     renderers: Record<string, (item: FormItemNode) => React.ReactNode>,
@@ -799,6 +840,7 @@ export function ProyekFormDialog({
                   )
                 : undefined
             }
+            optionScore={optionScoreFor(item)}
             uploadedFileName={
               pendingItemFiles[item.id]?.name ?? itemDokumen[item.id]?.fileName
             }
@@ -815,20 +857,119 @@ export function ProyekFormDialog({
       return adminHandlers.sectionsBody(tabKey, tabId, sections, renderItem, gridClass);
     }
 
+    // Tab berskor (punya bobot) yang semua skornya bisa dihitung di layar
+    // (bukan rasio Valuasi yang dihitung server) dapat label "Total skor".
+    const tabNode = formTemplate?.tabs.find((t) => t.key === TAB_KEY_MAP[value]);
+    let totalDapat = 0;
+    let totalMaks = 0;
+    let bisaTotal = tabNode?.bobot != null;
+
+    // Field + kolom tambahannya (menjorok di bawah induk, section yang sama).
+    const renderPohon = (
+      section: FormTabNode["sections"][number],
+      item: FormItemNode,
+      depth: number,
+    ): React.ReactNode[] => {
+      if (!isItemVisible(item)) return [];
+      if (item.thresholdValue != null) bisaTotal = false;
+      const sk = item.thresholdValue == null ? skorItem(section, item) : null;
+      if (sk) {
+        totalDapat += sk.dapat;
+        totalMaks += sk.maks;
+      }
+      const penuh = depth > 0 || isItemWide(item) || SELALU_PENUH.has(item.key);
+      return [
+        <div
+          key={item.id}
+          className={cn(
+            "relative grid",
+            penuh && "col-span-full",
+            depth > 0 && "border-l-2 border-primary/30 pl-4",
+          )}
+          style={depth > 0 ? { marginLeft: (depth - 1) * 16 } : undefined}
+        >
+          {sk && sk.maks > 0 && (
+            <span
+              className={cn(
+                "absolute right-0 top-0 z-10 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                sk.dapat > 0
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              {sk.dapat > 0 ? `+${sk.dapat}` : `0 / ${sk.maks}`} skor
+            </span>
+          )}
+          {renderItem(item)}
+        </div>,
+        ...kolomTambahanDari(section, item).flatMap((c) =>
+          renderPohon(section, c, depth + 1),
+        ),
+      ];
+    };
+
+    const isi = sections.map((section) => {
+      const keys = new Set(section.items.map((i) => i.key));
+      const akar = section.items.filter(
+        (i) => !i.conditionItemId || !keys.has(i.conditionItemId),
+      );
+      return {
+        section,
+        nodes: akar.flatMap((i) => renderPohon(section, i, 0)),
+      };
+    });
+
     return (
       <div className="space-y-5">
-        {sections.map((section) => (
+        {bisaTotal && totalMaks > 0 && (
+          <div className="flex justify-end">
+            <span
+              title="Jumlah skor dari isian di tab ini"
+              className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary"
+            >
+              Total skor: {totalDapat} / {totalMaks}
+            </span>
+          </div>
+        )}
+        {isi.map(({ section, nodes }) => (
           <div key={section.id} className="space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground pl-12">
-              {section.label}
-            </p>
-            <div className={cn(gridClass, "pl-12")}>
-              {section.items.map(renderItem)}
-            </div>
+            {/* Judul bagian cuma perlu kalau tab punya >1 bagian (sama
+                dengan kanvas admin) — kalau 1, sering kembar nama field. */}
+            {isi.length > 1 && (
+              <p className="text-xs font-semibold text-muted-foreground pl-12">
+                {section.label}
+              </p>
+            )}
+            <div className={cn(gridClass, "pl-12")}>{nodes}</div>
           </div>
         ))}
       </div>
     );
+  };
+
+  // Skor tiap pilihan utk ditampilkan di sebelah pilihannya.
+  function optionScoreFor(item: FormItemNode) {
+    if (!item.options.length) return undefined;
+    const section = formTemplate?.tabs
+      .flatMap((t) => t.sections)
+      .find((s) => s.items.some((i) => i.id === item.id));
+    const kolom = section ? kolomTambahanDari(section, item) : [];
+    const raw = nilaiSkor(item.key);
+    const dipilih = (Array.isArray(raw) ? raw : [raw]).map(String);
+    return (v: string) => {
+      const o = item.options.find((x) => x.value === v);
+      if (!o) return null;
+      return {
+        skor: o.score ?? 0,
+        masuk: dipilih.includes(v) && pilihanLengkap(v, nilaiSkor, kolom),
+      };
+    };
+  }
+
+  // Teks " (skor n)" utk pilihan di dropdown field bawaan.
+  const skorTeks = (item: FormItemNode, value: string) => {
+    const s = item.options.find((o) => o.value === value)?.score;
+    return s ? ` (skor ${s})` : "";
   };
 
   // ===== Renderer field baku per tab — JSX PERSIS sama seperti sebelumnya,
@@ -1069,34 +1210,24 @@ export function ProyekFormDialog({
             {sumberUsulanList.map((s) => (
               <SelectItem key={s.id} value={s.name}>
                 {s.name}
+                {skorTeks(item, s.name)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
     ),
-    sumberUsulanLainnya: (item) => {
-      const sumber = watch("sumberUsulanProyek");
-      if (
-        sumber !== "Pemerintah Daerah" &&
-        sumber !== "Kementerian/Lembaga" &&
-        sumber !== "Lainnya"
-      ) {
-        return null;
-      }
-      return (
-        <div key={item.id} className={cn("space-y-2", isItemWide(item) && "col-span-full")}>
-          <Label>
-            {sumber === "Pemerintah Daerah"
-              ? "Pemerintah Daerah yang Mengusulkan"
-              : sumber === "Kementerian/Lembaga"
-                ? "Kementerian/Lembaga yang Mengusulkan"
-                : item.label}
-          </Label>
-          <Input className="h-10" {...register("sumberUsulanLainnya")} />
-        </div>
-      );
-    },
+    // Kapan field ini muncul diatur lewat "Tampil jika" di kanvas (kondisi
+    // template), bukan aturan di sini.
+    sumberUsulanLainnya: (item) => (
+      <div key={item.id} className={cn("space-y-2", isItemWide(item) && "col-span-full")}>
+        <Label>
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+        <Input className="h-10" {...register("sumberUsulanLainnya")} />
+      </div>
+    ),
     justifikasiProyek: (item) => (
       <div key={item.id} className={cn("space-y-2", isItemWide(item) && "col-span-full")}>
         <Label>
@@ -1127,6 +1258,7 @@ export function ProyekFormDialog({
     defaults.map(([value, label]) => (
       <SelectItem key={value} value={value}>
         {item.options.find((o) => o.value === value)?.label || label}
+        {skorTeks(item, value)}
       </SelectItem>
     ));
 
@@ -1454,6 +1586,7 @@ export function ProyekFormDialog({
             {tematikList.map((t) => (
               <SelectItem key={t.id} value={t.id}>
                 {t.name}
+                {skorTeks(item, t.id)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -1478,6 +1611,7 @@ export function ProyekFormDialog({
             {pkpnList.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.name}
+                {skorTeks(item, p.id)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -1690,6 +1824,11 @@ export function ProyekFormDialog({
   }, [hasEvaluasi, formTemplate]);
 
   const allTabsVisited = visibleTabs.every((t) => visitedTabs.has(t.value));
+
+  useEffect(() => {
+    onActiveTabChange?.(TAB_KEY_MAP[activeTab as (typeof TABS)[number]["value"]]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const roOptionsFiltered = selectedKegiatanId
     ? roList.filter((r) => r.kro.kegiatan.id === selectedKegiatanId)
@@ -2029,7 +2168,21 @@ export function ProyekFormDialog({
   // pendek supaya tetap terasa "langsung".
   // formValuesMap -> payload backend (FormValueDto[]) — cuma kirim yang
   // benar-benar terisi (dropdown kepilih atau checkbox tercentang).
-  const buildFormValues = () => toFormValueList(formValuesMap);
+  // Field custom yang sedang tersembunyi ("Tampil jika" tidak terpenuhi)
+  // tidak ikut dikirim — isian lamanya tidak tersimpan/dinilai.
+  const buildFormValues = () => {
+    const hidden = new Set(
+      (formTemplate?.tabs ?? [])
+        .flatMap((t) => t.sections.flatMap((s) => s.items))
+        .filter((i) => !isItemVisible(i))
+        .map((i) => i.key),
+    );
+    return toFormValueList(
+      Object.fromEntries(
+        Object.entries(formValuesMap).filter(([k]) => !hidden.has(k)),
+      ),
+    );
+  };
 
   const watchedForPreview = watch();
   const paket0Form = watchedForPreview.paket?.[0];
@@ -2038,6 +2191,8 @@ export function ProyekFormDialog({
     roIdPreview,
     formValuesMap,
     sumberUsulanProyek: watchedForPreview.sumberUsulanProyek,
+    sumberUsulanLainnya: watchedForPreview.sumberUsulanLainnya,
+    justifikasiProyek: watchedForPreview.justifikasiProyek,
     kegiatanPrioritasId: watchedForPreview.kegiatanPrioritasId,
     statusStudiLayak: watchedForPreview.statusStudiLayak,
     statusDed: watchedForPreview.statusDed,
@@ -2098,6 +2253,8 @@ export function ProyekFormDialog({
         .post("/proyek/preview-skor", {
           roId: roIdPreview,
           sumberUsulanProyek: watchedForPreview.sumberUsulanProyek,
+          sumberUsulanLainnya: watchedForPreview.sumberUsulanLainnya || undefined,
+          justifikasiProyek: watchedForPreview.justifikasiProyek || undefined,
           kegiatanPrioritasId: watchedForPreview.kegiatanPrioritasId,
           statusStudiLayak: watchedForPreview.statusStudiLayak,
           statusDed: watchedForPreview.statusDed,
@@ -2241,6 +2398,7 @@ export function ProyekFormDialog({
         for (const item of section.items) {
           if (
             item.isActive === false ||
+            !isItemVisible(item) ||
             !item.required ||
             ALWAYS_REQUIRED_BAKU_KEYS.has(item.key)
           )
@@ -2300,28 +2458,33 @@ export function ProyekFormDialog({
             }}
             className={cn("flex-1 min-h-0", embedded && "flex-none")}
           >
-            <div className="px-6 pt-2">
-              <TabsList className="w-full flex-nowrap">
+            <div className={cn("pt-2", adminMode ? "px-0" : "px-6")}>
+              <TabsList
+                className={cn(
+                  "w-full",
+                  adminMode
+                    ? "h-auto flex-wrap justify-start gap-0 rounded-[12px] border border-[#d0d7de] bg-white p-0 px-2"
+                    : embedded
+                      ? "h-auto flex-wrap justify-start"
+                      : "flex-nowrap",
+                )}
+              >
                 {visibleTabs.map((t) => (
                   <TabsTrigger
                     key={t.value}
                     value={t.value}
                     className={cn(
                       "text-xs gap-1.5",
+                      embedded && "flex-none",
+                      adminMode &&
+                        "h-12 rounded-none border-0 border-b-[3px] border-transparent px-4 text-sm font-medium text-[#3d4752] shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:font-bold data-[state=active]:text-primary data-[state=active]:shadow-none",
                       adminMode && !isTabActive(t.value) && "opacity-50",
                     )}
                   >
-                    {adminMode && (
-                      <span
-                        className={cn(
-                          "h-1.5 w-1.5 rounded-full",
-                          isTabActive(t.value)
-                            ? "bg-emerald-500"
-                            : "bg-slate-300",
-                        )}
-                      />
-                    )}
                     {t.label}
+                    {adminMode && !isTabActive(t.value) && (
+                      <span className="text-[10px] font-normal">(disembunyikan)</span>
+                    )}
                   </TabsTrigger>
                 ))}
               </TabsList>
@@ -2329,7 +2492,7 @@ export function ProyekFormDialog({
 
             <SheetBody
               className={cn(
-                "px-6 py-6",
+                adminMode ? "px-0 py-6" : "px-6 py-6",
                 embedded && "flex-none overflow-visible",
               )}
             >
@@ -2339,7 +2502,9 @@ export function ProyekFormDialog({
                 {/* Kegiatan bukan FormItem (dipakai menentukan template-nya
                     sendiri, jadi tidak bisa ikut diatur di kanvas) — tetap
                     field tersendiri di luar loop template, selalu tampil. */}
-                <div className={cn(KEGIATAN_GRID_CLASS, "pl-12 mb-5")}>
+                <div
+                  className={cn(KEGIATAN_GRID_CLASS, "pl-12 mb-5", adminMode && "hidden")}
+                >
                   <div className="space-y-2">
                     <Label>Kegiatan</Label>
                     <Select
@@ -2872,7 +3037,13 @@ export function ProyekFormDialog({
 
   if (embedded) {
     return (
-      <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+      <div
+        className={cn(
+          // Kanvas admin: kartu field langsung di atas latar (seperti
+          // prototipe), tanpa bingkai putih pembungkus.
+          !adminMode && "rounded-xl border bg-white shadow-sm overflow-hidden",
+        )}
+      >
         {tabsBody}
       </div>
     );

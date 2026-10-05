@@ -55,31 +55,30 @@ function MasterPageInner() {
   const initialKegiatanId = searchParams.get("kegiatanId") ?? undefined;
 
   return (
-    <div className="space-y-5">
-      <div>
+    <div className="space-y-6">
+      {/* Kepala halaman: strip putih selebar konten (menembus padding layout)
+          dengan menu bergaris bawah, seperti prototipe builder. */}
+      <div className="-mx-6 -mt-6 border-b border-[#d0d7de] bg-white px-6 pt-5">
         <h1 className="text-2xl font-bold tracking-tight">Master Data</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Kelola data referensi yang digunakan dalam sistem
-        </p>
-      </div>
-
-      {/* Tab navigation */}
-      <div className="flex gap-1 bg-muted/50 p-1 rounded-lg w-fit flex-wrap">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-              activeTab === tab.id
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <tab.icon size={14} />
-            {tab.label}
-          </button>
-        ))}
+        <nav aria-label="Menu Master Data" className="mt-3 flex flex-wrap gap-1">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              aria-current={activeTab === tab.id ? "page" : undefined}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "flex h-12 items-center gap-2 border-b-[3px] px-3 text-sm transition-colors",
+                activeTab === tab.id
+                  ? "border-primary font-bold text-primary"
+                  : "border-transparent font-medium text-[#3d4752] hover:text-foreground",
+              )}
+            >
+              <tab.icon size={15} />
+              {tab.label}
+            </button>
+          ))}
+        </nav>
       </div>
 
       {/* Tab content */}

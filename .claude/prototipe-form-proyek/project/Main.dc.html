@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Builder Form Proyek</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f4f5f7}
+a{color:#0b6e66}a:hover{color:#08524c}
+input,select,textarea,button{font-family:inherit;font-size:14px}
+</style>
+</helmet>
+<div style="font-family: 'IBM Plex Sans', system-ui, sans-serif; color: #1f2328; background: #f4f5f7; min-height: 100vh; box-sizing: border-box">
+
+  <!-- Header -->
+  <div style="background: #ffffff; border-bottom: 1px solid #d0d7de; padding: 16px 24px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+      <div style="font-size: 12px; color: #59636e">Master Data › Form Proyek</div>
+      <div style="font-size: 20px; font-weight: 700">Pengembangan dan Rehabilitasi Jaringan Irigasi</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+      <div style="font-size: 13px; color: {{saveColor}}; min-width: 110px; text-align: right">{{saveText}}</div>
+      <div style="display: flex; background: #eef0f3; border-radius: 10px; padding: 4px; gap: 4px">
+        <button type="button" onClick="{{setAtur}}" style="{{aturBtnStyle}}">Atur form</button>
+        <button type="button" onClick="{{setIsi}}" style="{{isiBtnStyle}}">Coba isi form</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div style="background: #ffffff; border-bottom: 1px solid #d0d7de; padding: 0 24px; display: flex; gap: 4px; overflow-x: auto">
+    <sc-for list="{{tabs}}" as="t" hint-placeholder-count="3">
+      <button type="button" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
+    </sc-for>
+  </div>
+
+  <sc-if value="{{isIsi}}" hint-placeholder-val="{{false}}">
+    <div style="margin: 16px 24px 0; padding: 12px 16px; background: #e6f2f0; border-radius: 10px; font-size: 14px; color: #08524c">
+      Mode coba: ini tampilan yang dilihat user saat membuat proyek. Centang pilihan untuk melihat kolom tambahan muncul. Tidak ada yang tersimpan.
+    </div>
+  </sc-if>
+
+  <!-- Body -->
+  <div style="display: flex; flex-wrap: wrap; gap: 24px; padding: 24px; align-items: flex-start">
+
+    <!-- Left: form -->
+    <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+        <div style="font-size: 13px; color: #59636e">{{leftHint}}</div>
+        <sc-if value="{{isIsi}}" hint-placeholder-val="{{false}}">
+          <div title="Jumlah skor dari isian di tab ini" style="font-size: 13px; font-weight: 700; color: #08524c; background: #e6f2f0; border-radius: 999px; padding: 6px 12px; white-space: nowrap">Total skor: {{scoreText}}</div>
+        </sc-if>
+      </div>
+
+      <sc-for list="{{rows}}" as="row" hint-placeholder-count="3">
+        <div style="{{row.wrapStyle}}">
+          <div onClick="{{row.select}}" style="{{row.cardStyle}}">
+            <sc-if value="{{row.isChild}}" hint-placeholder-val="{{false}}">
+              <div style="font-size: 12px; color: #0b6e66; font-weight: 600; margin-bottom: 8px">↳ {{row.condText}}</div>
+            </sc-if>
+            <div style="display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 8px">
+              <label for="{{row.inputId}}" style="font-size: 14px; font-weight: 600">{{row.label}}<span style="color: #b42318">{{row.reqMark}}</span></label>
+              <sc-if value="{{row.showMeta}}" hint-placeholder-val="{{true}}">
+                <span style="font-size: 12px; color: #59636e; white-space: nowrap">{{row.typeLabel}}</span>
+              </sc-if>
+              <sc-if value="{{row.showBadge}}" hint-placeholder-val="{{false}}">
+                <span style="{{row.badgeStyle}}">{{row.badgeText}}</span>
+              </sc-if>
+            </div>
+
+            <sc-if value="{{row.isText}}" hint-placeholder-val="{{true}}">
+              <input id="{{row.inputId}}" type="text" value="{{row.value}}" onChange="{{row.onText}}" disabled="{{row.disabled}}" placeholder="{{row.placeholder}}" style="width: 100%; box-sizing: border-box; height: 40px; border: 1px solid #c3cad3; border-radius: 8px; padding: 0 12px; background: #ffffff">
+            </sc-if>
+            <sc-if value="{{row.isLong}}" hint-placeholder-val="{{false}}">
+              <textarea id="{{row.inputId}}" value="{{row.value}}" onChange="{{row.onText}}" disabled="{{row.disabled}}" placeholder="{{row.placeholder}}" style="width: 100%; box-sizing: border-box; min-height: 80px; border: 1px solid #c3cad3; border-radius: 8px; padding: 10px 12px; background: #ffffff; resize: vertical"></textarea>
+            </sc-if>
+            <sc-if value="{{row.isNumber}}" hint-placeholder-val="{{false}}">
+              <input id="{{row.inputId}}" type="number" value="{{row.value}}" onChange="{{row.onText}}" disabled="{{row.disabled}}" style="width: 100%; box-sizing: border-box; height: 40px; border: 1px solid #c3cad3; border-radius: 8px; padding: 0 12px; background: #ffffff">
+            </sc-if>
+            <sc-if value="{{row.isDate}}" hint-placeholder-val="{{false}}">
+              <input id="{{row.inputId}}" type="date" value="{{row.value}}" onChange="{{row.onText}}" disabled="{{row.disabled}}" style="width: 100%; box-sizing: border-box; height: 40px; border: 1px solid #c3cad3; border-radius: 8px; padding: 0 12px; background: #ffffff">
+            </sc-if>
+            <sc-if value="{{row.isDropdown}}" hint-placeholder-val="{{false}}">
+              <select id="{{row.inputId}}" value="{{row.value}}" onChange="{{row.onText}}" disabled="{{row.disabled}}" style="width: 100%; height: 40px; border: 1px solid #c3cad3; border-radius: 8px; padding: 0 8px; background: #ffffff">
+                <option value="">— Pilih —</option>
+                <sc-for list="{{row.opts}}" as="o" hint-placeholder-count="3">
+                  <option value="{{o.value}}">{{o.optionText}}</option>
+                </sc-for>
+              </select>
+            </sc-if>
+            <sc-if value="{{row.isCheckbox}}" hint-placeholder-val="{{false}}">
+              <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px">
+                <sc-for list="{{row.opts}}" as="o" hint-placeholder-count="4">
+                  <label style="display: flex; gap: 8px; align-items: center; font-size: 14px; min-height: 28px">
+                    <input type="checkbox" checked="{{o.checked}}" onChange="{{o.toggle}}" disabled="{{row.disabled}}" style="width: 18px; height: 18px; accent-color: #0b6e66">
+                    <span>{{o.label}}</span>
+                    <sc-if value="{{o.hasScore}}" hint-placeholder-val="{{true}}">
+                      <span style="{{o.scoreStyle}}">{{o.scoreText}}</span>
+                    </sc-if>
+                  </label>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{row.showPending}}" hint-placeholder-val="{{false}}">
+              <div style="margin-top: 8px; font-size: 12px; color: #7a4a00">{{row.pendingText}}</div>
+            </sc-if>
+            <sc-if value="{{row.isUpload}}" hint-placeholder-val="{{false}}">
+              <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+                <label style="{{row.uploadBtnStyle}}">
+                  {{row.uploadBtnText}}
+                  <input id="{{row.inputId}}" type="file" onChange="{{row.onFile}}" disabled="{{row.disabled}}" style="position: absolute; width: 1px; height: 1px; opacity: 0">
+                </label>
+                <sc-if value="{{row.hasFile}}" hint-placeholder-val="{{false}}">
+                  <span style="font-size: 14px; color: #1f2328">{{row.fileName}}</span>
+                  <button type="button" onClick="{{row.removeFile}}" style="height: 36px; padding: 0 12px; border: 1px solid #e3b4ae; border-radius: 8px; background: #ffffff; color: #b42318; cursor: pointer">Hapus file</button>
+                </sc-if>
+                <sc-if value="{{row.noFileYet}}" hint-placeholder-val="{{true}}">
+                  <span style="font-size: 13px; color: #59636e">Belum ada file</span>
+                </sc-if>
+              </div>
+            </sc-if>
+            <sc-if value="{{row.showLock}}" hint-placeholder-val="{{false}}">
+              <div style="margin-top: 8px; font-size: 12px; color: #7a4a00">Terkunci: {{row.lockReason}}</div>
+            </sc-if>
+          </div>
+        </div>
+      </sc-for>
+
+      <sc-if value="{{isAtur}}" hint-placeholder-val="{{true}}">
+        <button type="button" onClick="{{addRootField}}" style="height: 48px; border: 2px dashed #b6bec8; border-radius: 12px; background: transparent; color: #3d4752; font-weight: 600; cursor: pointer">+ Tambah field</button>
+      </sc-if>
+    </div>
+
+    <!-- Right: panel (hanya mode Atur) -->
+    <sc-if value="{{isAtur}}" hint-placeholder-val="{{true}}">
+    <div style="flex: 1 1 360px; max-width: 460px; min-width: 0; background: #ffffff; border: 1px solid #d0d7de; border-radius: 14px; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px">
+
+      <sc-if value="{{showEmptyPanel}}" hint-placeholder-val="{{false}}">
+        <div style="font-size: 14px; color: #59636e">Klik salah satu field di kiri untuk mengaturnya.</div>
+      </sc-if>
+
+      <sc-if value="{{showPanel}}" hint-placeholder-val="{{true}}">
+        <div style="display: flex; flex-direction: column; gap: 20px">
+          <div style="font-size: 16px; font-weight: 700">Atur field</div>
+
+          <!-- Dasar -->
+          <div style="display: flex; flex-direction: column; gap: 12px">
+            <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600">Nama field
+              <input type="text" value="{{sel.label}}" onChange="{{sel.onName}}" style="height: 40px; border: 1px solid #c3cad3; border-radius: 8px; padding: 0 12px; font-weight: 400">
+            </label>
+            <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600">Tipe
+              <select value="{{sel.type}}" onChange="{{sel.onType}}" disabled="{{sel.typeLocked}}" style="height: 40px; border: 1px solid #c3cad3; border-radius: 8px; padding: 0 8px; font-weight: 400; background: #ffffff">
+                <sc-for list="{{typeOptions}}" as="o" hint-placeholder-count="6">
+                  <option value="{{o.value}}">{{o.label}}</option>
+                </sc-for>
+              </select>
+            </label>
+            <sc-if value="{{sel.typeLocked}}" hint-placeholder-val="{{false}}">
+              <div style="font-size: 12px; color: #7a4a00; margin-top: -4px">Terkunci: {{sel.lockReason}}</div>
+            </sc-if>
+            <label style="display: flex; align-items: center; gap: 10px; font-size: 14px; min-height: 32px">
+              <input type="checkbox" checked="{{sel.required}}" onChange="{{sel.onRequired}}" disabled="{{sel.requiredLocked}}" style="width: 18px; height: 18px; accent-color: #0b6e66">
+              Wajib diisi
+            </label>
+          </div>
+
+          <!-- Skor untuk field isian -->
+          <sc-if value="{{sel.childNote}}" hint-placeholder-val="{{false}}">
+            <div style="font-size: 13px; color: #08524c; background: #e6f2f0; border-radius: 8px; padding: 10px 12px">{{sel.childNote}}</div>
+          </sc-if>
+          <sc-if value="{{sel.showScore}}" hint-placeholder-val="{{false}}">
+            <label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px">
+              {{sel.scoreLabel}}
+              <input type="number" value="{{sel.score}}" onChange="{{sel.onScore}}" style="width: 72px; height: 36px; border: 1px solid #c3cad3; border-radius: 8px; padding: 0 8px">
+            </label>
+          </sc-if>
+
+          <!-- Pilihan -->
+          <sc-if value="{{sel.hasChoices}}" hint-placeholder-val="{{true}}">
+            <div style="display: flex; flex-direction: column; gap: 12px; border-top: 1px solid #e3e6ea; padding-top: 16px">
+              <div style="font-size: 14px; font-weight: 700">Pilihan</div>
+              <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600">Isi pilihan dari
+                <select value="{{sel.source}}" onChange="{{sel.onSource}}" disabled="{{sel.sourceLocked}}" style="height: 40px; border: 1px solid #c3cad3; border-radius: 8px; padding: 0 8px; font-weight: 400; background: #ffffff">
+                  <sc-for list="{{sourceOptions}}" as="o" hint-placeholder-count="4">
+                    <option value="{{o.value}}">{{o.label}}</option>
+                  </sc-for>
+                </select>
+              </label>
+              <sc-if value="{{sel.isMaster}}" hint-placeholder-val="{{true}}">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: #59636e; background: #f6f8fa; border-radius: 8px; padding: 8px 10px">
+                  <span>Daftar mengikuti data master, berlaku untuk semua kegiatan.</span>
+                  <button type="button" onClick="{{sel.manageMaster}}" style="height: 32px; padding: 0 10px; border: 1px solid #c3cad3; border-radius: 8px; background: #ffffff; cursor: pointer; white-space: nowrap">Kelola data</button>
+                </div>
+              </sc-if>
+
+              <div style="display: grid; grid-template-columns: minmax(0, 1fr) 64px; gap: 6px 8px; font-size: 12px; color: #59636e">
+                <span>Pilihan</span><span>Skor</span>
+              </div>
+              <sc-for list="{{sel.optRows}}" as="opt" hint-placeholder-count="4">
+                <div style="display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid #eef0f3">
+                  <div style="display: grid; grid-template-columns: minmax(0, 1fr) 64px; gap: 8px; align-items: center">
+                    <input type="text" value="{{opt.label}}" onChange="{{opt.onLabel}}" disabled="{{opt.labelLocked}}" style="height: 36px; border: 1px solid #c3cad3; border-radius: 8px; padding: 0 10px; min-width: 0">
+                    <input type="number" value="{{opt.score}}" onChange="{{opt.onScore}}" style="height: 36px; border: 1px solid #c3cad3; border-radius: 8px; padding: 0 8px; min-width: 0">
+                  </div>
+                  <sc-for list="{{opt.children}}" as="ch" hint-placeholder-count="0">
+                    <button type="button" onClick="{{ch.select}}" style="text-align: left; border: none; background: #e6f2f0; color: #08524c; border-radius: 8px; padding: 8px 10px; font-size: 13px; cursor: pointer">↳ {{ch.label}} · {{ch.typeLabel}}</button>
+                  </sc-for>
+                  <button type="button" onClick="{{opt.addChild}}" style="align-self: flex-start; border: none; background: transparent; color: #0b6e66; font-weight: 600; font-size: 13px; padding: 4px 0; cursor: pointer">+ Kolom tambahan</button>
+                </div>
+              </sc-for>
+              <sc-if value="{{sel.isManual}}" hint-placeholder-val="{{false}}">
+                <button type="button" onClick="{{sel.addOption}}" style="height: 40px; border: 1px dashed #b6bec8; border-radius: 8px; background: transparent; cursor: pointer; font-weight: 600; color: #3d4752">+ Tambah pilihan</button>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <!-- Lanjutan -->
+          <div style="border-top: 1px solid #e3e6ea; padding-top: 12px">
+            <button type="button" onClick="{{toggleAdvanced}}" style="border: none; background: transparent; padding: 4px 0; font-weight: 600; cursor: pointer; color: #3d4752">{{advancedLabel}}</button>
+            <sc-if value="{{advancedOpen}}" hint-placeholder-val="{{false}}">
+              <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; margin-top: 8px">Lebar di form
+                <select value="{{sel.width}}" onChange="{{sel.onWidth}}" style="height: 40px; border: 1px solid #c3cad3; border-radius: 8px; padding: 0 8px; font-weight: 400; background: #ffffff">
+                  <option value="auto">Otomatis</option>
+                  <option value="half">Setengah</option>
+                  <option value="full">Penuh</option>
+                </select>
+              </label>
+            </sc-if>
+          </div>
+
+          <!-- Hapus -->
+          <sc-if value="{{sel.canDelete}}" hint-placeholder-val="{{true}}">
+            <button type="button" onClick="{{sel.onDelete}}" style="{{sel.deleteStyle}}">{{sel.deleteText}}</button>
+          </sc-if>
+        </div>
+      </sc-if>
+    </div>
+    </sc-if>
+  </div>
+
+  <!-- Toast -->
+  <sc-if value="{{showToast}}" hint-placeholder-val="{{false}}">
+    <div style="position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #1f2328; color: #ffffff; padding: 12px 16px; border-radius: 10px; font-size: 14px; max-width: 90vw; display: flex; gap: 12px; align-items: center">
+      <span>{{toast}}</span>
+      <button type="button" onClick="{{closeToast}}" style="border: none; background: transparent; color: #ffffff; font-weight: 700; cursor: pointer">Tutup</button>
+    </div>
+  </sc-if>
+
+  <!-- Dialog tambah field / kolom tambahan -->
+  <sc-if value="{{dialogOpen}}" hint-placeholder-val="{{false}}">
+    <div style="position: fixed; inset: 0; background: rgba(15, 20, 25, 0.45); display: flex; align-items: center; justify-content: center; padding: 16px">
+      <div role="dialog" aria-label="{{dialogTitle}}" style="background: #ffffff; border-radius: 14px; width: 100%; max-width: 480px; padding: 24px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px">
+        <div style="font-size: 18px; font-weight: 700">{{dialogTitle}}</div>
+        <sc-if value="{{dialogIsChild}}" hint-placeholder-val="{{false}}">
+          <div style="font-size: 13px; color: #08524c; background: #e6f2f0; border-radius: 8px; padding: 10px 12px">{{dialogNote}} Kolom tambahan tidak punya skor sendiri: skor pilihannya baru masuk setelah kolom ini diisi.</div>
+        </sc-if>
+        <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600">Nama field
+          <input type="text" value="{{draft.label}}" onChange="{{onDraftLabel}}" placeholder="Contoh: Sebutkan sumber lainnya" style="height: 40px; border: 1px solid #c3cad3; border-radius: 8px; padding: 0 12px; font-weight: 400">
+        </label>
+        <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600">Tipe
+          <div style="display: flex; flex-wrap: wrap; gap: 8px">
+            <sc-for list="{{draftTypes}}" as="p" hint-placeholder-count="6">
+              <button type="button" onClick="{{p.pick}}" style="{{p.style}}">{{p.label}}</button>
+            </sc-for>
+          </div>
+        </div>
+        <label style="display: flex; align-items: center; gap: 10px; font-size: 14px; min-height: 32px">
+          <input type="checkbox" checked="{{draft.required}}" onChange="{{onDraftRequired}}" style="width: 18px; height: 18px; accent-color: #0b6e66">
+          Wajib diisi
+        </label>
+        <sc-if value="{{draftShowScore}}" hint-placeholder-val="{{true}}">
+          <label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px">
+            Skor kalau diisi
+            <input type="number" value="{{draft.score}}" onChange="{{onDraftScore}}" style="width: 72px; height: 36px; border: 1px solid #c3cad3; border-radius: 8px; padding: 0 8px">
+          </label>
+        </sc-if>
+        <sc-if value="{{draftIsChoice}}" hint-placeholder-val="{{false}}">
+          <div style="font-size: 13px; color: #59636e">Pilihan &amp; skornya diatur setelah field dibuat (panel kanan).</div>
+        </sc-if>
+        <div style="display: flex; justify-content: flex-end; gap: 8px">
+          <button type="button" onClick="{{closeDialog}}" style="height: 44px; padding: 0 16px; border: 1px solid #c3cad3; border-radius: 10px; background: #ffffff; cursor: pointer">Batal</button>
+          <button type="button" onClick="{{saveDialog}}" disabled="{{draftInvalid}}" style="{{saveBtnStyle}}">Simpan</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+var TYPES = [["TEXT","Teks"],["FIELDBOX","Teks panjang"],["NUMBER","Angka"],["DATE","Tanggal"],["CHECKBOX","Centang"],["DROPDOWN","Dropdown"],["UPLOAD","Upload file"]];
+var TYPE_LABEL = {};
+TYPES.forEach(function (t) { TYPE_LABEL[t[0]] = t[1]; });
+var MASTER = {
+  sumberUsulan: { label: "Data master: Sumber Usulan", rows: [
+    ["pemda", "Pemerintah Daerah"], ["kl", "Kementerian/Lembaga"], ["renaksi", "Tindak Lanjut Renaksi"], ["masyarakat", "Masyarakat"], ["lainnya", "Lainnya"] ] },
+  balai: { label: "Data master: Balai", rows: [["b1", "BBWS Brantas"], ["b2", "BBWS Citarum"], ["b3", "BWS Sumatera II"]] },
+  pkpn: { label: "Data master: PKPN", rows: [["p1", "Giant Sea Wall"], ["p2", "Swasembada Air"], ["p3", "Rehabilitasi Pascabencana Sumatera"]] }
+};
+var TABS = [["identitas", "Identitas Proyek"], ["dasar", "Dasar Pelaksanaan"], ["tagging", "Tagging"]];
+
+function fromMaster(src, scores) {
+  return MASTER[src].rows.map(function (r) { return { value: r[0], label: r[1], score: scores && scores[r[0]] != null ? scores[r[0]] : "" }; });
+}
+function isChoice(t) { return t === "CHECKBOX" || t === "DROPDOWN"; }
+function pillStyle(active) {
+  return active
+    ? "height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid #0b6e66; background: #0b6e66; color: #ffffff; cursor: pointer; font-weight: 600"
+    : "height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid #c3cad3; background: #ffffff; color: #1f2328; cursor: pointer";
+}
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.seq = 100;
+    this.timer = null;
+    this.state = {
+      mode: "atur", tab: "dasar", selectedId: "f_sumber", saving: false, advancedOpen: false,
+      dialog: null, draft: { label: "", type: "TEXT", required: false, score: "" },
+      deleteArmed: null, toast: "", answers: {},
+      fields: [
+        { id: "f_balai", tab: "identitas", label: "Balai", type: "DROPDOWN", required: true, source: "balai", options: fromMaster("balai"), lock: "Proyek hanya punya 1 Balai, jadi tipenya tetap Dropdown dari data master.", width: "auto" },
+        { id: "f_nama", tab: "identitas", label: "Nama Proyek", type: "TEXT", required: true, source: "", options: [], lock: "Nama proyek selalu berupa teks.", width: "full", score: "" },
+        { id: "f_sumber", tab: "dasar", label: "Sumber Usulan Proyek", type: "CHECKBOX", required: true, source: "sumberUsulan", options: fromMaster("sumberUsulan", { pemda: 2, kl: 2, renaksi: 1, masyarakat: 1, lainnya: 1 }), width: "full" },
+        { id: "f_lain", tab: "dasar", label: "Sebutkan sumber lainnya", type: "TEXT", required: true, source: "", options: [], parentId: "f_sumber", parentOpt: "lainnya", score: "", width: "full" },
+        { id: "f_just", tab: "dasar", label: "Justifikasi Proyek", type: "FIELDBOX", required: true, source: "", options: [], score: 1, width: "full" },
+        { id: "f_surat", tab: "dasar", label: "Surat Usulan", type: "UPLOAD", required: false, source: "", options: [], score: 2, width: "full" },
+        { id: "f_pkpn", tab: "tagging", label: "PKPN", type: "DROPDOWN", required: false, source: "pkpn", options: fromMaster("pkpn", { p1: 1, p2: 1, p3: 1 }), width: "auto" }
+      ]
+    };
+  }
+
+  touch() {
+    var self = this;
+    this.setState({ saving: true });
+    clearTimeout(this.timer);
+    this.timer = setTimeout(function () { self.setState({ saving: false }); }, 700);
+  }
+  field(id) { return this.state.fields.find(function (f) { return f.id === id; }); }
+  upd(id, patch) {
+    this.setState({ fields: this.state.fields.map(function (f) { return f.id === id ? Object.assign({}, f, patch) : f; }) });
+    this.touch();
+  }
+  updOpt(id, value, patch) {
+    var f = this.field(id);
+    this.upd(id, { options: f.options.map(function (o) { return o.value === value ? Object.assign({}, o, patch) : o; }) });
+  }
+  childrenOf(id, opt) {
+    return this.state.fields.filter(function (f) { return f.parentId === id && (opt == null || f.parentOpt === opt); });
+  }
+  descendants(id) {
+    var self = this, out = [];
+    this.childrenOf(id).forEach(function (c) { out.push(c.id); out = out.concat(self.descendants(c.id)); });
+    return out;
+  }
+  answerHas(f, value) {
+    var a = this.state.answers[f.id];
+    return f.type === "CHECKBOX" ? Array.isArray(a) && a.indexOf(value) >= 0 : a === value;
+  }
+  setAnswer(id, v) {
+    var answers = Object.assign({}, this.state.answers);
+    answers[id] = v;
+    this.setState({ answers: answers });
+  }
+
+  // Urutan tampil: field induk, lalu tiap pilihannya diikuti kolom tambahannya (bertingkat).
+  flatten(isi) {
+    var self = this, out = [];
+    function walk(f, depth, condText) {
+      out.push({ f: f, depth: depth, condText: condText });
+      f.options.forEach(function (o) {
+        if (isi && !self.answerHas(f, o.value)) return;
+        self.childrenOf(f.id, o.value).forEach(function (c) {
+          walk(c, depth + 1, "Muncul jika “" + o.label + "” " + (f.type === "CHECKBOX" ? "dicentang" : "dipilih"));
+        });
+      });
+    }
+    this.state.fields.filter(function (f) { return f.tab === self.state.tab && !f.parentId; })
+      .forEach(function (f) { walk(f, 0, ""); });
+    return out;
+  }
+
+  // Skor 1 field: centang/dropdown = skor tertinggi dari yang dipilih;
+  // teks = kalau diisi; upload = kalau file benar-benar ada.
+  filled(f) {
+    var v = this.state.answers[f.id];
+    return Array.isArray(v) ? v.length > 0 : v != null && String(v).trim() !== "";
+  }
+  // Pilihan dipilih & semua kolom tambahannya sudah diisi (tanpa kolom tambahan: cukup dipilih).
+  optionCounts(f, o) {
+    var self = this;
+    return this.answerHas(f, o.value) &&
+      this.childrenOf(f.id, o.value).every(function (c) { return self.filled(c); });
+  }
+  // Skor 1 field. Pilihan: jumlah skor pilihan yang dipilih (dropdown cuma
+  // bisa 1). Teks = kalau diisi; upload = kalau file benar-benar ada.
+  // Kolom tambahan tidak punya skor sendiri.
+  fieldScore(f) {
+    var self = this;
+    if (f.parentId) return { got: 0, max: 0 };
+    if (isChoice(f.type)) {
+      var nums = f.options.map(function (o) { return Number(o.score) || 0; });
+      var got = 0;
+      f.options.forEach(function (o) { if (self.optionCounts(f, o)) got += Number(o.score) || 0; });
+      var max = f.type === "CHECKBOX"
+        ? nums.reduce(function (a, b) { return a + b; }, 0)
+        : (nums.length ? Math.max.apply(null, nums) : 0);
+      return { got: got, max: max };
+    }
+    var s = Number(f.score) || 0;
+    return { got: this.filled(f) ? s : 0, max: s };
+  }
+  score(items) {
+    var self = this, got = 0, max = 0;
+    items.forEach(function (it) { var r = self.fieldScore(it.f); got += r.got; max += r.max; });
+    return got + " / " + max;
+  }
+
+  renderVals() {
+    var self = this, st = this.state, isi = st.mode === "isi";
+    var items = this.flatten(isi);
+
+    var rows = items.map(function (it) {
+      var f = it.f, val = st.answers[f.id], sc = self.fieldScore(f);
+      var selected = !isi && st.selectedId === f.id;
+      return {
+        id: f.id, inputId: "in_" + f.id, label: f.label, reqMark: f.required ? " *" : "",
+        typeLabel: TYPE_LABEL[f.type] + (f.source ? " · dari master" : ""), showMeta: !isi,
+        isChild: it.depth > 0, condText: it.condText,
+        wrapStyle: "margin-left: " + (it.depth * 28) + "px",
+        cardStyle: "background: #ffffff; border-radius: 12px; padding: 16px; cursor: " + (isi ? "default" : "pointer") + "; border: " + (selected ? "2px solid #0b6e66" : "1px solid #d0d7de"),
+        select: function () { if (!isi) self.setState({ selectedId: f.id, deleteArmed: null }); },
+        disabled: !isi, placeholder: isi ? "" : "Diisi user",
+        isText: f.type === "TEXT", isLong: f.type === "FIELDBOX", isNumber: f.type === "NUMBER", isDate: f.type === "DATE",
+        isCheckbox: f.type === "CHECKBOX", isDropdown: f.type === "DROPDOWN",
+        value: val == null || Array.isArray(val) ? "" : val,
+        onText: function (e) { self.setAnswer(f.id, e.target.value); },
+        showPending: isi && f.options.some(function (o) { return self.answerHas(f, o.value) && !self.optionCounts(f, o); }),
+        pendingText: "Skor pilihan " + f.options.filter(function (o) { return self.answerHas(f, o.value) && !self.optionCounts(f, o); }).map(function (o) { return "\u201c" + o.label + "\u201d"; }).join(", ") + " masuk setelah kolom tambahannya diisi.",
+        opts: f.options.map(function (o) {
+          var n = Number(o.score) || 0, counts = self.optionCounts(f, o);
+          return {
+            value: o.value, label: o.label, checked: self.answerHas(f, o.value),
+            hasScore: n > 0, scoreText: (counts ? "+" : "") + n,
+            scoreStyle: "font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 8px; " + (counts ? "background: #0b6e66; color: #ffffff" : "background: #eef0f3; color: #3d4752"),
+            optionText: o.label + (n > 0 ? " (skor " + n + ")" : ""),
+            toggle: function (e) {
+              var cur = Array.isArray(st.answers[f.id]) ? st.answers[f.id] : [];
+              self.setAnswer(f.id, e.target.checked ? cur.concat([o.value]) : cur.filter(function (x) { return x !== o.value; }));
+            }
+          };
+        }),
+        showLock: !isi && !!f.lock && selected, lockReason: f.lock,
+        showBadge: isi && sc.max > 0,
+        badgeText: sc.got > 0 ? "+" + sc.got + " skor" : "0 / " + sc.max + " skor",
+        badgeStyle: "font-size: 13px; font-weight: 700; white-space: nowrap; border-radius: 999px; padding: 4px 10px; " + (sc.got > 0 ? "background: #0b6e66; color: #ffffff" : "background: #eef0f3; color: #3d4752"),
+        isUpload: f.type === "UPLOAD",
+        hasFile: isi && !!val, noFileYet: !isi || !val, fileName: val || "",
+        uploadBtnText: isi && val ? "Ganti file" : "Pilih file",
+        uploadBtnStyle: "position: relative; display: inline-flex; align-items: center; height: 40px; padding: 0 14px; border: 1px solid #c3cad3; border-radius: 8px; background: #ffffff; font-size: 14px; font-weight: 600; cursor: " + (isi ? "pointer" : "default"),
+        onFile: function (e) {
+          // Batal di dialog file = tidak ada file -> tidak dianggap terunggah.
+          var file = e.target.files && e.target.files[0];
+          self.setAnswer(f.id, file ? file.name : null);
+          e.target.value = "";
+        },
+        removeFile: function () { self.setAnswer(f.id, null); }
+      };
+    });
+
+    var f = !isi && this.field(st.selectedId);
+    if (f && f.tab !== st.tab) f = null;
+    var sel = null;
+    if (f) {
+      var kids = this.descendants(f.id).length;
+      var armed = st.deleteArmed === f.id;
+      sel = {
+        label: f.label, type: f.type, required: f.required, width: f.width || "auto", score: f.score == null ? "" : f.score,
+        typeLocked: !!f.lock, lockReason: f.lock, requiredLocked: !!f.lock,
+        sourceLocked: !!f.lock, source: f.source || "manual", isMaster: !!f.source, isManual: !f.source,
+        isInput: !isChoice(f.type), hasChoices: isChoice(f.type), canDelete: !f.lock,
+        scoreLabel: f.type === "UPLOAD" ? "Skor kalau file diunggah" : "Skor kalau diisi",
+        showScore: !isChoice(f.type) && !f.parentId,
+        childNote: f.parentId ? "Kolom tambahan untuk pilihan \u201c" + ((self.field(f.parentId) || { options: [] }).options.find(function (o) { return o.value === f.parentOpt; }) || { label: "" }).label + "\u201d. Tidak punya skor sendiri: skor pilihan itu baru masuk setelah kolom ini diisi." : "",
+        onName: function (e) { self.upd(f.id, { label: e.target.value }); },
+        onType: function (e) {
+          var t = e.target.value, patch = { type: t };
+          if (isChoice(t) && !f.options.length) patch.options = [{ value: "o" + (self.seq++), label: "Pilihan 1", score: "" }];
+          self.upd(f.id, patch);
+        },
+        onRequired: function (e) { self.upd(f.id, { required: e.target.checked }); },
+        onScore: function (e) { self.upd(f.id, { score: e.target.value }); },
+        onWidth: function (e) { self.upd(f.id, { width: e.target.value }); },
+        onSource: function (e) {
+          var v = e.target.value;
+          if (v === "manual") self.upd(f.id, { source: "", options: [{ value: "o" + (self.seq++), label: "Pilihan 1", score: "" }] });
+          else self.upd(f.id, { source: v, options: fromMaster(v) });
+        },
+        manageMaster: function () {
+          self.setState({ toast: "Di aplikasi: membuka editor " + MASTER[f.source].label.replace("Data master: ", "") + " (tambah, ubah, hapus, import Excel) tanpa pindah halaman." });
+        },
+        addOption: function () {
+          var n = f.options.length + 1;
+          self.upd(f.id, { options: f.options.concat([{ value: "o" + (self.seq++), label: "Pilihan " + n, score: "" }]) });
+        },
+        optRows: f.options.map(function (o) {
+          return {
+            label: o.label, score: o.score, labelLocked: !!f.source,
+            onLabel: function (e) { self.updOpt(f.id, o.value, { label: e.target.value }); },
+            onScore: function (e) { self.updOpt(f.id, o.value, { score: e.target.value }); },
+            addChild: function () {
+              self.setState({ dialog: { parentId: f.id, parentOpt: o.value, optLabel: o.label, parentType: f.type }, draft: { label: "", type: "TEXT", required: false, score: "" } });
+            },
+            children: self.childrenOf(f.id, o.value).map(function (c) {
+              return { label: c.label, typeLabel: TYPE_LABEL[c.type], select: function () { self.setState({ selectedId: c.id, deleteArmed: null }); } };
+            })
+          };
+        }),
+        deleteText: armed ? (kids ? "Yakin? " + kids + " kolom tambahannya ikut terhapus" : "Yakin hapus field ini?") : "Hapus field",
+        deleteStyle: armed
+          ? "height: 44px; border: none; border-radius: 10px; background: #b42318; color: #ffffff; font-weight: 600; cursor: pointer"
+          : "height: 44px; border: 1px solid #e3b4ae; border-radius: 10px; background: #ffffff; color: #b42318; font-weight: 600; cursor: pointer",
+        onDelete: function () {
+          if (!armed) { self.setState({ deleteArmed: f.id }); return; }
+          var gone = [f.id].concat(self.descendants(f.id));
+          self.setState({ fields: st.fields.filter(function (x) { return gone.indexOf(x.id) < 0; }), selectedId: f.parentId || null, deleteArmed: null });
+          self.touch();
+        }
+      };
+    }
+
+    var d = st.dialog, draft = st.draft;
+    var activeBtn = "height: 36px; padding: 0 14px; border-radius: 8px; border: none; background: #ffffff; color: #1f2328; font-weight: 600; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.12)";
+    var idleBtn = "height: 36px; padding: 0 14px; border-radius: 8px; border: none; background: transparent; color: #3d4752; cursor: pointer";
+
+    return {
+      isAtur: !isi, isIsi: isi,
+      setAtur: function () { self.setState({ mode: "atur" }); },
+      setIsi: function () { self.setState({ mode: "isi", answers: {} }); },
+      aturBtnStyle: isi ? idleBtn : activeBtn,
+      isiBtnStyle: isi ? activeBtn : idleBtn,
+      saveText: st.saving ? "Menyimpan…" : "✓ Tersimpan",
+      saveColor: st.saving ? "#59636e" : "#0b6e66",
+      tabs: TABS.map(function (t) {
+        var on = st.tab === t[0];
+        return {
+          label: t[1],
+          pick: function () { self.setState({ tab: t[0], selectedId: null, deleteArmed: null }); },
+          style: "height: 48px; padding: 0 16px; border: none; background: transparent; cursor: pointer; font-weight: " + (on ? "700" : "500") + "; color: " + (on ? "#0b6e66" : "#3d4752") + "; border-bottom: 3px solid " + (on ? "#0b6e66" : "transparent")
+        };
+      }),
+      leftHint: isi ? "Isi seperti user biasa." : "Tampilan di bawah sama dengan form user. Klik field untuk mengatur.",
+      rows: rows,
+      addRootField: function () { self.setState({ dialog: { parentId: null }, draft: { label: "", type: "TEXT", required: false, score: "" } }); },
+      scoreText: this.score(items),
+      showPanel: !!sel, showEmptyPanel: !isi && !sel,
+      sel: sel || {},
+      typeOptions: TYPES.map(function (t) { return { value: t[0], label: t[1] }; }),
+      sourceOptions: [{ value: "manual", label: "Ketik sendiri" }].concat(Object.keys(MASTER).map(function (k) { return { value: k, label: MASTER[k].label }; })),
+      advancedOpen: st.advancedOpen,
+      advancedLabel: (st.advancedOpen ? "▾" : "▸") + " Pengaturan lanjutan",
+      toggleAdvanced: function () { self.setState({ advancedOpen: !st.advancedOpen }); },
+      showToast: !!st.toast, toast: st.toast,
+      closeToast: function () { self.setState({ toast: "" }); },
+
+      dialogOpen: !!d,
+      dialogIsChild: !!(d && d.parentId),
+      dialogTitle: d && d.parentId ? "Kolom tambahan untuk “" + d.optLabel + "”" : "Tambah field",
+      dialogNote: d && d.parentId ? "Kolom ini hanya muncul di form kalau “" + d.optLabel + "” " + (d.parentType === "CHECKBOX" ? "dicentang" : "dipilih") + "." : "",
+      draft: draft,
+      draftTypes: TYPES.map(function (t) {
+        return { label: t[1], style: pillStyle(draft.type === t[0]), pick: function () { self.setState({ draft: Object.assign({}, draft, { type: t[0] }) }); } };
+      }),
+      draftIsInput: !isChoice(draft.type), draftIsChoice: isChoice(draft.type),
+      draftShowScore: !isChoice(draft.type) && !(d && d.parentId),
+      draftInvalid: !draft.label.trim(),
+      saveBtnStyle: "height: 44px; padding: 0 20px; border: none; border-radius: 10px; color: #ffffff; font-weight: 600; cursor: pointer; background: " + (draft.label.trim() ? "#0b6e66" : "#8fb9b4"),
+      onDraftLabel: function (e) { self.setState({ draft: Object.assign({}, draft, { label: e.target.value }) }); },
+      onDraftRequired: function (e) { self.setState({ draft: Object.assign({}, draft, { required: e.target.checked }) }); },
+      onDraftScore: function (e) { self.setState({ draft: Object.assign({}, draft, { score: e.target.value }) }); },
+      closeDialog: function () { self.setState({ dialog: null }); },
+      saveDialog: function () {
+        if (!draft.label.trim()) return;
+        var id = "f" + (self.seq++);
+        var nf = {
+          id: id, tab: st.tab, label: draft.label.trim(), type: draft.type, required: draft.required,
+          source: "", score: draft.score, width: "auto",
+          options: isChoice(draft.type) ? [{ value: "o" + (self.seq++), label: "Pilihan 1", score: "" }] : [],
+          parentId: d.parentId || undefined, parentOpt: d.parentOpt
+        };
+        self.setState({ fields: st.fields.concat([nf]), dialog: null, selectedId: id, deleteArmed: null });
+        self.touch();
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

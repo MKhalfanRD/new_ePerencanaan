@@ -1,35 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  DndContext,
-  DragEndEvent,
-  DragOverlay,
-  DragStartEvent,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  arrayMove,
-  rectSortingStrategy,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import {
-  Plus,
-  Trash2,
-  Copy,
-  Loader2,
-  Eye,
-  EyeOff,
-  Pencil,
-  GripVertical,
-  ExternalLink,
-} from "lucide-react";
+import { arrayMove } from "@dnd-kit/sortable";
+import { Plus, Trash2, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,6 +57,7 @@ import {
   useSourceData,
 } from "@/lib/option-sources";
 import { SOURCE_EDITORS } from "@/lib/option-source-editors";
+import { nilaiKondisi } from "@/lib/form-condition";
 
 const MANUAL = "__MANUAL__";
 // Field bawaan berpilihan tetap sistem (enum) — value tidak bisa diubah,
@@ -167,41 +141,14 @@ function Switch({
   );
 }
 
-/** Bungkus 1 elemen sortable (section atau item) — pakai render-prop supaya
- * grip handle bisa disisipkan pas di tempat yang pas di JSX masing-masing. */
-function Sortable({
-  id,
-  disabled,
-  children,
-}: {
-  id: string;
-  disabled?: boolean;
-  children: (p: {
-    setNodeRef: (el: HTMLElement | null) => void;
-    style: React.CSSProperties;
-    dragHandleProps: Record<string, unknown>;
-    isDragging: boolean;
-  }) => React.ReactNode;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id, disabled });
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-  return (
-    <>
-      {children({
-        setNodeRef,
-        style,
-        dragHandleProps: { ...attributes, ...listeners },
-        isDragging,
-      })}
-    </>
-  );
-}
 
-type DeleteTarget = { type: "section" | "item" | "option"; id: string; label: string };
+type DeleteTarget = {
+  type: "section" | "item" | "option";
+  id: string;
+  label: string;
+  // Jumlah kolom tambahan yang ikut terhapus (item/pilihan).
+  turunan?: number;
+};
 
 export function FormProyekTab({
   initialKegiatanId,
@@ -210,7 +157,12 @@ export function FormProyekTab({
 } = {}) {
   const [kegiatanList, setKegiatanList] = useState<Kegiatan[]>([]);
   const [kegiatanId, setKegiatanId] = useState("");
-  const [previewOpen, setPreviewOpen] = useState(false);
+  // "atur" = kanvas pengaturan; "isi" = coba isi form seperti user.
+  const [mode, setMode] = useState<"atur" | "isi">("atur");
+  // Tab yang sedang dibuka di kanvas (kunci template) & bagian terpilih —
+  // dipakai panel kanan saat belum ada field dipilih.
+  const [activeTabKey, setActiveTabKey] = useState("identitas");
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   // Mode admin tidak simpan salinan template sendiri — ProyekFormDialog
   // satu-satunya sumber datanya. Naikkan ini tiap kali mutasi berhasil
   // supaya dialog fetch ulang.
@@ -228,7 +180,6 @@ export function FormProyekTab({
 
   const [addSectionTabId, setAddSectionTabId] = useState<string | null>(null);
   const [newSectionLabel, setNewSectionLabel] = useState("");
-  const [addItemSectionId, setAddItemSectionId] = useState<string | null>(null);
   const [newItemLabel, setNewItemLabel] = useState("");
   const [newItemType, setNewItemType] =
     useState<(typeof FIELD_TYPE_OPTIONS)[number]>("CHECKBOX");
@@ -238,21 +189,6 @@ export function FormProyekTab({
   );
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [saving, setSaving] = useState(false);
-  // Item yang lagi diseret — dirender terpisah lewat DragOverlay (portal di
-  // luar grid) supaya tidak ikut merusak ukuran grid CSS di sekitarnya
-  // selagi diseret.
-  const [draggingItem, setDraggingItem] = useState<FormItemNode | null>(null);
-  // Lebar asli elemen yang diseret (px) — dipakai DragOverlay supaya ukurannya
-  // PERSIS sama dengan field aslinya, bukan tebakan lebar tetap. Tanpa ini
-  // overlay bisa beda ukuran dari elemen asli & kelihatan "tidak presisi" di
-  // bawah kursor (dnd-kit posisikan overlay dari rect awal elemen asli).
-  const [draggingItemWidth, setDraggingItemWidth] = useState<number | null>(
-    null,
-  );
-
-  const dndSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  );
 
   // Baris semua tabel master (utk skor per baris di "Sumber pilihan") &
   // dialog "Kelola data …" yang membuka editor master-nya. masterToken naik
@@ -260,7 +196,42 @@ export function FormProyekTab({
   const [masterToken, setMasterToken] = useState(0);
   const sourceData = useSourceData(Object.keys(OPTION_SOURCES), masterToken);
   const [masterDialog, setMasterDialog] = useState<string | null>(null);
+  // Seluruh tab template kegiatan ini — daftar field pemicu "Tampil jika".
+  const [templateTabs, setTemplateTabs] = useState<FormTabNode[]>([]);
+  const [templateKegiatanId, setTemplateKegiatanId] = useState("");
+  useEffect(() => {
+    if (!kegiatanId) return;
+    api
+      .get(`/master/form-template/${kegiatanId}`)
+      .then((res) => setTemplateTabs(res.data.tabs))
+      .catch(() => setTemplateTabs([]))
+      .finally(() => setTemplateKegiatanId(kegiatanId));
+  }, [kegiatanId, refreshToken]);
+  // Template kegiatan terpilih sudah termuat & benar-benar kosong.
+  const templateKosong =
+    templateKegiatanId === kegiatanId &&
+    templateTabs.every((t) => t.sections.length === 0);
   const [newItemSource, setNewItemSource] = useState<string | null>(null);
+  // Dialog "Tambah field" — juga dipakai "+ Kolom tambahan" (parent terisi).
+  const [fieldDialog, setFieldDialog] = useState<{
+    sectionId: string;
+    tabKey: string;
+    parent?: { item: FormItemNode; value: string; label: string };
+  } | null>(null);
+  const [lanjutanOpen, setLanjutanOpen] = useState(false);
+  // Status simpan otomatis di kepala kanvas.
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const simpan = async (kerja: () => Promise<unknown>, gagal = "Gagal menyimpan") => {
+    setSaveState("saving");
+    try {
+      await kerja();
+      setSaveState("saved");
+      bump();
+    } catch (err: any) {
+      setSaveState("error");
+      toast.error(err.response?.data?.message || gagal);
+    }
+  };
 
   useEffect(() => {
     api.get("/master/kegiatan").then((res) => {
@@ -270,14 +241,8 @@ export function FormProyekTab({
     });
   }, []);
 
-  const patchTab = async (tabId: string, data: Record<string, unknown>) => {
-    try {
-      await api.patch(`/master/form-tab/${tabId}`, data);
-      bump();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Gagal menyimpan");
-    }
-  };
+  const patchTab = (tabId: string, data: Record<string, unknown>) =>
+    simpan(() => api.patch(`/master/form-tab/${tabId}`, data));
 
   const submitAddSection = async () => {
     if (!addSectionTabId || !newSectionLabel.trim()) return;
@@ -297,50 +262,42 @@ export function FormProyekTab({
       setSaving(false);
     }
   };
-  const patchSection = async (sectionId: string, data: Record<string, unknown>) => {
-    try {
-      await api.patch(`/master/form-section/${sectionId}`, data);
-      bump();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Gagal menyimpan");
-    }
-  };
+  const patchSection = (sectionId: string, data: Record<string, unknown>) =>
+    simpan(() => api.patch(`/master/form-section/${sectionId}`, data));
 
   const submitAddItem = async () => {
-    if (!addItemSectionId || !newItemLabel.trim()) return;
+    if (!fieldDialog || !newItemLabel.trim()) return;
+    const { sectionId, parent } = fieldDialog;
+    const pilihan = newItemType === "DROPDOWN" || newItemType === "CHECKBOX";
     setSaving(true);
+    setSaveState("saving");
     try {
-      await api.post("/master/form-item", {
-        sectionId: addItemSectionId,
-        key: newItemLabel.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-"),
+      const res = await api.post("/master/form-item", {
+        sectionId,
+        key:
+          newItemLabel.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") ||
+          "field",
         label: newItemLabel.trim(),
         fieldType: newItemType,
-        optionSource:
-          newItemType === "DROPDOWN" || newItemType === "CHECKBOX"
-            ? newItemSource
-            : null,
+        optionSource: pilihan ? newItemSource : null,
         required: newItemRequired,
+        // Kolom tambahan: muncul hanya saat pilihan induknya dipilih.
+        conditionItemId: parent?.item.key,
+        conditionValue: parent ? JSON.stringify([parent.value]) : undefined,
       });
-      setAddItemSectionId(null);
-      setNewItemLabel("");
-      setNewItemType("CHECKBOX");
-      setNewItemSource(null);
-      setNewItemRequired(false);
+      setFieldDialog(null);
+      setEditItemId(res.data.id);
+      setSaveState("saved");
       bump();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Gagal menambah item");
+      setSaveState("error");
+      toast.error(err.response?.data?.message || "Gagal menambah field");
     } finally {
       setSaving(false);
     }
   };
-  const patchItem = async (itemId: string, data: Record<string, unknown>) => {
-    try {
-      await api.patch(`/master/form-item/${itemId}`, data);
-      bump();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Gagal menyimpan");
-    }
-  };
+  const patchItem = (itemId: string, data: Record<string, unknown>) =>
+    simpan(() => api.patch(`/master/form-item/${itemId}`, data));
 
   const submitAddOption = async (itemId: string) => {
     const label = (newOptionLabel[itemId] || "").trim();
@@ -357,14 +314,8 @@ export function FormProyekTab({
       toast.error(err.response?.data?.message || "Gagal menambah opsi");
     }
   };
-  const patchOption = async (optionId: string, data: Record<string, unknown>) => {
-    try {
-      await api.patch(`/master/form-item-option/${optionId}`, data);
-      bump();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Gagal menyimpan");
-    }
-  };
+  const patchOption = (optionId: string, data: Record<string, unknown>) =>
+    simpan(() => api.patch(`/master/form-item-option/${optionId}`, data));
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
@@ -377,6 +328,8 @@ export function FormProyekTab({
             ? "form-item"
             : "form-item-option";
       await api.delete(`/master/${path}/${deleteTarget.id}`);
+      if (deleteTarget.type === "item" && deleteTarget.id === editItemId)
+        setEditItemId(null);
       toast.success("Berhasil dihapus");
       setDeleteTarget(null);
       bump();
@@ -404,52 +357,8 @@ export function FormProyekTab({
     }
   };
 
-  const handleSectionDragEnd = async (
-    sections: FormTabNode["sections"],
-    event: DragEndEvent,
-  ) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = sections.findIndex((s) => s.id === active.id);
-    const newIndex = sections.findIndex((s) => s.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-    const reordered = arrayMove(sections, oldIndex, newIndex);
-    try {
-      await Promise.all(
-        reordered.map((s, idx) =>
-          api.patch(`/master/form-section/${s.id}`, { order: idx }),
-        ),
-      );
-    } catch {
-      toast.error("Gagal menyimpan urutan bagian");
-    } finally {
-      bump();
-    }
-  };
 
-  const handleItemDragEnd = async (
-    items: FormItemNode[],
-    event: DragEndEvent,
-  ) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = items.findIndex((i) => i.id === active.id);
-    const newIndex = items.findIndex((i) => i.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-    const reordered = arrayMove(items, oldIndex, newIndex);
-    try {
-      await Promise.all(
-        reordered.map((it, idx) =>
-          api.patch(`/master/form-item/${it.id}`, { order: idx }),
-        ),
-      );
-    } catch {
-      toast.error("Gagal menyimpan urutan item");
-    } finally {
-      bump();
-    }
-  };
-
+  // Judul tab ringkas seperti form user; pengaturannya di panel "Atur tab".
   const renderAdminTabHeader: ProyekFormAdminHandlers["tabHeader"] = (
     tabKey,
     tab,
@@ -457,75 +366,41 @@ export function FormProyekTab({
     if (!tab) return null;
     const Icon = TAB_ICONS[tabKey];
     return (
-      <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border-2 border-foreground/15 bg-white px-4 py-3.5 mb-5">
-        <div className="flex items-start gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-            <Icon size={16} className="text-primary" />
-          </div>
-          <div className="min-w-0 flex-1 space-y-1">
-            <p className="text-base font-bold">{tab.label}</p>
-            <p className="text-xs text-muted-foreground">
-              {tab.isActive !== false
-                ? "✓ Tab ini tampil di form Buat Proyek"
-                : "✕ Tab ini disembunyikan dari form Buat Proyek"}
-            </p>
-            <Textarea
-              key={tab.id}
-              className="text-xs text-muted-foreground min-h-[32px] h-8 max-w-md resize-none py-1"
-              placeholder={TAB_DEFAULT_DESCRIPTIONS[tabKey]}
-              defaultValue={tab.description ?? ""}
-              onBlur={(e) => {
-                const v = e.target.value.trim();
-                if (v !== (tab.description ?? ""))
-                  patchTab(tab.id, { description: v || null });
-              }}
-            />
-            <p className="text-[10px] text-muted-foreground/70">
-              Deskripsi ini tampil di bawah judul tab pada form Buat Proyek.
-            </p>
-          </div>
+      <button
+        type="button"
+        title="Atur tab ini"
+        onClick={() => {
+          setEditItemId(null);
+          setSelectedSectionId(null);
+        }}
+        className="mb-5 flex w-full items-center gap-3 rounded-xl border border-[#d0d7de] bg-white px-4 py-3 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-primary/60"
+      >
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+          <Icon size={16} className="text-primary" />
         </div>
-        <div className="flex items-center gap-4">
-          {tab.bobot != null && (
-            <div className="flex items-center gap-1.5 rounded-md border bg-background px-2 py-1">
-              <span className="text-xs text-muted-foreground">Bobot skor</span>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                className="h-7 w-14 text-xs text-right"
-                defaultValue={Math.round(tab.bobot * 100)}
-                onBlur={(e) => {
-                  const pct = Number(e.target.value);
-                  const v = Math.max(0, Math.min(100, pct)) / 100;
-                  if (v !== tab.bobot) patchTab(tab.id, { bobot: v });
-                }}
-              />
-              <span className="text-xs text-muted-foreground">%</span>
-            </div>
-          )}
-          <Switch
-            checked={tab.isActive !== false}
-            onChange={(v) => patchTab(tab.id, { isActive: v })}
-            label="Aktifkan/nonaktifkan tab ini"
-          />
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            {tab.label}
+            {tab.isActive === false && (
+              <Badge variant="outline" className="text-[9px] text-muted-foreground">
+                Disembunyikan dari form
+              </Badge>
+            )}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {tab.description || TAB_DEFAULT_DESCRIPTIONS[tabKey]}
+          </p>
         </div>
-      </div>
+      </button>
     );
   };
 
   const renderAdminNote: ProyekFormAdminHandlers["note"] = (tabKey) => (
-    <p className="pl-12 text-xs text-muted-foreground italic px-1 border-l-2 border-slate-300 py-1">
+    <p className="text-xs text-muted-foreground italic px-1 border-l-2 border-slate-300 py-1">
       {TAB_NOTES[tabKey] ?? "Tidak ada pengaturan tambahan untuk bagian ini."}
     </p>
   );
 
-  // Panel "Pengaturan" 1 field — expand INLINE di bawah field itu sendiri,
-  // TETAP di kolom grid aslinya (bukan col-span-full, bukan dialog terpisah)
-  // supaya field lain di grid tidak ikut kegeser/pindah posisi. Card field
-  // yang lagi diedit jadi lebih tinggi dari tetangganya — itu wajar karena
-  // tiap field sudah punya card/border sendiri, bukan lagi satu blok rata
-  // yang bikin ruang kosong membingungkan.
   // ===== Sumber pilihan (manual / tabel master) — lihat lib/option-sources =====
   // Simpan skor 1 pilihan. Opsi utk baris master dibuat saat skornya pertama
   // kali diisi (value = nilai yang disimpan field).
@@ -566,183 +441,6 @@ export function FormProyekTab({
     />
   );
 
-  // Pilihan tetap sistem (status kriteria, kewenangan, kebutuhan tanah):
-  // value tetap, label & skor bisa diubah.
-  const renderEnumOptions = (item: FormItemNode) => (
-    <div className="space-y-1.5">
-      <Label className="text-[10px] text-muted-foreground">
-        Pilihan (nilai tetap sistem — label & skor bisa diubah)
-      </Label>
-      {item.options.map((opt) => (
-        <div key={opt.id} className="flex items-center gap-2">
-          <Input
-            className="h-7 flex-1 text-[11px]"
-            defaultValue={opt.label}
-            onBlur={(e) =>
-              e.target.value &&
-              e.target.value !== opt.label &&
-              patchOption(opt.id, { label: e.target.value })
-            }
-          />
-          {scoreInput(opt.score, (v) => saveOptionScore(item, opt, opt, v))}
-        </div>
-      ))}
-    </div>
-  );
-
-  const renderMasterOptions = (item: FormItemNode, source: string) => {
-    const def = OPTION_SOURCES[source];
-    const rows = sourceRowsFor(item.key, source, sourceData[source] ?? []);
-    const rowValues = new Set(rows.map((r) => r.value));
-    const stale = item.options.filter((o) => !rowValues.has(o.value));
-    const Editor = SOURCE_EDITORS[source];
-    return (
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <Label className="text-[10px] text-muted-foreground">
-            Pilihan dari Master Data {def?.label}
-          </Label>
-          {Editor && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-[11px] shrink-0"
-              onClick={() => setMasterDialog(source)}
-            >
-              <ExternalLink size={11} className="mr-1" />
-              Kelola data {def?.label}
-            </Button>
-          )}
-        </div>
-        {!def?.endpoint ? (
-          <p className="text-[11px] text-muted-foreground">
-            Data referensi resmi, tidak dikelola di aplikasi ini.
-          </p>
-        ) : (
-          <>
-            <div className="flex items-center gap-2">
-              <span className="flex-1 text-[11px] text-muted-foreground">
-                Skor jika terisi (dipakai baris yang skornya kosong)
-              </span>
-              {scoreInput(item.score, (v) => {
-                if (v !== item.score) patchItem(item.id, { score: v });
-              })}
-            </div>
-            <div className="max-h-60 overflow-y-auto rounded-md border divide-y">
-              {rows.length === 0 && (
-                <p className="px-2 py-1.5 text-[11px] text-muted-foreground">
-                  Belum ada data — tambah lewat &quot;Kelola data&quot;.
-                </p>
-              )}
-              {rows.map((row) => {
-                const opt = item.options.find((o) => o.value === row.value);
-                return (
-                  <div key={row.value} className="flex items-center gap-2 px-2 py-1">
-                    <span className="flex-1 text-[11px] truncate" title={row.label}>
-                      {row.label}
-                    </span>
-                    {scoreInput(opt?.score, (v) =>
-                      saveOptionScore(item, row, opt, v),
-                    )}
-                  </div>
-                );
-              })}
-              {stale.map((opt) => (
-                <div key={opt.id} className="flex items-center gap-2 px-2 py-1">
-                  <span
-                    className="flex-1 text-[11px] truncate text-muted-foreground line-through"
-                    title="Tidak ada lagi di master data"
-                  >
-                    {opt.label}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-muted-foreground/60 hover:text-destructive shrink-0"
-                    onClick={() =>
-                      setDeleteTarget({ type: "option", id: opt.id, label: opt.label })
-                    }
-                  >
-                    <Trash2 size={11} />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    );
-  };
-
-  const renderManualOptions = (item: FormItemNode) => (
-    <div className="space-y-1.5">
-      <Label className="text-[10px] text-muted-foreground">
-        Pilihan dropdown
-      </Label>
-      {item.options.map((opt) => (
-        <div key={opt.id} className="flex items-center gap-2">
-          <Switch
-            checked={opt.isActive !== false}
-            onChange={(v) => patchOption(opt.id, { isActive: v })}
-          />
-          <Input
-            className="h-7 flex-1 text-[11px]"
-            defaultValue={opt.label}
-            onBlur={(e) =>
-              e.target.value !== opt.label &&
-              patchOption(opt.id, { label: e.target.value })
-            }
-          />
-          {scoreInput(opt.score, (v) => {
-            if (v !== opt.score) patchOption(opt.id, { score: v });
-          })}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 text-muted-foreground/60 hover:text-destructive shrink-0"
-            onClick={() =>
-              setDeleteTarget({
-                type: "option",
-                id: opt.id,
-                label: opt.label,
-              })
-            }
-          >
-            <Trash2 size={11} />
-          </Button>
-        </div>
-      ))}
-      <div className="flex items-center gap-2 pt-0.5">
-        <Input
-          className="h-7 flex-1 text-[11px]"
-          placeholder="Tambah pilihan baru..."
-          value={newOptionLabel[item.id] ?? ""}
-          onChange={(e) =>
-            setNewOptionLabel((prev) => ({
-              ...prev,
-              [item.id]: e.target.value,
-            }))
-          }
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              submitAddOption(item.id);
-            }
-          }}
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 text-[11px] shrink-0"
-          onClick={() => submitAddOption(item.id)}
-        >
-          <Plus size={11} className="mr-1" />
-          Tambah
-        </Button>
-      </div>
-    </div>
-  );
-
   // Select "Sumber pilihan": field bawaan terkunci ke master aslinya (kolom
   // FK di tabel Proyek); field custom bebas Manual / master mana pun.
   const sourceSelect = (
@@ -768,36 +466,6 @@ export function FormProyekTab({
       </SelectContent>
     </Select>
   );
-
-  const renderSourceBlock = (item: FormItemNode) => {
-    if (ENUM_ITEM_KEYS.has(item.key)) return renderEnumOptions(item);
-    const isBaku = BAKU_ITEM_KEYS.has(item.key);
-    const pilihan = item.fieldType === "DROPDOWN" || item.fieldType === "CHECKBOX";
-    // Field bawaan tanpa sumber (Nama Proyek, FKB, dst) & field non-pilihan.
-    if (isBaku ? !item.optionSource : !pilihan) return null;
-    return (
-      <div className="space-y-2 rounded-md border bg-muted/30 p-2">
-        <div className="space-y-1">
-          <Label className="text-[10px] text-muted-foreground">
-            Sumber pilihan{isBaku && " (terkunci — field bawaan)"}
-          </Label>
-          {sourceSelect(
-            item.optionSource,
-            (v) => patchItem(item.id, { optionSource: v }),
-            isBaku,
-          )}
-          {item.optionSource && item.fieldType === "CHECKBOX" && (
-            <p className="text-[10px] text-muted-foreground">
-              Checkbox + master = daftar centang, bisa pilih lebih dari satu.
-            </p>
-          )}
-        </div>
-        {item.optionSource
-          ? renderMasterOptions(item, item.optionSource)
-          : item.fieldType === "DROPDOWN" && renderManualOptions(item)}
-      </div>
-    );
-  };
 
   // Label bagian dalam field gabungan (mis. PN/PP/KP) — kosong = default.
   const renderSubLabels = (item: FormItemNode) => {
@@ -830,149 +498,779 @@ export function FormProyekTab({
     );
   };
 
-  const renderItemSettingsFields = (item: FormItemNode) => {
-    const isBaku = BAKU_ITEM_KEYS.has(item.key);
-    const isAlwaysRequiredBaku = ALWAYS_REQUIRED_BAKU_KEYS.has(item.key);
+  // ===== "Tampil jika" — field muncul hanya kalau field pemicu bernilai
+  // salah satu pilihan yang dicentang (lihat lib/form-condition.ts). =====
+  const pilihanItem = (it: FormItemNode): { value: string; label: string }[] => {
+    if (it.optionSource)
+      return sourceRowsFor(it.key, it.optionSource, sourceData[it.optionSource] ?? []);
+    if (it.options.length)
+      return it.options
+        .filter((o) => o.isActive !== false)
+        .map((o) => ({ value: o.value, label: o.label }));
+    if (it.fieldType === "CHECKBOX") return [{ value: "true", label: "Dicentang" }];
+    return [];
+  };
+
+
+  // ===== Panel kanan: pengaturan 1 field terpilih (klik kartu di kiri) =====
+  const lokasiItem = (id: string | null) => {
+    if (!id) return null;
+    for (const tab of templateTabs)
+      for (const section of tab.sections) {
+        const item = section.items.find((i) => i.id === id);
+        if (item) return { tab, section, item };
+      }
+    return null;
+  };
+  // Kolom tambahan = field di section yang sama yang muncul dari pilihan
+  // field ini (conditionItemId = key field ini).
+  const kolomTambahanDari = (
+    section: FormTabNode["sections"][number],
+    item: FormItemNode,
+  ) => section.items.filter((c) => c.conditionItemId === item.key);
+  const indukDari = (
+    section: FormTabNode["sections"][number],
+    item: FormItemNode,
+  ) =>
+    item.conditionItemId
+      ? (section.items.find((p) => p.key === item.conditionItemId) ?? null)
+      : null;
+  const jumlahTurunan = (
+    section: FormTabNode["sections"][number],
+    item: FormItemNode,
+  ): number =>
+    kolomTambahanDari(section, item).reduce(
+      (n, c) => n + 1 + jumlahTurunan(section, c),
+      0,
+    );
+
+  const ALASAN_KUNCI: Record<string, string> = {
+    balaiId: "Proyek hanya punya 1 Balai.",
+    periodeId: "Proyek hanya punya 1 Periode.",
+    projectName: "Nama proyek selalu berupa teks.",
+  };
+  const alasanKunci = (item: FormItemNode) =>
+    ALASAN_KUNCI[item.key] ??
+    "Field bawaan sistem: bentuknya mengikuti data yang tersimpan di proyek. Butuh bentuk lain? Sembunyikan field ini, lalu tambah field baru.";
+
+  const labelSkor = (item: FormItemNode) =>
+    item.fieldType === "UPLOAD"
+      ? "Skor kalau file diunggah"
+      : item.fieldType === "CHECKBOX"
+        ? "Skor kalau dicentang"
+        : "Skor kalau diisi";
+
+  const bukaTambahField = (
+    sectionId: string,
+    tabKey: string,
+    parent?: { item: FormItemNode; value: string; label: string },
+  ) => {
+    setNewItemLabel("");
+    setNewItemType("TEXT");
+    setNewItemSource(null);
+    setNewItemRequired(false);
+    setFieldDialog({ sectionId, tabKey, parent });
+  };
+
+  // ===== Panel kanan saat belum ada field dipilih: atur tab / bagian =====
+  const pilihField = (id: string) => {
+    setSelectedSectionId(null);
+    setEditItemId(id);
+  };
+
+  const pindahUrutan = (
+    list: { id: string }[],
+    id: string,
+    arah: -1 | 1,
+    endpoint: "form-section" | "form-item",
+  ) => {
+    const i = list.findIndex((x) => x.id === id);
+    const j = i + arah;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    const baru = arrayMove(list, i, j);
+    simpan(
+      () =>
+        Promise.all(
+          baru.map((x, idx) => api.patch(`/master/${endpoint}/${x.id}`, { order: idx })),
+        ),
+      "Gagal menyimpan urutan",
+    );
+  };
+
+  const tombolUrutan = (onNaik: (() => void) | null, onTurun: (() => void) | null) => (
+    <div className="flex items-center justify-between gap-3">
+      <Label className="text-sm font-normal">Urutan</Label>
+      <div className="flex gap-1.5">
+        <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!onNaik} onClick={onNaik ?? undefined}>
+          ↑ Naik
+        </Button>
+        <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!onTurun} onClick={onTurun ?? undefined}>
+          ↓ Turun
+        </Button>
+      </div>
+    </div>
+  );
+
+  const renderTabPanel = () => {
+    const tab = templateTabs.find((t) => t.key === activeTabKey);
+    if (!tab)
+      return <p className="text-sm text-muted-foreground">Pilih tab di kiri.</p>;
+    const tk = tab.key as TabKey;
     return (
-      <div className="space-y-2.5">
-        <div className="grid grid-cols-2 gap-2.5">
-          <div className="space-y-1">
-            <Label className="text-[10px] text-muted-foreground">
-              Nama field
+      <div className="space-y-5">
+        <div className="space-y-1">
+          <p className="text-base font-bold">Atur tab</p>
+          <p className="text-xs text-muted-foreground">
+            Klik field di kiri untuk mengatur field-nya.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="panel-nama-tab" className="text-xs">Nama tab</Label>
+          <Input
+            id="panel-nama-tab"
+            key={`${tab.id}-label`}
+            className="h-9 text-sm"
+            defaultValue={tab.label}
+            onBlur={(e) =>
+              e.target.value.trim() &&
+              e.target.value !== tab.label &&
+              patchTab(tab.id, { label: e.target.value.trim() })
+            }
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="panel-desk-tab" className="text-xs">Keterangan di bawah judul tab</Label>
+          <Textarea
+            id="panel-desk-tab"
+            key={`${tab.id}-desc`}
+            className="min-h-[64px] text-sm"
+            placeholder={TAB_DEFAULT_DESCRIPTIONS[tk]}
+            defaultValue={tab.description ?? ""}
+            onBlur={(e) => {
+              const v = e.target.value.trim();
+              if (v !== (tab.description ?? ""))
+                patchTab(tab.id, { description: v || null });
+            }}
+          />
+        </div>
+        {tab.bobot != null && (
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="panel-bobot-tab" className="text-sm font-normal">
+              Bobot tab ini di skor evaluasi
             </Label>
+            <div className="flex items-center gap-1.5">
+              <Input
+                id="panel-bobot-tab"
+                key={`${tab.id}-bobot`}
+                type="number"
+                min={0}
+                max={100}
+                className="h-8 w-16 text-right text-sm"
+                defaultValue={Math.round(tab.bobot * 100)}
+                onBlur={(e) => {
+                  const pct = Number(e.target.value);
+                  const v = Math.max(0, Math.min(100, pct)) / 100;
+                  if (v !== tab.bobot) patchTab(tab.id, { bobot: v });
+                }}
+              />
+              <span className="text-sm text-muted-foreground">%</span>
+            </div>
+          </div>
+        )}
+        <div className="flex items-center justify-between gap-3">
+          <Label className="text-sm font-normal">Tampil di form</Label>
+          <Switch
+            checked={tab.isActive !== false}
+            onChange={(v) => patchTab(tab.id, { isActive: v })}
+            label="Tampilkan/sembunyikan tab ini"
+          />
+        </div>
+        {TAB_NOTES[tk] && (
+          <p className="rounded-md bg-muted/60 p-2.5 text-xs text-muted-foreground">
+            {TAB_NOTES[tk]}
+          </p>
+        )}
+        {tab.key !== "evaluasi" && (
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => setAddSectionTabId(tab.id)}
+          >
+            <Plus size={14} className="mr-1.5" /> Tambah bagian
+          </Button>
+        )}
+      </div>
+    );
+  };
+
+  const renderSectionPanel = (sectionId: string) => {
+    const tab = templateTabs.find((t) => t.sections.some((s) => s.id === sectionId));
+    const section = tab?.sections.find((s) => s.id === sectionId);
+    if (!tab || !section) return renderTabPanel();
+    const idx = tab.sections.findIndex((s) => s.id === sectionId);
+    return (
+      <div className="space-y-5">
+        <div className="space-y-1">
+          <button
+            type="button"
+            onClick={() => setSelectedSectionId(null)}
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            ← Kembali ke pengaturan tab
+          </button>
+          <p className="text-base font-bold">Atur bagian</p>
+          <p className="text-xs text-muted-foreground">
+            Bagian = kelompok field dengan judul kecil di dalam satu tab.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="panel-nama-bagian" className="text-xs">Nama bagian</Label>
+          <Input
+            id="panel-nama-bagian"
+            key={`${section.id}-label`}
+            className="h-9 text-sm"
+            defaultValue={section.label}
+            onBlur={(e) =>
+              e.target.value.trim() &&
+              e.target.value !== section.label &&
+              patchSection(section.id, { label: e.target.value.trim() })
+            }
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <Label className="text-sm font-normal">Tampil di form</Label>
+          <Switch
+            checked={section.isActive !== false}
+            onChange={(v) => patchSection(section.id, { isActive: v })}
+          />
+        </div>
+        {tombolUrutan(
+          idx > 0 ? () => pindahUrutan(tab.sections, section.id, -1, "form-section") : null,
+          idx < tab.sections.length - 1
+            ? () => pindahUrutan(tab.sections, section.id, 1, "form-section")
+            : null,
+        )}
+        <Button
+          variant="outline"
+          className="w-full border-destructive/40 text-destructive hover:bg-destructive/5"
+          onClick={() =>
+            setDeleteTarget({ type: "section", id: section.id, label: section.label })
+          }
+        >
+          <Trash2 size={14} className="mr-1.5" /> Hapus bagian
+        </Button>
+      </div>
+    );
+  };
+
+  const labelTipe = (item: FormItemNode) =>
+    [
+      FIELD_TYPE_LABEL[item.fieldType] ?? item.fieldType,
+      item.optionSource ? "dari master" : null,
+      BAKU_ITEM_KEYS.has(item.key) ? "bawaan" : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+  const renderPanel = () => {
+    const loc = lokasiItem(editItemId);
+    if (!loc)
+      return selectedSectionId ? renderSectionPanel(selectedSectionId) : renderTabPanel();
+    const { tab, section, item } = loc;
+    const isBaku = BAKU_ITEM_KEYS.has(item.key);
+    const wajibTetap = ALWAYS_REQUIRED_BAKU_KEYS.has(item.key);
+    const induk = indukDari(section, item);
+    const berskor = tab.bobot != null;
+    const isEnum = ENUM_ITEM_KEYS.has(item.key);
+    const tipePilihan = item.fieldType === "DROPDOWN" || item.fieldType === "CHECKBOX";
+    const punyaPilihan = isEnum || !!item.optionSource || (!isBaku && tipePilihan);
+    const k = item.id; // reset input saat ganti field
+
+    const masterRows = item.optionSource
+      ? sourceRowsFor(item.key, item.optionSource, sourceData[item.optionSource] ?? [])
+      : [];
+    const masterValues = new Set(masterRows.map((r) => r.value));
+    const rows = item.optionSource
+      ? [
+          ...masterRows.map((r) => ({
+            ...r,
+            opt: item.options.find((o) => o.value === r.value),
+            stale: false,
+          })),
+          ...item.options
+            .filter((o) => !masterValues.has(o.value))
+            .map((o) => ({ value: o.value, label: o.label, opt: o, stale: true })),
+        ]
+      : item.options.map((o) => ({ value: o.value, label: o.label, opt: o, stale: false }));
+    const labelBisaDiubah = !item.optionSource;
+    const manual = !item.optionSource && !isEnum;
+    const Editor = item.optionSource ? SOURCE_EDITORS[item.optionSource] : undefined;
+    const anak = kolomTambahanDari(section, item);
+
+    return (
+      <div className="space-y-5">
+        <div className="space-y-1">
+          {induk && (
+            <button
+              type="button"
+              onClick={() => pilihField(induk.id)}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              ← Kembali ke &quot;{induk.label}&quot;
+            </button>
+          )}
+          <p className="text-base font-bold">Atur field</p>
+        </div>
+
+        {/* Dasar */}
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="panel-nama-field" className="text-xs">Nama field</Label>
             <Input
-              className="h-8 text-xs"
+              id="panel-nama-field"
+              key={`${k}-label`}
+              className="h-9 text-sm"
               defaultValue={item.label}
               onBlur={(e) =>
+                e.target.value.trim() &&
                 e.target.value !== item.label &&
-                patchItem(item.id, { label: e.target.value })
+                patchItem(item.id, { label: e.target.value.trim() })
               }
             />
           </div>
-          {!isAlwaysRequiredBaku && (
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">
-                Wajib diisi
-              </Label>
-              <div className="h-8 flex items-center">
-                <Switch
-                  checked={item.required === true}
-                  onChange={(v) => patchItem(item.id, { required: v })}
-                />
-              </div>
-            </div>
-          )}
-          <div className="space-y-1">
-            <Label className="text-[10px] text-muted-foreground">Lebar</Label>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Tipe</Label>
             <Select
-              value={item.width ?? "AUTO"}
+              value={item.fieldType}
+              disabled={isBaku}
               onValueChange={(v) =>
                 patchItem(item.id, {
-                  width: v === "AUTO" ? null : (v as "HALF" | "FULL"),
+                  fieldType: v,
+                  ...(v !== "DROPDOWN" && v !== "CHECKBOX" ? { optionSource: null } : {}),
                 })
               }
             >
-              <SelectTrigger className="h-8 text-xs">
+              <SelectTrigger className="h-9 text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(WIDTH_LABEL).map(([v, l]) => (
-                  <SelectItem key={v} value={v}>
-                    {l}
+                {FIELD_TYPE_OPTIONS.filter(
+                  (ft) => tab.key !== "pemaketan" || ft !== "UPLOAD",
+                ).map((ft) => (
+                  <SelectItem key={ft} value={ft}>
+                    {FIELD_TYPE_LABEL[ft]}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {isBaku && (
+              <p className="text-[11px] text-amber-800">Terkunci: {alasanKunci(item)}</p>
+            )}
           </div>
-          {!isBaku && (
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">
-                Tipe field
-              </Label>
-              <Select
-                value={item.fieldType}
-                onValueChange={(v) =>
-                  patchItem(item.id, {
-                    fieldType: v,
-                    ...(v !== "DROPDOWN" && v !== "CHECKBOX"
-                      ? { optionSource: null }
-                      : {}),
-                  })
-                }
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {FIELD_TYPE_OPTIONS.map((ft) => (
-                    <SelectItem key={ft} value={ft}>
-                      {FIELD_TYPE_LABEL[ft]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          {/* Field baku cuma dapat input skor kalau memang item berskor
-              (mis. checkbox Tagging) — Balai/Periode dst tidak dinilai. */}
-          {(!isBaku || item.score != null) &&
-            !item.options.length &&
-            !item.optionSource &&
-            item.thresholdValue == null && (
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">
-                Skor
-              </Label>
-              <Input
-                type="number"
-                className="h-8 text-xs"
-                defaultValue={item.score ?? ""}
-                onBlur={(e) => {
-                  const v = e.target.value ? Number(e.target.value) : null;
-                  if (v !== item.score) patchItem(item.id, { score: v });
-                }}
-              />
-            </div>
-          )}
-          {item.thresholdValue != null && (
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">
-                Skor jika terpenuhi
-              </Label>
-              <Input
-                type="number"
-                className="h-8 text-xs"
-                defaultValue={item.score ?? ""}
-                onBlur={(e) => {
-                  const v = e.target.value ? Number(e.target.value) : null;
-                  if (v !== item.score) patchItem(item.id, { score: v });
-                }}
-              />
-            </div>
-          )}
-        </div>
-        {item.thresholdValue != null && (
-          <div className="space-y-1 max-w-[200px]">
-            <Label className="text-[10px] text-muted-foreground">
-              Ambang batas (standar)
+          <div className="flex items-center justify-between gap-3">
+            <Label className="flex-col items-start gap-0.5 text-sm font-normal">
+              Wajib diisi
+              <span className="block text-[11px] text-muted-foreground">
+                Proyek tidak bisa disimpan kalau kosong
+              </span>
             </Label>
-            <Input
-              type="number"
-              step="0.01"
-              className="h-8 text-xs"
-              defaultValue={item.thresholdValue ?? ""}
-              onBlur={(e) => {
-                const v = e.target.value ? Number(e.target.value) : null;
-                if (v !== item.thresholdValue)
-                  patchItem(item.id, { thresholdValue: v });
-              }}
-            />
+            {wajibTetap ? (
+              <span className="text-xs text-muted-foreground">Selalu wajib</span>
+            ) : (
+              <Switch
+                checked={item.required === true}
+                onChange={(v) => patchItem(item.id, { required: v })}
+              />
+            )}
+          </div>
+          {!wajibTetap && (
+            <div className="flex items-center justify-between gap-3">
+              <Label className="text-sm font-normal">Tampil di form</Label>
+              <Switch
+                checked={item.isActive !== false}
+                onChange={(v) => patchItem(item.id, { isActive: v })}
+              />
+            </div>
+          )}
+          {item.isActive !== false &&
+            (section.isActive === false || tab.isActive === false) && (
+              <div className="space-y-2 rounded-md bg-amber-50 p-2.5 text-xs text-amber-900">
+                <p>
+                  Field ini aktif, tapi tidak muncul di form karena{" "}
+                  {tab.isActive === false
+                    ? `tab "${tab.label}"`
+                    : `bagian "${section.label}"`}{" "}
+                  sedang disembunyikan.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 bg-white text-xs"
+                  onClick={() =>
+                    tab.isActive === false
+                      ? patchTab(tab.id, { isActive: true })
+                      : patchSection(section.id, { isActive: true })
+                  }
+                >
+                  Tampilkan {tab.isActive === false ? "tab" : "bagian"} ini
+                </Button>
+              </div>
+            )}
+          {!induk &&
+            (() => {
+              const akar = akarDari(section);
+              const i = akar.findIndex((x) => x.id === item.id);
+              return tombolUrutan(
+                i > 0 ? () => pindahUrutan(akar, item.id, -1, "form-item") : null,
+                i < akar.length - 1 ? () => pindahUrutan(akar, item.id, 1, "form-item") : null,
+              );
+            })()}
+        </div>
+
+        {induk && nilaiKondisi(item.conditionValue).length > 0 && (
+          <p className="rounded-md bg-primary/10 p-2.5 text-xs text-primary">
+            Kolom tambahan untuk pilihan &quot;
+            {nilaiKondisi(item.conditionValue)
+              .map((v) => pilihanItem(induk).find((o) => o.value === v)?.label ?? v)
+              .join(", ")}
+            &quot; di &quot;{induk.label}&quot;. Tidak punya skor sendiri: skor
+            pilihan itu baru masuk setelah kolom ini diisi.
+          </p>
+        )}
+        {induk && nilaiKondisi(item.conditionValue).length === 0 && (
+          <div className="space-y-2 rounded-md bg-amber-50 p-2.5 text-xs text-amber-900">
+            <p>
+              Field ini terhubung ke &quot;{induk.label}&quot; tapi belum ke
+              pilihan mana pun, jadi tidak pernah muncul di form.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 bg-white text-xs"
+              onClick={() =>
+                patchItem(item.id, { conditionItemId: null, conditionValue: null })
+              }
+            >
+              Jadikan field biasa (selalu tampil)
+            </Button>
           </div>
         )}
 
-        {renderSubLabels(item)}
-        {renderSourceBlock(item)}
+        {/* Skor field tanpa pilihan */}
+        {berskor &&
+          !induk &&
+          !punyaPilihan &&
+          !wajibTetap &&
+          item.thresholdValue == null && (
+            <div className="flex items-center justify-between gap-3">
+              <Label className="text-sm font-normal">{labelSkor(item)}</Label>
+              {scoreInput(item.score, (v) => {
+                if (v !== item.score) patchItem(item.id, { score: v });
+              })}
+            </div>
+          )}
+        {item.thresholdValue != null && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label className="text-sm font-normal">Skor kalau terpenuhi</Label>
+              {scoreInput(item.score, (v) => {
+                if (v !== item.score) patchItem(item.id, { score: v });
+              })}
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <Label className="text-sm font-normal">Ambang batas (standar)</Label>
+              <Input
+                key={`${k}-threshold`}
+                type="number"
+                step="0.01"
+                className="h-7 w-20 text-[11px]"
+                defaultValue={item.thresholdValue ?? ""}
+                onBlur={(e) => {
+                  const v = e.target.value ? Number(e.target.value) : null;
+                  if (v !== item.thresholdValue) patchItem(item.id, { thresholdValue: v });
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Pilihan */}
+        {punyaPilihan && (
+          <div className="space-y-3 border-t pt-4">
+            <p className="text-sm font-bold">Pilihan</p>
+            {!isEnum && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Isi pilihan dari</Label>
+                {sourceSelect(
+                  item.optionSource,
+                  (v) => patchItem(item.id, { optionSource: v }),
+                  isBaku,
+                )}
+                {item.fieldType === "CHECKBOX" && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Centang: user bisa memilih lebih dari satu; skor pilihan
+                    yang dicentang dijumlahkan.
+                  </p>
+                )}
+              </div>
+            )}
+            {item.optionSource && (
+              <div className="flex items-center justify-between gap-2 rounded-md bg-muted/60 px-2.5 py-2 text-[11px] text-muted-foreground">
+                <span>
+                  {Editor
+                    ? "Daftar mengikuti data master, berlaku untuk semua kegiatan."
+                    : "Data referensi resmi, tidak dikelola di aplikasi ini."}
+                </span>
+                {Editor && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 shrink-0 text-[11px]"
+                    onClick={() => setMasterDialog(item.optionSource!)}
+                  >
+                    Kelola data
+                  </Button>
+                )}
+              </div>
+            )}
+            {isEnum && (
+              <p className="text-[11px] text-muted-foreground">
+                Pilihan tetap sistem: nama pilihan & skornya bisa diubah.
+              </p>
+            )}
+
+            {rows.length > 0 && (
+              <div className="space-y-2">
+                {rows.map((row) => {
+                  const kolom = anak.filter((c) =>
+                    nilaiKondisi(c.conditionValue).includes(row.value),
+                  );
+                  return (
+                    <div key={row.value} className="space-y-1.5 rounded-md border p-2">
+                      <div className="flex items-center gap-2">
+                        {labelBisaDiubah && row.opt ? (
+                          <Input
+                            key={`${k}-${row.opt.id}-${row.opt.label}`}
+                            className="h-8 min-w-0 flex-1 text-xs"
+                            defaultValue={row.label}
+                            onBlur={(e) =>
+                              e.target.value.trim() &&
+                              e.target.value !== row.label &&
+                              patchOption(row.opt!.id, { label: e.target.value.trim() })
+                            }
+                          />
+                        ) : (
+                          <span
+                            className={cn(
+                              "min-w-0 flex-1 truncate text-xs",
+                              row.stale && "text-muted-foreground line-through",
+                            )}
+                            title={row.stale ? "Tidak ada lagi di data master" : row.label}
+                          >
+                            {row.label}
+                          </span>
+                        )}
+                        {berskor &&
+                          !row.stale &&
+                          scoreInput(row.opt?.score, (v) =>
+                            saveOptionScore(item, row, row.opt, v),
+                          )}
+                        {(manual || row.stale) && row.opt && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0 text-muted-foreground/70 hover:text-destructive"
+                            title="Hapus pilihan"
+                            onClick={() =>
+                              setDeleteTarget({
+                                type: "option",
+                                id: row.opt!.id,
+                                label: row.label,
+                                turunan: kolom.length,
+                              })
+                            }
+                          >
+                            <Trash2 size={12} />
+                          </Button>
+                        )}
+                      </div>
+                      {kolom.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => pilihField(c.id)}
+                          className="block w-full rounded-md bg-primary/10 px-2.5 py-1.5 text-left text-xs text-primary hover:bg-primary/15"
+                        >
+                          ↳ {c.label} · {FIELD_TYPE_LABEL[c.fieldType] ?? c.fieldType}
+                        </button>
+                      ))}
+                      {!row.stale && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            bukaTambahField(section.id, tab.key, {
+                              item,
+                              value: row.value,
+                              label: row.label,
+                            })
+                          }
+                          className="text-xs font-semibold text-primary hover:underline"
+                        >
+                          + Kolom tambahan
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {rows.length === 0 && !item.optionSource && (
+              <p className="text-[11px] text-muted-foreground">
+                {item.fieldType === "CHECKBOX"
+                  ? "Belum ada pilihan — tanpa pilihan, field ini tampil sebagai satu kotak centang ya/tidak."
+                  : "Belum ada pilihan."}
+              </p>
+            )}
+            {manual && (
+              <div className="flex items-center gap-2">
+                <Input
+                  className="h-8 flex-1 text-xs"
+                  placeholder="Tambah pilihan baru..."
+                  value={newOptionLabel[item.id] ?? ""}
+                  onChange={(e) =>
+                    setNewOptionLabel((prev) => ({ ...prev, [item.id]: e.target.value }))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      submitAddOption(item.id);
+                    }
+                  }}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 shrink-0 text-xs"
+                  onClick={() => submitAddOption(item.id)}
+                >
+                  <Plus size={12} className="mr-1" /> Tambah
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Lanjutan */}
+        <div className="border-t pt-3">
+          <button
+            type="button"
+            onClick={() => setLanjutanOpen((v) => !v)}
+            className="text-sm font-semibold text-muted-foreground hover:text-foreground"
+          >
+            {lanjutanOpen ? "▾" : "▸"} Pengaturan lanjutan
+          </button>
+          {lanjutanOpen && (
+            <div className="mt-3 space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Lebar di form</Label>
+                <Select
+                  value={item.width ?? "AUTO"}
+                  onValueChange={(v) =>
+                    patchItem(item.id, {
+                      width: v === "AUTO" ? null : (v as "HALF" | "FULL"),
+                    })
+                  }
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(WIDTH_LABEL).map(([v, l]) => (
+                      <SelectItem key={v} value={v}>
+                        {l}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {renderSubLabels(item)}
+            </div>
+          )}
+        </div>
+
+        {!wajibTetap && (
+          <Button
+            variant="outline"
+            className="w-full border-destructive/40 text-destructive hover:bg-destructive/5"
+            onClick={() =>
+              setDeleteTarget({
+                type: "item",
+                id: item.id,
+                label: item.label,
+                turunan: jumlahTurunan(section, item),
+              })
+            }
+          >
+            <Trash2 size={14} className="mr-1.5" /> Hapus field
+          </Button>
+        )}
       </div>
+    );
+  };
+
+  // Kolom tambahan di kanvas kiri: menjorok di dalam kartu induknya.
+  const renderAnakKanvas = (
+    section: FormTabNode["sections"][number],
+    item: FormItemNode,
+    renderItem: (item: FormItemNode) => React.ReactNode,
+  ): React.ReactNode => {
+    const anak = kolomTambahanDari(section, item);
+    if (!anak.length) return null;
+    return (
+      <div className="mt-3 space-y-2 border-l-2 border-primary/30 pl-3">
+        {anak.map((c) => (
+          <div
+            key={c.id}
+            onClick={(e) => {
+              e.stopPropagation();
+              pilihField(c.id);
+            }}
+            className={cn(
+              "cursor-pointer rounded-lg border bg-white p-2.5",
+              c.isActive === false && "opacity-40",
+              editItemId === c.id
+                ? "border-primary ring-1 ring-primary/30"
+                : "border-[#d0d7de] hover:border-primary/60",
+            )}
+          >
+            {nilaiKondisi(c.conditionValue).length > 0 ? (
+              <p className="mb-1.5 text-[11px] font-semibold text-primary">
+                ↳ Muncul jika &quot;
+                {nilaiKondisi(c.conditionValue)
+                  .map((v) => pilihanItem(item).find((o) => o.value === v)?.label ?? v)
+                  .join(", ")}
+                &quot; {item.fieldType === "CHECKBOX" ? "dicentang" : "dipilih"}
+              </p>
+            ) : (
+              <p className="mb-1.5 text-[11px] font-semibold text-amber-800">
+                ↳ Belum terhubung ke pilihan mana pun — field ini tidak muncul di form
+              </p>
+            )}
+            <div inert className="pointer-events-none select-none">
+              {renderItem(c)}
+            </div>
+            {renderAnakKanvas(section, c, renderItem)}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // Field akar section (bukan kolom tambahan field lain di section ini).
+  const akarDari = (section: FormTabNode["sections"][number]) => {
+    const keys = new Set(section.items.map((i) => i.key));
+    return section.items.filter(
+      (i) => !i.conditionItemId || !keys.has(i.conditionItemId),
     );
   };
 
@@ -985,373 +1283,97 @@ export function FormProyekTab({
   ) => {
     if (!tabId) {
       return (
-        <p className="pl-12 text-xs text-muted-foreground italic">
+        <p className="text-xs text-muted-foreground italic">
           Tab ini belum ada di template — coba &quot;Salin dari kegiatan
           lain&quot;.
         </p>
       );
     }
+    const tampilkanJudul = sections.length > 1;
     return (
-      <>
-        <DndContext
-          sensors={dndSensors}
-          collisionDetection={closestCenter}
-          onDragEnd={(e) => handleSectionDragEnd(sections, e)}
-        >
-          <SortableContext
-            items={sections.map((s) => s.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="space-y-3 pl-12">
-              {sections.map((section) => (
-                <Sortable key={section.id} id={section.id}>
-                  {({ setNodeRef, style, dragHandleProps, isDragging }) => (
-                    <div
-                      ref={setNodeRef}
-                      style={style}
-                      className={cn(
-                        "group/section space-y-3",
-                        isDragging && "opacity-50",
-                      )}
-                    >
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          title="Seret untuk ubah urutan bagian"
-                          className="shrink-0 touch-none cursor-grab text-muted-foreground hover:text-foreground"
-                          {...dragHandleProps}
-                        >
-                          <GripVertical size={14} />
-                        </button>
-                        <Input
-                          className="h-6 max-w-xs flex-1 border-none bg-transparent px-1 text-xs font-semibold text-muted-foreground shadow-none focus-visible:border focus-visible:bg-white focus-visible:ring-0"
-                          defaultValue={section.label}
-                          onBlur={(e) =>
-                            e.target.value !== section.label &&
-                            patchSection(section.id, { label: e.target.value })
-                          }
-                        />
-                        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/section:opacity-100">
-                          {section.isActive === false && (
-                            <Badge
-                              variant="outline"
-                              className="text-[9px] border-slate-300 text-muted-foreground"
-                            >
-                              Nonaktif
-                            </Badge>
-                          )}
-                          <Switch
-                            checked={section.isActive !== false}
-                            onChange={(v) =>
-                              patchSection(section.id, { isActive: v })
-                            }
-                          />
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-muted-foreground/60 hover:text-destructive"
-                            onClick={() =>
-                              setDeleteTarget({
-                                type: "section",
-                                id: section.id,
-                                label: section.label,
-                              })
-                            }
-                          >
-                            <Trash2 size={12} />
-                          </Button>
-                        </div>
-                      </div>
-
-                      {section.items.length === 0 && (
-                        <p className="py-2 text-xs text-muted-foreground italic">
-                          Belum ada item di bagian ini.
-                        </p>
-                      )}
-                      <DndContext
-                        sensors={dndSensors}
-                        collisionDetection={closestCenter}
-                        onDragStart={(e: DragStartEvent) => {
-                          setDraggingItem(
-                            section.items.find((i) => i.id === e.active.id) ??
-                              null,
-                          );
-                          setDraggingItemWidth(
-                            e.active.rect.current.initial?.width ?? null,
-                          );
-                        }}
-                        onDragEnd={(e) => {
-                          setDraggingItem(null);
-                          setDraggingItemWidth(null);
-                          handleItemDragEnd(section.items, e);
-                        }}
-                        onDragCancel={() => {
-                          setDraggingItem(null);
-                          setDraggingItemWidth(null);
-                        }}
-                      >
-                        <SortableContext
-                          items={section.items.map((i) => i.id)}
-                          strategy={rectSortingStrategy}
-                        >
-                          <div className={gridClass}>
-                            {section.items.map((item) => {
-                              const isWide = isItemWide(item);
-                              const isEditing = editItemId === item.id;
-                              return (
-                                <Sortable key={item.id} id={item.id}>
-                                  {({
-                                    setNodeRef,
-                                    style,
-                                    dragHandleProps,
-                                    isDragging,
-                                  }) => (
-                                    <div
-                                      ref={setNodeRef}
-                                      style={style}
-                                      className={cn(
-                                        "group/item relative rounded-lg border bg-white p-2.5 pl-6",
-                                        isWide && "sm:col-span-full",
-                                        isDragging && "opacity-0",
-                                        item.isActive === false && "opacity-40",
-                                        isEditing
-                                          ? "border-primary/40 ring-1 ring-primary/20"
-                                          : "border-border/70",
-                                      )}
-                                    >
-                                      <button
-                                        type="button"
-                                        title="Seret untuk ubah urutan field"
-                                        className="absolute top-2.5 left-2 z-10 cursor-grab rounded text-muted-foreground hover:text-foreground touch-none shrink-0"
-                                        {...dragHandleProps}
-                                      >
-                                        <GripVertical size={14} />
-                                      </button>
-                                      <div
-                                        className={cn(
-                                          "absolute -top-2.5 right-0 z-10 flex items-center gap-0.5 rounded-md border bg-white px-1 py-0.5 shadow-sm transition-opacity",
-                                          isEditing
-                                            ? "opacity-100"
-                                            : "opacity-0 group-hover/item:opacity-100 focus-within:opacity-100",
-                                        )}
-                                      >
-                                        {item.isActive === false && (
-                                          <Badge
-                                            variant="outline"
-                                            className="text-[9px] mx-0.5 border-slate-300 text-muted-foreground"
-                                          >
-                                            Nonaktif
-                                          </Badge>
-                                        )}
-                                        {!ALWAYS_REQUIRED_BAKU_KEYS.has(item.key) && (
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-6 w-6 text-muted-foreground/70 hover:text-foreground"
-                                          title={
-                                            item.isActive === false
-                                              ? "Tampilkan di form Proyek"
-                                              : "Sembunyikan dari form Proyek"
-                                          }
-                                          onClick={() =>
-                                            patchItem(item.id, {
-                                              isActive: item.isActive === false,
-                                            })
-                                          }
-                                        >
-                                          {item.isActive === false ? (
-                                            <EyeOff size={13} />
-                                          ) : (
-                                            <Eye size={13} />
-                                          )}
-                                        </Button>
-                                        )}
-                                        <Button
-                                          variant={isEditing ? "default" : "ghost"}
-                                          size="icon"
-                                          className="h-6 w-6"
-                                          title="Atur field ini"
-                                          onClick={() =>
-                                            setEditItemId(isEditing ? null : item.id)
-                                          }
-                                        >
-                                          <Pencil size={12} />
-                                        </Button>
-                                        {!ALWAYS_REQUIRED_BAKU_KEYS.has(item.key) && (
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-6 w-6 text-muted-foreground/70 hover:text-destructive"
-                                          title="Hapus field ini"
-                                          onClick={() =>
-                                            setDeleteTarget({
-                                              type: "item",
-                                              id: item.id,
-                                              label: item.label,
-                                            })
-                                          }
-                                        >
-                                          <Trash2 size={12} />
-                                        </Button>
-                                        )}
-                                      </div>
-
-                                      {renderItem(item)}
-
-                                      {isEditing && (
-                                        <div className="mt-2.5 pt-2.5 border-t">
-                                          {renderItemSettingsFields(item)}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </Sortable>
-                              );
-                            })}
-                            {/* Form "tambah item" ikut jadi anak grid (bukan
-                                elemen di luar grid) — CSS grid auto-flow
-                                otomatis taruh ini di slot kosong sisa baris
-                                kalau ada, atau baris baru kalau penuh. Tombol
-                                pemicunya sendiri tetap di posisi lama (full
-                                width di bawah grid) — pas diklik, form-nya
-                                "pindah" muncul di dalam grid, bukan di tombol. */}
-                            {addItemSectionId === section.id && (
-                              <div className="rounded-lg border border-dashed border-primary/50 bg-primary/5 p-2.5 space-y-2">
-                                <Input
-                                  autoFocus
-                                  className="h-8 text-xs bg-white"
-                                  placeholder="Nama field baru"
-                                  value={newItemLabel}
-                                  onChange={(e) => setNewItemLabel(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      submitAddItem();
-                                    }
-                                    if (e.key === "Escape") {
-                                      setAddItemSectionId(null);
-                                      setNewItemLabel("");
-                                    }
-                                  }}
-                                />
-                                <Select
-                                  value={newItemType}
-                                  onValueChange={(v) => setNewItemType(v as any)}
-                                >
-                                  <SelectTrigger className="h-8 text-xs bg-white">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {FIELD_TYPE_OPTIONS.filter(
-                                      // Upload paket belum didukung (dokumen
-                                      // pendukung terikat ke proyek).
-                                      (ft) =>
-                                        tabKey !== "pemaketan" ||
-                                        ft !== "UPLOAD",
-                                    ).map((ft) => (
-                                      <SelectItem key={ft} value={ft}>
-                                        {FIELD_TYPE_LABEL[ft]}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                {(newItemType === "DROPDOWN" ||
-                                  newItemType === "CHECKBOX") &&
-                                  sourceSelect(
-                                    newItemSource,
-                                    setNewItemSource,
-                                    false,
-                                  )}
-                                <div className="flex items-center justify-between">
-                                  <Label className="text-[10px] text-muted-foreground">
-                                    Wajib diisi
-                                  </Label>
-                                  <Switch
-                                    checked={newItemRequired}
-                                    onChange={setNewItemRequired}
-                                  />
-                                </div>
-                                <div className="flex justify-end gap-1.5 pt-0.5">
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 text-[11px]"
-                                    onClick={() => {
-                                      setAddItemSectionId(null);
-                                      setNewItemLabel("");
-                                    }}
-                                  >
-                                    Batal
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    className="h-7 text-[11px]"
-                                    disabled={!newItemLabel.trim() || saving}
-                                    onClick={submitAddItem}
-                                  >
-                                    {saving && (
-                                      <Loader2
-                                        size={12}
-                                        className="mr-1 animate-spin"
-                                      />
-                                    )}
-                                    Tambah
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </SortableContext>
-                        <DragOverlay>
-                          {draggingItem && (
-                            <div
-                              style={
-                                draggingItemWidth
-                                  ? { width: draggingItemWidth }
-                                  : undefined
-                              }
-                              className={cn(
-                                "rounded-lg border-2 border-primary bg-white p-2.5 shadow-2xl",
-                                !draggingItemWidth &&
-                                  (isItemWide(draggingItem)
-                                    ? "w-[520px]"
-                                    : "w-[250px]"),
-                              )}
-                            >
-                              <div className="flex items-center gap-1.5 mb-1.5 text-muted-foreground/40">
-                                <GripVertical size={13} className="shrink-0" />
-                                <span className="text-[10px]">Memindahkan...</span>
-                              </div>
-                              {renderItem(draggingItem)}
-                            </div>
-                          )}
-                        </DragOverlay>
-                      </DndContext>
-                      {addItemSectionId !== section.id && (
-                        <button
-                          type="button"
-                          onClick={() => setAddItemSectionId(section.id)}
-                          className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-md border-2 border-dashed border-slate-300 py-2 text-xs font-medium text-muted-foreground hover:border-slate-400 hover:text-foreground hover:bg-accent/40 transition-colors"
-                        >
-                          <Plus size={12} /> Tambah item
-                        </button>
-                      )}
-                    </div>
+      <div className="space-y-6">
+        {sections.length === 0 && (
+          <p className="text-xs text-muted-foreground italic">
+            Belum ada bagian di tab ini — tambah lewat panel kanan (&quot;Atur
+            tab&quot; → Tambah bagian).
+          </p>
+        )}
+        {sections.map((section) => {
+          const akar = akarDari(section);
+          return (
+            <div
+              key={section.id}
+              className={cn("space-y-3", section.isActive === false && "opacity-60")}
+            >
+              {(tampilkanJudul || section.isActive === false) && (
+                <button
+                  type="button"
+                  title="Atur bagian ini"
+                  onClick={() => {
+                    setEditItemId(null);
+                    setSelectedSectionId(section.id);
+                  }}
+                  className={cn(
+                    "flex items-center gap-2 rounded px-1 text-left text-xs font-semibold uppercase tracking-wide text-[#59636e] hover:text-foreground",
+                    selectedSectionId === section.id && "text-primary",
                   )}
-                </Sortable>
-              ))}
+                >
+                  {section.label}
+                  {section.isActive === false && (
+                    <Badge variant="outline" className="text-[9px] text-muted-foreground">
+                      Disembunyikan
+                    </Badge>
+                  )}
+                </button>
+              )}
+              {akar.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">
+                  Belum ada field di bagian ini.
+                </p>
+              )}
+              <div className={gridClass}>
+                {akar.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => pilihField(item.id)}
+                    className={cn(
+                      "relative cursor-pointer rounded-xl bg-white p-4 transition-colors",
+                      (isItemWide(item) || kolomTambahanDari(section, item).length > 0) &&
+                        "sm:col-span-full",
+                      item.isActive === false && "opacity-50",
+                      editItemId === item.id
+                        ? "border-2 border-primary"
+                        : "border border-[#d0d7de] shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-primary/60",
+                    )}
+                  >
+                    {/* Label tipe sebaris dengan judul field (pojok kanan
+                        atas), bukan baris sendiri. */}
+                    <div className="pointer-events-none absolute right-4 top-4 z-10 flex items-center gap-1.5 bg-white pl-2 text-[11px] leading-5 text-[#59636e]">
+                      {item.isActive === false && (
+                        <Badge variant="outline" className="text-[9px]">
+                          Disembunyikan
+                        </Badge>
+                      )}
+                      <span>{labelTipe(item)}</span>
+                    </div>
+                    <div inert className="pointer-events-none select-none">
+                      {renderItem(item)}
+                    </div>
+                    {renderAnakKanvas(section, item, renderItem)}
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => bukaTambahField(section.id, tabKey)}
+                className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-[#b6bec8] text-sm font-semibold text-[#3d4752] transition-colors hover:border-primary/60 hover:bg-white hover:text-primary"
+              >
+                <Plus size={14} /> Tambah field
+              </button>
             </div>
-          </SortableContext>
-        </DndContext>
-        <button
-          type="button"
-          onClick={() => setAddSectionTabId(tabId)}
-          className="mt-3 ml-12 flex items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-slate-300 py-2.5 text-sm font-medium text-muted-foreground hover:border-slate-400 hover:text-foreground hover:bg-accent/30 transition-colors bg-white"
-          style={{ width: "calc(100% - 3rem)" }}
-        >
-          <Plus size={13} /> Tambah bagian baru
-        </button>
-      </>
+          );
+        })}
+      </div>
     );
   };
 
@@ -1389,41 +1411,200 @@ export function FormProyekTab({
         >
           <Copy size={13} className="mr-1.5" /> Salin dari kegiatan lain
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-10"
-          disabled={!kegiatanId}
-          onClick={() => setPreviewOpen(true)}
+        <div
+          role="group"
+          aria-label="Mode kanvas"
+          className="flex rounded-lg border border-[#d0d7de] bg-[#eef0f3] p-1"
         >
-          <ExternalLink size={13} className="mr-1.5" /> Lihat sebagai Form User
-        </Button>
+          {(
+            [
+              ["atur", "Atur form"],
+              ["isi", "Coba isi form"],
+            ] as const
+          ).map(([m, label]) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={mode === m}
+              onClick={() => setMode(m)}
+              className={cn(
+                "h-8 rounded-md px-3 text-sm",
+                mode === m
+                  ? "bg-white font-semibold shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <span
+          className={cn(
+            "ml-auto text-xs font-medium",
+            saveState === "error" ? "text-destructive" : saveState === "saved" ? "text-primary" : "text-muted-foreground",
+          )}
+          aria-live="polite"
+        >
+          {saveState === "saving"
+            ? "Menyimpan…"
+            : saveState === "saved"
+              ? "✓ Tersimpan"
+              : saveState === "error"
+                ? "Gagal menyimpan — coba lagi"
+                : ""}
+        </span>
       </div>
 
-      {previewOpen && (
-        <ProyekFormDialog
-          open={previewOpen}
-          onClose={() => setPreviewOpen(false)}
-          onSuccess={() => setPreviewOpen(false)}
-          previewMode
-          initialKegiatanId={kegiatanId}
-        />
+      {kegiatanId && templateKosong && (
+        <div className="mx-auto max-w-xl rounded-[14px] border border-[#d0d7de] bg-white px-8 py-10 text-center shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <p className="text-lg font-bold">Kegiatan ini belum punya Form Proyek</p>
+          <p className="mt-2 text-sm text-[#59636e]">
+            Cara tercepat: salin form dari kegiatan lain yang sudah lengkap,
+            lalu sesuaikan field, pilihan, dan skornya di sini.
+          </p>
+          <Button className="mt-6" onClick={() => setCloneOpen(true)}>
+            <Copy size={14} className="mr-1.5" /> Salin dari kegiatan lain
+          </Button>
+        </div>
       )}
 
-      {kegiatanId && (
-        <ProyekFormDialog
-          key={kegiatanId}
-          open
-          embedded
-          onClose={() => {}}
-          onSuccess={() => {}}
-          adminMode
-          adminHandlers={adminHandlers}
-          adminRefreshToken={refreshToken}
-          masterRefreshToken={masterToken}
-          initialKegiatanId={kegiatanId}
-        />
+      {kegiatanId && !templateKosong && mode === "isi" && (
+        <div className="space-y-2">
+          <p className="rounded-lg bg-primary/10 px-4 py-2.5 text-sm text-primary">
+            Mode coba: ini tampilan yang dilihat user saat membuat proyek.
+            Isian di sini tidak tersimpan.
+          </p>
+          <ProyekFormDialog
+            key={`${kegiatanId}-isi-${refreshToken}-${masterToken}`}
+            open
+            embedded
+            previewMode
+            onClose={() => {}}
+            onSuccess={() => {}}
+            initialKegiatanId={kegiatanId}
+          />
+        </div>
       )}
+
+      {kegiatanId && !templateKosong && mode === "atur" && (
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+          <div className="min-w-0 flex-1">
+            <ProyekFormDialog
+              key={kegiatanId}
+              open
+              embedded
+              onClose={() => {}}
+              onSuccess={() => {}}
+              adminMode
+              adminHandlers={adminHandlers}
+              adminRefreshToken={refreshToken}
+              masterRefreshToken={masterToken}
+              onActiveTabChange={(k) => {
+                setActiveTabKey(k);
+                setEditItemId(null);
+                setSelectedSectionId(null);
+              }}
+              initialKegiatanId={kegiatanId}
+            />
+          </div>
+          <aside
+            aria-label="Pengaturan field"
+            className="w-full rounded-[14px] border border-[#d0d7de] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:w-[400px] xl:shrink-0 xl:overflow-y-auto">
+            {renderPanel()}
+          </aside>
+        </div>
+      )}
+
+      {/* Dialog: tambah field / kolom tambahan */}
+      <Dialog open={!!fieldDialog} onOpenChange={(o) => !o && setFieldDialog(null)}>
+        <DialogContent
+          className="sm:max-w-lg"
+          onInteractOutside={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {fieldDialog?.parent
+                ? `Kolom tambahan untuk "${fieldDialog.parent.label}"`
+                : "Tambah field"}
+            </DialogTitle>
+          </DialogHeader>
+          {fieldDialog?.parent && (
+            <p className="rounded-md bg-primary/10 p-2.5 text-xs text-primary">
+              Kolom ini hanya muncul di form kalau &quot;{fieldDialog.parent.label}&quot;{" "}
+              {fieldDialog.parent.item.fieldType === "CHECKBOX" ? "dicentang" : "dipilih"}.
+              Kolom tambahan tidak punya skor sendiri: skor pilihan itu baru masuk
+              setelah kolom ini diisi.
+            </p>
+          )}
+          <div className="space-y-4 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="field-dialog-nama">Nama field</Label>
+              <Input
+                id="field-dialog-nama"
+                autoFocus
+                value={newItemLabel}
+                onChange={(e) => setNewItemLabel(e.target.value)}
+                placeholder="Contoh: Sebutkan sumber lainnya"
+                onKeyDown={(e) => e.key === "Enter" && submitAddItem()}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Tipe</Label>
+              <div className="flex flex-wrap gap-2">
+                {FIELD_TYPE_OPTIONS.filter(
+                  (ft) => fieldDialog?.tabKey !== "pemaketan" || ft !== "UPLOAD",
+                ).map((ft) => (
+                  <button
+                    key={ft}
+                    type="button"
+                    onClick={() => setNewItemType(ft)}
+                    className={cn(
+                      "h-9 rounded-full border px-3.5 text-sm",
+                      newItemType === ft
+                        ? "border-primary bg-primary font-semibold text-primary-foreground"
+                        : "border-input bg-white hover:border-primary/50",
+                    )}
+                  >
+                    {FIELD_TYPE_LABEL[ft]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {(newItemType === "DROPDOWN" || newItemType === "CHECKBOX") && (
+              <div className="space-y-1.5">
+                <Label>Isi pilihan dari</Label>
+                {sourceSelect(newItemSource, setNewItemSource, false)}
+                <p className="text-xs text-muted-foreground">
+                  Pilihan & skornya diatur setelah field dibuat, di panel kanan.
+                </p>
+              </div>
+            )}
+            <label className="flex cursor-pointer items-start gap-2.5">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-primary"
+                checked={newItemRequired}
+                onChange={(e) => setNewItemRequired(e.target.checked)}
+              />
+              <span className="text-sm">
+                Wajib diisi
+                <span className="block text-xs text-muted-foreground">
+                  User tidak bisa menyimpan proyek kalau field ini kosong.
+                </span>
+              </span>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFieldDialog(null)}>
+              Batal
+            </Button>
+            <Button disabled={!newItemLabel.trim() || saving} onClick={submitAddItem}>
+              {saving && <Loader2 size={14} className="mr-2 animate-spin" />}
+              Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog: kelola isi tabel master langsung dari kanvas — editor yang
           SAMA dengan tab master-nya (berlaku utk semua kegiatan). */}
@@ -1463,8 +1644,9 @@ export function FormProyekTab({
             <DialogTitle>Tambah Bagian Baru</DialogTitle>
           </DialogHeader>
           <div className="py-2 space-y-2">
-            <Label>Nama bagian</Label>
+            <Label htmlFor="section-dialog-nama">Nama bagian</Label>
             <Input
+              id="section-dialog-nama"
               autoFocus
               value={newSectionLabel}
               onChange={(e) => setNewSectionLabel(e.target.value)}
@@ -1536,7 +1718,9 @@ export function FormProyekTab({
             <AlertDialogDescription>
               {deleteTarget?.type === "section"
                 ? "Seluruh item di dalam bagian ini akan ikut terhapus. Tindakan ini tidak bisa dibatalkan."
-                : "Tindakan ini tidak bisa dibatalkan."}
+                : deleteTarget?.turunan
+                  ? `${deleteTarget.turunan} kolom tambahannya ikut terhapus. Tindakan ini tidak bisa dibatalkan.`
+                  : "Tindakan ini tidak bisa dibatalkan."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

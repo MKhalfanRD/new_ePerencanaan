@@ -78,6 +78,7 @@ export function FieldControl({
   onUpload,
   onRemoveUpload,
   sourceRows,
+  optionScore,
 }: {
   item: FieldControlItem;
   mode: "preview" | "fill";
@@ -93,6 +94,9 @@ export function FieldControl({
   onUpload?: (files: File[]) => void;
   onRemoveUpload?: () => void;
   sourceRows?: { value: string; label: string }[];
+  // Skor tiap pilihan (ditampilkan di sebelah pilihannya); `masuk` = skor
+  // pilihan itu sudah dihitung (dipilih & kolom tambahannya terisi).
+  optionScore?: (value: string) => { skor: number; masuk: boolean } | null;
 }) {
   const preview = mode === "preview";
 
@@ -128,30 +132,43 @@ export function FieldControl({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-              {activeOptions.map((o) => (
-                <SelectItem key={o.id} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
+              {activeOptions.map((o) => {
+                const sk = optionScore?.(o.value);
+                return (
+                  <SelectItem key={o.id} value={o.value}>
+                    {o.label}
+                    {sk && sk.skor > 0 && (
+                      <span className="ml-1 text-muted-foreground">(skor {sk.skor})</span>
+                    )}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
       );
     }
     case "CHECKBOX":
-      if (item.optionSource) {
-        // Centang multi-pilih dari baris master.
+      if (item.optionSource || item.options.length) {
+        // Centang multi-pilih: dari baris master atau pilihan ketik sendiri.
         const picked = Array.isArray(value?.value) ? value.value : [];
+        const rows = item.optionSource
+          ? (sourceRows ?? [])
+          : item.options
+              .filter((o) => o.isActive !== false)
+              .map((o) => ({ value: o.value, label: o.label }));
         return (
           <div className="space-y-2">
             <FieldLabel item={item} />
-            <div className="max-h-48 overflow-y-auto rounded-md border p-2 space-y-1.5">
-              {(sourceRows ?? []).length === 0 && (
+            <div className="max-h-56 overflow-y-auto rounded-md border p-2 space-y-1.5">
+              {rows.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Belum ada data di master.
+                  Belum ada pilihan.
                 </p>
               )}
-              {(sourceRows ?? []).map((r) => (
+              {rows.map((r) => {
+                const sk = optionScore?.(r.value);
+                return (
                 <label
                   key={r.value}
                   className="flex items-center gap-2 text-xs"
@@ -169,9 +186,22 @@ export function FieldControl({
                       })
                     }
                   />
-                  {r.label}
+                  <span>{r.label}</span>
+                  {sk && sk.skor > 0 && (
+                    <span
+                      className={
+                        sk.masuk
+                          ? "rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground"
+                          : "rounded-full bg-muted px-1.5 text-[10px] font-semibold text-muted-foreground"
+                      }
+                    >
+                      {sk.masuk ? "+" : ""}
+                      {sk.skor}
+                    </span>
+                  )}
                 </label>
-              ))}
+                );
+              })}
             </div>
           </div>
         );

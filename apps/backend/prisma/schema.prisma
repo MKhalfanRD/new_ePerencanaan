@@ -581,7 +581,7 @@ model FormItemOption {
   itemId String
   item   FormItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
-  value    String  @db.VarChar(100)
+  value    String  @db.VarChar(255)
   label    String  @db.VarChar(255)
   order    Int     @default(0) @db.SmallInt
   isActive Boolean @default(true)

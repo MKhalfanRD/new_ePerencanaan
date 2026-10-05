@@ -6,6 +6,8 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { BASE_ROLES } from '../auth/role';
 
+import { nilaiKondisi } from '../proyek/form-skor';
+
 @Injectable()
 export class MasterService {
   constructor(private prisma: PrismaService) {}
@@ -120,10 +122,11 @@ export class MasterService {
       orderBy: { order: 'asc' as const },
       include: {
         sections: {
-          orderBy: { order: 'asc' as const },
+          orderBy: [{ order: 'asc' as const }, { id: 'asc' as const }],
           include: {
+            // id = pemecah seri supaya urutan selalu sama tiap dimuat.
             items: {
-              orderBy: { order: 'asc' as const },
+              orderBy: [{ order: 'asc' as const }, { id: 'asc' as const }],
               include: { options: { orderBy: { order: 'asc' as const } } },
             },
           },
@@ -183,13 +186,18 @@ export class MasterService {
     });
   }
 
-  createFormSection(dto: any) {
+  async createFormSection(dto: any) {
+    // Bagian baru di urutan paling bawah tab-nya (lihat createFormItem).
+    const terakhir = await this.prisma.formSection.aggregate({
+      where: { tabId: dto.tabId },
+      _max: { order: true },
+    });
     return this.prisma.formSection.create({
       data: {
         tabId: dto.tabId,
         key: dto.key,
         label: dto.label,
-        order: dto.order ?? 0,
+        order: dto.order ?? (terakhir._max.order ?? -1) + 1,
       },
     });
   }
@@ -208,14 +216,57 @@ export class MasterService {
     return { message: 'Section dihapus' };
   }
 
-  createFormItem(dto: any) {
+  // Key field = identitas yang dipakai isian proyek & kolom tambahan
+  // (conditionItemId). Dibuat dari nama, jadi bisa kembar dalam 1 template —
+  // kembar diberi akhiran acak supaya tidak tertukar.
+  private async keyUnik(sectionId: string, key: string) {
+    const section = await this.prisma.formSection.findUniqueOrThrow({
+      where: { id: sectionId },
+      select: { tab: { select: { templateId: true } } },
+    });
+    let hasil = key;
+    while (
+      await this.prisma.formItem.findFirst({
+        where: { key: hasil, section: { tab: { templateId: section.tab.templateId } } },
+        select: { id: true },
+      })
+    ) {
+      hasil = `${key}-${Math.random().toString(36).slice(2, 6)}`;
+    }
+    return hasil;
+  }
+
+  // Kolom tambahan suatu field = item di SECTION YANG SAMA yang
+  // conditionItemId-nya = key field itu (kondisi lintas section, mis.
+  // Valuasi <- Kategori Proyek, bukan kolom tambahan & tidak ikut terhapus).
+  private async kolomTambahan(itemId: string): Promise<string[]> {
+    const item = await this.prisma.formItem.findUniqueOrThrow({
+      where: { id: itemId },
+      select: { key: true, sectionId: true },
+    });
+    const anak = await this.prisma.formItem.findMany({
+      where: { sectionId: item.sectionId, conditionItemId: item.key },
+      select: { id: true },
+    });
+    const semua: string[] = [];
+    for (const a of anak) semua.push(a.id, ...(await this.kolomTambahan(a.id)));
+    return semua;
+  }
+
+  async createFormItem(dto: any) {
+    // Field baru masuk di urutan paling bawah bagiannya (bukan 0 — nomor
+    // kembar bikin urutan field "lompat" sendiri tiap dimuat ulang).
+    const terakhir = await this.prisma.formItem.aggregate({
+      where: { sectionId: dto.sectionId },
+      _max: { order: true },
+    });
     return this.prisma.formItem.create({
       data: {
         sectionId: dto.sectionId,
-        key: dto.key,
+        key: await this.keyUnik(dto.sectionId, dto.key),
         label: dto.label,
         fieldType: dto.fieldType,
-        order: dto.order ?? 0,
+        order: dto.order ?? (terakhir._max.order ?? -1) + 1,
         required: dto.required ?? false,
         score: dto.score,
         bobot: dto.bobot,
@@ -249,8 +300,9 @@ export class MasterService {
     });
   }
   async deleteFormItem(id: string) {
-    await this.prisma.formItem.delete({ where: { id } });
-    return { message: 'Item dihapus' };
+    const ids = [id, ...(await this.kolomTambahan(id))];
+    await this.prisma.formItem.deleteMany({ where: { id: { in: ids } } });
+    return { message: 'Item dihapus', deleted: ids.length };
   }
 
   createFormItemOption(dto: any) {
@@ -278,8 +330,35 @@ export class MasterService {
       },
     });
   }
+  // Hapus pilihan manual -> kolom tambahan pilihan itu ikut terhapus (kalau
+  // kolom itu juga milik pilihan lain, pilihan ini saja yang dilepas).
   async deleteFormItemOption(id: string) {
-    await this.prisma.formItemOption.delete({ where: { id } });
+    const opt = await this.prisma.formItemOption.findUniqueOrThrow({
+      where: { id },
+      select: { value: true, item: { select: { key: true, sectionId: true } } },
+    });
+    const anak = await this.prisma.formItem.findMany({
+      where: { sectionId: opt.item.sectionId, conditionItemId: opt.item.key },
+      select: { id: true, conditionValue: true },
+    });
+    const hapus: string[] = [];
+    for (const a of anak) {
+      const nilai = nilaiKondisi(a.conditionValue);
+      if (!nilai.includes(opt.value)) continue;
+      const sisa = nilai.filter((v) => v !== opt.value);
+      if (sisa.length) {
+        await this.prisma.formItem.update({
+          where: { id: a.id },
+          data: { conditionValue: JSON.stringify(sisa) },
+        });
+      } else {
+        hapus.push(a.id, ...(await this.kolomTambahan(a.id)));
+      }
+    }
+    await this.prisma.$transaction([
+      this.prisma.formItem.deleteMany({ where: { id: { in: hapus } } }),
+      this.prisma.formItemOption.delete({ where: { id } }),
+    ]);
     return { message: 'Opsi dihapus' };
   }
 

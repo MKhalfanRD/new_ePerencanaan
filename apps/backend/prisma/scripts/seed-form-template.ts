@@ -210,6 +210,13 @@ function tabDasarPelaksanaan7691(): TabDef {
             key: 'sumberUsulanLainnya',
             label: 'Sumber Usulan Lainnya',
             fieldType: 'FIELDBOX',
+            // Tampil jika Sumber Usulan = salah satu ini (bisa diubah admin).
+            conditionItemId: 'sumberUsulanProyek',
+            conditionValue: JSON.stringify([
+              'Pemerintah Daerah',
+              'Kementerian/Lembaga',
+              'Lainnya',
+            ]),
           },
           {
             key: 'justifikasiProyek',

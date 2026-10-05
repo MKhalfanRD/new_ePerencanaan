@@ -23,6 +23,7 @@ import {
   hitungSkorEvaluasi,
   ScoringTabDef,
   ItemValueLookup,
+  kondisiTerpenuhi,
 } from './form-skor';
 import { LINTAS_KEGIATAN, roleEfektif } from '../auth/role';
 import { PreviewSkorDto, FormValueDto } from './dto/preview-skor.dto';
@@ -258,10 +259,6 @@ export class ProyekService {
     const genericValues = new Map(
       (formValues ?? []).map((f) => [f.key, f.value]),
     );
-    const activeConditionValues: Record<string, string> = {};
-    for (const f of formValues ?? []) {
-      if (typeof f.value === 'string') activeConditionValues[f.key] = f.value;
-    }
 
     const allItems = allActiveTabs.flatMap((t) =>
       t.sections.flatMap((s) => s.items),
@@ -289,7 +286,10 @@ export class ProyekService {
     }
 
     const lookup: ItemValueLookup = (key) => {
-      if (FIXED_ITEM_KEYS.has(key)) return input[key];
+      // Kolom tetap Proyek (field bawaan) — termasuk field teks seperti
+      // sumberUsulanLainnya yang bisa diberi skor "jika terisi".
+      if (FIXED_ITEM_KEYS.has(key) || (input && key in input))
+        return input[key];
       if (key in RATIO_ITEM_KEYS) return valuasi[RATIO_ITEM_KEYS[key]];
       if (uploadedKeys.has(key)) return true;
       return genericValues.get(key);
@@ -301,12 +301,15 @@ export class ProyekService {
         .filter(
           (i) =>
             !i.conditionItemId ||
-            activeConditionValues[i.conditionItemId] === i.conditionValue,
+            kondisiTerpenuhi(i.conditionValue, lookup(i.conditionItemId)),
         )
         .map((i) => ({
           key: i.key,
           score: i.score,
           isActive: true,
+          fieldType: i.fieldType,
+          conditionItemId: i.conditionItemId,
+          conditionValue: i.conditionValue,
           thresholdValue: i.thresholdValue,
           options: i.options.map((o) => ({
             value: o.value,

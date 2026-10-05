@@ -134,7 +134,7 @@ export function fromFormValueRows(
   const map: FormValuesMap = {};
   for (const fv of rows ?? []) {
     // Checkbox multi-pilih dari master disimpan sebagai JSON array.
-    if (fv.item.fieldType === "CHECKBOX" && fv.item.optionSource && fv.valueText) {
+    if (fv.item.fieldType === "CHECKBOX" && fv.valueText?.startsWith("[")) {
       try {
         map[fv.item.key] = { value: JSON.parse(fv.valueText) };
         continue;

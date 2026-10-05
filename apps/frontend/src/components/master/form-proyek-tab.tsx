@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
-import { Plus, Trash2, Copy, Loader2 } from "lucide-react";
+import { Plus, Trash2, Copy, Loader2, Settings2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,7 +38,6 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   isItemWide,
   WIDTH_LABEL,
-  TAB_ICONS,
   TAB_DEFAULT_DESCRIPTIONS,
 } from "@/lib/form-item-width";
 import type { TabKey } from "@/lib/form-item-width";
@@ -111,10 +110,12 @@ function Switch({
   checked,
   onChange,
   label,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -122,6 +123,7 @@ function Switch({
       role="switch"
       aria-checked={checked}
       title={label}
+      disabled={disabled}
       onClick={(e) => {
         e.stopPropagation();
         onChange(!checked);
@@ -129,6 +131,7 @@ function Switch({
       className={cn(
         "relative inline-flex h-5.5 w-10 shrink-0 items-center rounded-full transition-colors",
         checked ? "bg-emerald-500" : "bg-muted-foreground/25",
+        disabled && "cursor-not-allowed opacity-50",
       )}
     >
       <span
@@ -358,42 +361,17 @@ export function FormProyekTab({
   };
 
 
-  // Judul tab ringkas seperti form user; pengaturannya di panel "Atur tab".
+  // Nama tab sudah tampil di strip tab; pengaturan tab ada di panel kanan
+  // (tampil saat tidak ada field dipilih). Di sini cuma tanda tab tersembunyi.
   const renderAdminTabHeader: ProyekFormAdminHandlers["tabHeader"] = (
-    tabKey,
+    _tabKey,
     tab,
-  ) => {
-    if (!tab) return null;
-    const Icon = TAB_ICONS[tabKey];
-    return (
-      <button
-        type="button"
-        title="Atur tab ini"
-        onClick={() => {
-          setEditItemId(null);
-          setSelectedSectionId(null);
-        }}
-        className="mb-5 flex w-full items-center gap-3 rounded-xl border border-[#d0d7de] bg-white px-4 py-3 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-primary/60"
-      >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <Icon size={16} className="text-primary" />
-        </div>
-        <div className="min-w-0">
-          <p className="flex items-center gap-2 text-sm font-semibold">
-            {tab.label}
-            {tab.isActive === false && (
-              <Badge variant="outline" className="text-[9px] text-muted-foreground">
-                Disembunyikan dari form
-              </Badge>
-            )}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {tab.description || TAB_DEFAULT_DESCRIPTIONS[tabKey]}
-          </p>
-        </div>
-      </button>
-    );
-  };
+  ) =>
+    tab?.isActive === false ? (
+      <p className="mb-4 rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+        Tab ini sedang disembunyikan dari form.
+      </p>
+    ) : null;
 
   const renderAdminNote: ProyekFormAdminHandlers["note"] = (tabKey) => (
     <p className="text-xs text-muted-foreground italic px-1 border-l-2 border-slate-300 py-1">
@@ -544,14 +522,6 @@ export function FormProyekTab({
       0,
     );
 
-  const ALASAN_KUNCI: Record<string, string> = {
-    balaiId: "Proyek hanya punya 1 Balai.",
-    periodeId: "Proyek hanya punya 1 Periode.",
-    projectName: "Nama proyek selalu berupa teks.",
-  };
-  const alasanKunci = (item: FormItemNode) =>
-    ALASAN_KUNCI[item.key] ??
-    "Field bawaan sistem: bentuknya mengikuti data yang tersimpan di proyek. Butuh bentuk lain? Sembunyikan field ini, lalu tambah field baru.";
 
   const labelSkor = (item: FormItemNode) =>
     item.fieldType === "UPLOAD"
@@ -711,14 +681,22 @@ export function FormProyekTab({
     return (
       <div className="space-y-5">
         <div className="space-y-1">
-          <button
-            type="button"
-            onClick={() => setSelectedSectionId(null)}
-            className="text-xs font-medium text-primary hover:underline"
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-base font-bold">Atur bagian</p>
+            <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 shrink-0 text-[#59636e]"
+            title="Tutup"
+            aria-label="Tutup pengaturan"
+            onClick={() => {
+              setEditItemId(null);
+              setSelectedSectionId(null);
+            }}
           >
-            ← Kembali ke pengaturan tab
-          </button>
-          <p className="text-base font-bold">Atur bagian</p>
+            <X size={16} />
+          </Button>
+          </div>
           <p className="text-xs text-muted-foreground">
             Bagian = kelompok field dengan judul kecil di dalam satu tab.
           </p>
@@ -819,7 +797,22 @@ export function FormProyekTab({
               ← Kembali ke &quot;{induk.label}&quot;
             </button>
           )}
-          <p className="text-base font-bold">Atur field</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-base font-bold">Atur field</p>
+            <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 shrink-0 text-[#59636e]"
+            title="Tutup"
+            aria-label="Tutup pengaturan"
+            onClick={() => {
+              setEditItemId(null);
+              setSelectedSectionId(null);
+            }}
+          >
+            <X size={16} />
+          </Button>
+          </div>
         </div>
 
         {/* Dasar */}
@@ -863,9 +856,6 @@ export function FormProyekTab({
                 ))}
               </SelectContent>
             </Select>
-            {isBaku && (
-              <p className="text-[11px] text-amber-800">Terkunci: {alasanKunci(item)}</p>
-            )}
           </div>
           <div className="flex items-center justify-between gap-3">
             <Label className="flex-col items-start gap-0.5 text-sm font-normal">
@@ -883,39 +873,34 @@ export function FormProyekTab({
               />
             )}
           </div>
-          {!wajibTetap && (
-            <div className="flex items-center justify-between gap-3">
-              <Label className="text-sm font-normal">Tampil di form</Label>
-              <Switch
-                checked={item.isActive !== false}
-                onChange={(v) => patchItem(item.id, { isActive: v })}
-              />
-            </div>
-          )}
-          {item.isActive !== false &&
-            (section.isActive === false || tab.isActive === false) && (
-              <div className="space-y-2 rounded-md bg-amber-50 p-2.5 text-xs text-amber-900">
-                <p>
-                  Field ini aktif, tapi tidak muncul di form karena{" "}
-                  {tab.isActive === false
-                    ? `tab "${tab.label}"`
-                    : `bagian "${section.label}"`}{" "}
-                  sedang disembunyikan.
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 bg-white text-xs"
-                  onClick={() =>
-                    tab.isActive === false
-                      ? patchTab(tab.id, { isActive: true })
-                      : patchSection(section.id, { isActive: true })
-                  }
-                >
-                  Tampilkan {tab.isActive === false ? "tab" : "bagian"} ini
-                </Button>
-              </div>
-            )}
+          {!wajibTetap &&
+            (() => {
+              // Bagian/tab disembunyikan -> field ikut tersembunyi; saklarnya
+              // dikunci supaya tidak tampak "menyala tapi tidak tampil".
+              const induKTersembunyi =
+                tab.isActive === false
+                  ? `tab "${tab.label}"`
+                  : section.isActive === false
+                    ? `bagian "${section.label}"`
+                    : null;
+              return (
+                <div className="flex items-center justify-between gap-3">
+                  <Label className="flex-col items-start gap-0.5 text-sm font-normal">
+                    Tampil di form
+                    {induKTersembunyi && (
+                      <span className="block text-[11px] text-muted-foreground">
+                        Ikut tersembunyi karena {induKTersembunyi} disembunyikan
+                      </span>
+                    )}
+                  </Label>
+                  <Switch
+                    checked={!induKTersembunyi && item.isActive !== false}
+                    disabled={!!induKTersembunyi}
+                    onChange={(v) => patchItem(item.id, { isActive: v })}
+                  />
+                </div>
+              );
+            })()}
           {!induk &&
             (() => {
               const akar = akarDari(section);
@@ -927,16 +912,6 @@ export function FormProyekTab({
             })()}
         </div>
 
-        {induk && nilaiKondisi(item.conditionValue).length > 0 && (
-          <p className="rounded-md bg-primary/10 p-2.5 text-xs text-primary">
-            Kolom tambahan untuk pilihan &quot;
-            {nilaiKondisi(item.conditionValue)
-              .map((v) => pilihanItem(induk).find((o) => o.value === v)?.label ?? v)
-              .join(", ")}
-            &quot; di &quot;{induk.label}&quot;. Tidak punya skor sendiri: skor
-            pilihan itu baru masuk setelah kolom ini diisi.
-          </p>
-        )}
         {induk && nilaiKondisi(item.conditionValue).length === 0 && (
           <div className="space-y-2 rounded-md bg-amber-50 p-2.5 text-xs text-amber-900">
             <p>
@@ -1032,11 +1007,6 @@ export function FormProyekTab({
                   </Button>
                 )}
               </div>
-            )}
-            {isEnum && (
-              <p className="text-[11px] text-muted-foreground">
-                Pilihan tetap sistem: nama pilihan & skornya bisa diubah.
-              </p>
             )}
 
             {rows.length > 0 && (
@@ -1289,43 +1259,44 @@ export function FormProyekTab({
         </p>
       );
     }
-    const tampilkanJudul = sections.length > 1;
     return (
-      <div className="space-y-6">
-        {sections.length === 0 && (
-          <p className="text-xs text-muted-foreground italic">
-            Belum ada bagian di tab ini — tambah lewat panel kanan (&quot;Atur
-            tab&quot; → Tambah bagian).
-          </p>
-        )}
+      <div className="space-y-5">
         {sections.map((section) => {
           const akar = akarDari(section);
+          const terpilih = selectedSectionId === section.id;
           return (
-            <div
+            <section
               key={section.id}
-              className={cn("space-y-3", section.isActive === false && "opacity-60")}
+              aria-label={`Bagian ${section.label}`}
+              className={cn(
+                "space-y-3 rounded-[14px] bg-[#f6f8fa] p-4",
+                terpilih ? "border-2 border-primary" : "border border-[#d0d7de]",
+              )}
             >
-              {(tampilkanJudul || section.isActive === false) && (
-                <button
-                  type="button"
-                  title="Atur bagian ini"
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-sm font-bold">{section.label}</span>
+                  {section.isActive === false && (
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                      Disembunyikan
+                    </Badge>
+                  )}
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 shrink-0 text-[#59636e] hover:bg-white hover:text-foreground"
+                  title="Atur bagian"
+                  aria-label={`Atur bagian ${section.label}`}
                   onClick={() => {
                     setEditItemId(null);
                     setSelectedSectionId(section.id);
                   }}
-                  className={cn(
-                    "flex items-center gap-2 rounded px-1 text-left text-xs font-semibold uppercase tracking-wide text-[#59636e] hover:text-foreground",
-                    selectedSectionId === section.id && "text-primary",
-                  )}
                 >
-                  {section.label}
-                  {section.isActive === false && (
-                    <Badge variant="outline" className="text-[9px] text-muted-foreground">
-                      Disembunyikan
-                    </Badge>
-                  )}
-                </button>
-              )}
+                  <Settings2 size={16} />
+                </Button>
+              </div>
+              <div className={cn("space-y-3", section.isActive === false && "opacity-60")}>
               {akar.length === 0 && (
                 <p className="text-xs text-muted-foreground italic">
                   Belum ada field di bagian ini.
@@ -1370,9 +1341,17 @@ export function FormProyekTab({
               >
                 <Plus size={14} /> Tambah field
               </button>
-            </div>
+              </div>
+            </section>
           );
         })}
+        <button
+          type="button"
+          onClick={() => setAddSectionTabId(tabId)}
+          className="flex h-14 w-full items-center justify-center gap-1.5 rounded-[14px] border-2 border-dashed border-[#b6bec8] text-sm font-semibold text-[#3d4752] transition-colors hover:border-primary/60 hover:bg-white hover:text-primary"
+        >
+          <Plus size={15} /> Tambah bagian
+        </button>
       </div>
     );
   };

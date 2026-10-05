@@ -35,7 +35,7 @@ import {
 } from "@/components/master/field-control";
 import { sourceRowsFor, subLabel, useSourceData } from "@/lib/option-sources";
 import { kondisiTerpenuhi } from "@/lib/form-condition";
-import { pilihanLengkap, skorField } from "@/lib/form-score";
+import { skorField } from "@/lib/form-score";
 import {
   PaketLabel,
   PaketTemplateFields,
@@ -840,7 +840,6 @@ export function ProyekFormDialog({
                   )
                 : undefined
             }
-            optionScore={optionScoreFor(item)}
             uploadedFileName={
               pendingItemFiles[item.id]?.name ?? itemDokumen[item.id]?.fileName
             }
@@ -888,7 +887,9 @@ export function ProyekFormDialog({
           )}
           style={depth > 0 ? { marginLeft: (depth - 1) * 16 } : undefined}
         >
-          {sk && sk.maks > 0 && (
+          {/* Badge skor per field cuma utk admin ("Coba isi form" = previewMode);
+              user biasa hanya melihat Total skor tab. */}
+          {previewMode && sk && sk.maks > 0 && (
             <span
               className={cn(
                 "absolute right-0 top-0 z-10 rounded-full px-2 py-0.5 text-[10px] font-semibold",
@@ -947,30 +948,6 @@ export function ProyekFormDialog({
     );
   };
 
-  // Skor tiap pilihan utk ditampilkan di sebelah pilihannya.
-  function optionScoreFor(item: FormItemNode) {
-    if (!item.options.length) return undefined;
-    const section = formTemplate?.tabs
-      .flatMap((t) => t.sections)
-      .find((s) => s.items.some((i) => i.id === item.id));
-    const kolom = section ? kolomTambahanDari(section, item) : [];
-    const raw = nilaiSkor(item.key);
-    const dipilih = (Array.isArray(raw) ? raw : [raw]).map(String);
-    return (v: string) => {
-      const o = item.options.find((x) => x.value === v);
-      if (!o) return null;
-      return {
-        skor: o.score ?? 0,
-        masuk: dipilih.includes(v) && pilihanLengkap(v, nilaiSkor, kolom),
-      };
-    };
-  }
-
-  // Teks " (skor n)" utk pilihan di dropdown field bawaan.
-  const skorTeks = (item: FormItemNode, value: string) => {
-    const s = item.options.find((o) => o.value === value)?.score;
-    return s ? ` (skor ${s})` : "";
-  };
 
   // ===== Renderer field baku per tab — JSX PERSIS sama seperti sebelumnya,
   // cuma dipindah jadi fungsi keyed-by-item.key & label dari item.label
@@ -1210,7 +1187,6 @@ export function ProyekFormDialog({
             {sumberUsulanList.map((s) => (
               <SelectItem key={s.id} value={s.name}>
                 {s.name}
-                {skorTeks(item, s.name)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -1258,7 +1234,6 @@ export function ProyekFormDialog({
     defaults.map(([value, label]) => (
       <SelectItem key={value} value={value}>
         {item.options.find((o) => o.value === value)?.label || label}
-        {skorTeks(item, value)}
       </SelectItem>
     ));
 
@@ -1586,7 +1561,6 @@ export function ProyekFormDialog({
             {tematikList.map((t) => (
               <SelectItem key={t.id} value={t.id}>
                 {t.name}
-                {skorTeks(item, t.id)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -1611,7 +1585,6 @@ export function ProyekFormDialog({
             {pkpnList.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.name}
-                {skorTeks(item, p.id)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -1824,6 +1797,9 @@ export function ProyekFormDialog({
   }, [hasEvaluasi, formTemplate]);
 
   const allTabsVisited = visibleTabs.every((t) => visitedTabs.has(t.value));
+  const jumlahTabDibuka = visibleTabs.filter((t) => visitedTabs.has(t.value)).length;
+  // Buat proyek baru: kegiatan dulu, baru tab-tab form (isinya ikut kegiatan).
+  const perluPilihKegiatan = !adminMode && !isEdit && !previewMode && !selectedKegiatanId;
 
   useEffect(() => {
     onActiveTabChange?.(TAB_KEY_MAP[activeTab as (typeof TABS)[number]["value"]]);
@@ -2449,6 +2425,41 @@ export function ProyekFormDialog({
               Memuat data referensi...
             </span>
           </div>
+        ) : perluPilihKegiatan ? (
+          <div className="px-6 py-10">
+            <div className="mx-auto max-w-lg space-y-4 rounded-[14px] border border-[#d0d7de] bg-white p-6">
+              <div className="space-y-1">
+                <p className="text-base font-bold">Pilih kegiatan untuk memulai</p>
+                <p className="text-sm text-muted-foreground">
+                  Isian form menyesuaikan kegiatan yang dipilih.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pilih-kegiatan-awal">Kegiatan</Label>
+                <Select
+                  value={selectedKegiatanId || undefined}
+                  onValueChange={(v) => setSelectedKegiatanId(v)}
+                >
+                  <SelectTrigger
+                    id="pilih-kegiatan-awal"
+                    className="h-10 w-full min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1"
+                  >
+                    <SelectValue placeholder="Pilih kegiatan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {kegiatanList.map((k) => (
+                      <SelectItem key={k.id} value={k.id}>
+                        <span className="font-mono text-[10px] mr-1 shrink-0">
+                          {k.code}
+                        </span>
+                        <span className="min-w-0 truncate">{k.name}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
         ) : (
           <Tabs
             value={activeTab}
@@ -2459,28 +2470,19 @@ export function ProyekFormDialog({
             className={cn("flex-1 min-h-0", embedded && "flex-none")}
           >
             <div className={cn("pt-2", adminMode ? "px-0" : "px-6")}>
-              <TabsList
-                className={cn(
-                  "w-full",
-                  adminMode
-                    ? "h-auto flex-wrap justify-start gap-0 rounded-[12px] border border-[#d0d7de] bg-white p-0 px-2"
-                    : embedded
-                      ? "h-auto flex-wrap justify-start"
-                      : "flex-nowrap",
-                )}
-              >
+              <TabsList className="h-auto w-full flex-wrap justify-start gap-0 rounded-[12px] border border-[#d0d7de] bg-white p-0 px-2">
                 {visibleTabs.map((t) => (
                   <TabsTrigger
                     key={t.value}
                     value={t.value}
                     className={cn(
-                      "text-xs gap-1.5",
-                      embedded && "flex-none",
-                      adminMode &&
-                        "h-12 rounded-none border-0 border-b-[3px] border-transparent px-4 text-sm font-medium text-[#3d4752] shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:font-bold data-[state=active]:text-primary data-[state=active]:shadow-none",
+                      "h-11 flex-none gap-1.5 rounded-none border-0 border-b-[3px] border-transparent px-3.5 text-sm font-medium text-[#3d4752] shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:font-bold data-[state=active]:text-primary data-[state=active]:shadow-none",
                       adminMode && !isTabActive(t.value) && "opacity-50",
                     )}
                   >
+                    {!adminMode && !isEdit && !previewMode && visitedTabs.has(t.value) && (
+                      <span aria-label="sudah dibuka" className="text-emerald-600">✓</span>
+                    )}
                     {t.label}
                     {adminMode && !isTabActive(t.value) && (
                       <span className="text-[10px] font-normal">(disembunyikan)</span>
@@ -2518,7 +2520,6 @@ export function ProyekFormDialog({
                         <SelectValue placeholder="Pilih kegiatan" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={NONE}>— Tidak ada —</SelectItem>
                         {kegiatanList.map((k) => (
                           <SelectItem key={k.id} value={k.id}>
                             <span className="font-mono text-[10px] mr-1 shrink-0">
@@ -3089,9 +3090,11 @@ export function ProyekFormDialog({
             </>
           ) : (
             <>
-              {!isEdit && !allTabsVisited && (
+              {!isEdit && (perluPilihKegiatan || !allTabsVisited) && (
                 <p className="text-xs text-muted-foreground mr-auto">
-                  Kunjungi semua tab dulu sebelum menyimpan
+                  {perluPilihKegiatan
+                    ? "Pilih kegiatan dulu untuk mulai mengisi form"
+                    : `Buka semua tab dulu sebelum menyimpan (${jumlahTabDibuka} dari ${visibleTabs.length} sudah dibuka)`}
                 </p>
               )}
               <Button type="button" variant="outline" onClick={onClose}>

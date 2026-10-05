@@ -23,7 +23,8 @@ export class FormValueDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  value?: string | number | boolean | null;
+  // string[] = checkbox multi-pilih dari master.
+  value?: string | number | boolean | string[] | null;
 
   @ApiPropertyOptional() @IsOptional() @IsString() note?: string;
 }

@@ -223,6 +223,8 @@ export class MasterService {
         conditionItemId: dto.conditionItemId,
         conditionValue: dto.conditionValue,
         width: dto.width,
+        optionSource: dto.optionSource,
+        subLabels: dto.subLabels,
       },
     });
   }
@@ -241,6 +243,8 @@ export class MasterService {
         conditionItemId: dto.conditionItemId,
         conditionValue: dto.conditionValue,
         width: dto.width,
+        optionSource: dto.optionSource,
+        subLabels: dto.subLabels,
       },
     });
   }
@@ -323,6 +327,9 @@ export class MasterService {
                       thresholdValue: i.thresholdValue,
                       conditionItemId: i.conditionItemId,
                       conditionValue: i.conditionValue,
+                      width: i.width,
+                      optionSource: i.optionSource,
+                      subLabels: i.subLabels ?? undefined,
                       options: {
                         create: i.options.map((o) => ({
                           value: o.value,

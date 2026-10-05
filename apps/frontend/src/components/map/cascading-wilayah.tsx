@@ -26,9 +26,11 @@ export interface WilayahValue {
 interface Props {
   value: WilayahValue;
   onChange: (value: WilayahValue) => void;
+  // Label tiap tingkat — bisa diganti admin dari Form Proyek (subLabels).
+  labels?: Partial<Record<"province" | "city" | "district" | "village", string>>;
 }
 
-export function CascadingWilayah({ value, onChange }: Props) {
+export function CascadingWilayah({ value, onChange, labels }: Props) {
   const [provinces, setProvinces] = useState<WilayahItem[]>([]);
   const [regencies, setRegencies] = useState<WilayahItem[]>([]);
   const [districts, setDistricts] = useState<WilayahItem[]>([]);
@@ -92,7 +94,7 @@ export function CascadingWilayah({ value, onChange }: Props) {
     <div className="grid grid-cols-2 gap-4">
       <div className="space-y-2">
         <Label className="text-xs flex items-center gap-1.5">
-          Provinsi{" "}
+          {labels?.province ?? "Provinsi"}{" "}
           {loading.province && <Loader2 size={11} className="animate-spin" />}
         </Label>
         <Select
@@ -117,7 +119,7 @@ export function CascadingWilayah({ value, onChange }: Props) {
 
       <div className="space-y-2">
         <Label className="text-xs flex items-center gap-1.5">
-          Kota/Kabupaten{" "}
+          {labels?.city ?? "Kota/Kabupaten"}{" "}
           {loading.regency && <Loader2 size={11} className="animate-spin" />}
         </Label>
         <Select
@@ -151,7 +153,7 @@ export function CascadingWilayah({ value, onChange }: Props) {
 
       <div className="space-y-2">
         <Label className="text-xs flex items-center gap-1.5">
-          Kecamatan{" "}
+          {labels?.district ?? "Kecamatan"}{" "}
           {loading.district && <Loader2 size={11} className="animate-spin" />}
         </Label>
         <Select
@@ -183,7 +185,7 @@ export function CascadingWilayah({ value, onChange }: Props) {
 
       <div className="space-y-2">
         <Label className="text-xs flex items-center gap-1.5">
-          Desa/Kelurahan{" "}
+          {labels?.village ?? "Desa/Kelurahan"}{" "}
           {loading.village && <Loader2 size={11} className="animate-spin" />}
         </Label>
         <Select

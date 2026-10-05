@@ -41,12 +41,16 @@ function nilaiItem(item: ScoringItemDef, lookup: ItemValueLookup): number {
   const activeOptions = item.options.filter((o) => o.isActive);
   if (activeOptions.length) {
     const nilai = Array.isArray(raw) ? raw : [raw];
-    let skor = 0;
+    let skor: number | null = null;
     for (const v of nilai) {
       const opt = activeOptions.find((o) => o.value === String(v));
-      if (opt) skor = Math.max(skor, opt.score ?? 0);
+      if (opt?.score != null) skor = Math.max(skor ?? 0, opt.score);
     }
-    return skor;
+    if (skor != null) return skor;
+    // Pilihan tanpa skor sendiri (mis. baris master PKPN yang belum diberi
+    // skor) jatuh ke "skor jika terisi" milik item.
+    const terisi = nilai.some((v) => v != null && v !== '' && v !== false);
+    return terisi ? (item.score ?? 0) : 0;
   }
   if (item.thresholdValue != null) {
     const angka = typeof raw === 'number' ? raw : Number(raw);
@@ -60,10 +64,10 @@ function nilaiItem(item: ScoringItemDef, lookup: ItemValueLookup): number {
 
 function maksItem(item: ScoringItemDef): number {
   const activeOptions = item.options.filter((o) => o.isActive);
-  if (activeOptions.length) {
-    return Math.max(0, ...activeOptions.map((o) => o.score ?? 0));
-  }
-  return item.score ?? 0;
+  return Math.max(
+    item.score ?? 0,
+    ...activeOptions.map((o) => o.score ?? 0),
+  );
 }
 
 export function hitungSkorEvaluasi(
@@ -116,6 +120,21 @@ if (require.main === module) {
 
   const lookupKosong: ItemValueLookup = () => undefined;
   strictEqual(hitungSkorEvaluasi([dasar, kesiapan], lookupKosong), 0);
+
+  // Sumber master: baris ber-skor pakai skornya, baris lain jatuh ke skor
+  // item ("skor jika terisi"); multi-pilih ambil yang tertinggi.
+  const tagging: ScoringTabDef = {
+    bobot: 1,
+    items: [
+      { key: 'pkpnId', score: 1, isActive: true, options: [
+        { value: 'pkpn-a', score: 3, isActive: true },
+      ] },
+    ],
+  };
+  strictEqual(hitungSkorEvaluasi([tagging], () => 'pkpn-a'), 1);
+  strictEqual(hitungSkorEvaluasi([tagging], () => 'pkpn-b'), 0.3333);
+  strictEqual(hitungSkorEvaluasi([tagging], () => ['pkpn-b', 'pkpn-a']), 1);
+  strictEqual(hitungSkorEvaluasi([tagging], () => ''), 0);
 
   // Tab nonaktif/tanpa item aktif tidak boleh bikin NaN.
   strictEqual(hitungSkorEvaluasi([{ bobot: 0.2, items: [] }], lookupKosong), 0);

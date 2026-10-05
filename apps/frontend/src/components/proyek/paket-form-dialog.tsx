@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Package, MapPinned, Target } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,16 @@ import {
 } from "@/components/ui/select";
 import api from "@/lib/api";
 import { RO, Komponen, Paket } from "@/types";
+import type { FormItemNode, FormTabNode } from "./proyek-form-dialog";
+import {
+  PaketLabel,
+  PaketTemplateFields,
+  findMissingPaketItem,
+  fromFormValueRows,
+  paketSections,
+  toFormValueList,
+  type FormValuesMap,
+} from "./paket-template";
 
 const NONE = "__NONE__"; // Radix Select tidak boleh punya SelectItem value=""
 
@@ -211,9 +221,292 @@ export function PaketFormDialog({
   );
   const indikatorRoOptions = selectedRO?.indikatorRO ?? [];
 
+  // ===== Template tab Pemaketan — ikut kegiatan RO yang dipilih (sama cara
+  // backend menentukan template paket, lihat form-value-rows.ts). =====
+  const templateKegiatanId =
+    selectedRO?.kro.kegiatan.id ||
+    filterKegiatanId ||
+    editData?.ro.kro.kegiatan.id ||
+    "";
+  const [templateTabs, setTemplateTabs] = useState<FormTabNode[] | undefined>();
+  useEffect(() => {
+    if (!open || !templateKegiatanId) return setTemplateTabs(undefined);
+    api
+      .get(`/master/form-template/${templateKegiatanId}?activeOnly=true`)
+      .then((res) => setTemplateTabs(res.data.tabs))
+      .catch(() => setTemplateTabs(undefined));
+  }, [open, templateKegiatanId]);
+  const sections = paketSections(templateTabs);
+
+  const [formValues, setFormValues] = useState<FormValuesMap>({});
+  useEffect(() => {
+    if (open) setFormValues(fromFormValueRows(editData?.formValues));
+  }, [editData, open]);
+
+  const renderers: Record<string, (item: FormItemNode) => React.ReactNode> = {
+    paketName: (item) => (
+      <>
+        <PaketLabel item={item} />
+        <Input className="h-9 text-xs" {...register("name")} />
+        {errors.name && (
+          <p className="text-destructive text-xs">{errors.name.message}</p>
+        )}
+      </>
+    ),
+    // Cascade nomenklatur: Program > Kegiatan > KRO mempersempit daftar RO.
+    // Opsional — boleh langsung pilih RO.
+    paketRo: (item) => (
+      <>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="space-y-1">
+            <Label className="text-xs">Program</Label>
+            <Select
+              value={filterProgramId || NONE}
+              onValueChange={(v) => pickProgram(v === NONE ? "" : v)}
+            >
+              <SelectTrigger className="w-full h-9 text-xs">
+                <SelectValue placeholder="Semua program" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Semua program</SelectItem>
+                {programOptions.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.code} — {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Kegiatan</Label>
+            <Select
+              value={filterKegiatanId || NONE}
+              onValueChange={(v) => pickKegiatan(v === NONE ? "" : v)}
+            >
+              <SelectTrigger className="w-full h-9 text-xs">
+                <SelectValue placeholder="Semua kegiatan" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Semua kegiatan</SelectItem>
+                {kegiatanOptions.map((k) => (
+                  <SelectItem key={k.id} value={k.id}>
+                    {k.code} — {k.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">KRO</Label>
+            <Select
+              value={filterKroId || NONE}
+              onValueChange={(v) => pickKro(v === NONE ? "" : v)}
+            >
+              <SelectTrigger className="w-full h-9 text-xs">
+                <SelectValue placeholder="Semua KRO" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Semua KRO</SelectItem>
+                {kroOptions.map((k) => (
+                  <SelectItem key={k.id} value={k.id}>
+                    {k.code} — {k.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <PaketLabel item={item} />
+        <Select
+          value={selectedRoId}
+          onValueChange={handleRoChange}
+          onOpenChange={(o) => o && setRoSearch("")}
+        >
+          <SelectTrigger className="w-full h-9 text-xs">
+            <SelectValue placeholder="Pilih RO" />
+          </SelectTrigger>
+          <SelectContent>
+            {roOptions.length > 20 && (
+              <SelectSearchBox
+                value={roSearch}
+                onChange={setRoSearch}
+                placeholder="Cari RO..."
+              />
+            )}
+            {roOptions
+              .filter(
+                (r) =>
+                  !roSearch ||
+                  `${r.code} ${r.name}`
+                    .toLowerCase()
+                    .includes(roSearch.toLowerCase()),
+              )
+              .map((r) => (
+                <SelectItem key={r.id} value={r.id}>
+                  <span className="font-medium">
+                    {r.kro.kegiatan.code} · {r.kro.code} · {r.code}
+                  </span>
+                  <span className="text-muted-foreground ml-2 text-xs">
+                    — {r.name}
+                  </span>
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+        {errors.roId && (
+          <p className="text-destructive text-xs">{errors.roId.message}</p>
+        )}
+      </>
+    ),
+    paketKomponen: (item) => (
+      <>
+        <PaketLabel item={item} />
+        <Select
+          value={watch("komponenId") || NONE}
+          onValueChange={(v) => setValue("komponenId", v === NONE ? "" : v)}
+          disabled={!selectedRoId}
+          onOpenChange={(o) => o && setKomponenSearch("")}
+        >
+          <SelectTrigger className="w-full h-9 text-xs">
+            <SelectValue
+              placeholder={
+                selectedRoId ? "Pilih komponen (opsional)" : "Pilih RO dulu"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+            {komponenOptions.length > 20 && (
+              <SelectSearchBox
+                value={komponenSearch}
+                onChange={setKomponenSearch}
+                placeholder="Cari komponen..."
+              />
+            )}
+            {komponenOptions
+              .filter(
+                (k) =>
+                  !komponenSearch ||
+                  `${k.code} ${k.name}`
+                    .toLowerCase()
+                    .includes(komponenSearch.toLowerCase()),
+              )
+              .map((k) => (
+                <SelectItem key={k.id} value={k.id}>
+                  {k.code} — {k.name}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+      </>
+    ),
+    paketJenis: (item) => (
+      <>
+        <PaketLabel item={item} />
+        <Select
+          value={watch("jenis")}
+          onValueChange={(v) => setValue("jenis", v as any)}
+        >
+          <SelectTrigger className="h-9 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="FISIK">Fisik</SelectItem>
+            <SelectItem value="NON_FISIK">Non-Fisik</SelectItem>
+          </SelectContent>
+        </Select>
+      </>
+    ),
+    paketMasa: (item) => (
+      <>
+        <PaketLabel item={item} />
+        <Select
+          value={watch("masaPelaksanaan")}
+          onValueChange={(v) => setValue("masaPelaksanaan", v as any)}
+        >
+          <SelectTrigger className="h-9 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="SINGLE_YEAR">Single Year</SelectItem>
+            <SelectItem value="MULTI_YEAR">Multi Year</SelectItem>
+          </SelectContent>
+        </Select>
+      </>
+    ),
+    paketDokLing: (item) => (
+      <>
+        <PaketLabel item={item} />
+        <Input
+          className="h-9 text-xs"
+          placeholder="Contoh: Sesuai / Belum Ada"
+          {...register("dokLingStatus")}
+        />
+      </>
+    ),
+    paketIndikatorRo: (item) => (
+      <>
+        <PaketLabel item={item} />
+        <Select
+          value={watch("indikatorRoId") || NONE}
+          onValueChange={(v) => setValue("indikatorRoId", v === NONE ? "" : v)}
+          disabled={!selectedRoId}
+          onOpenChange={(o) => o && setIndikatorRoSearch("")}
+        >
+          <SelectTrigger className="w-full h-9 text-xs">
+            <SelectValue
+              placeholder={selectedRoId ? "Pilih (opsional)" : "Pilih RO dulu"}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+            {indikatorRoOptions.length > 20 && (
+              <SelectSearchBox
+                value={indikatorRoSearch}
+                onChange={setIndikatorRoSearch}
+                placeholder="Cari indikator RO..."
+              />
+            )}
+            {indikatorRoOptions
+              .filter(
+                (i) =>
+                  !indikatorRoSearch ||
+                  i.nama.toLowerCase().includes(indikatorRoSearch.toLowerCase()),
+              )
+              .map((i) => (
+                <SelectItem key={i.id} value={i.id}>
+                  {i.nama}
+                  {(i.satuanList?.length ?? 0) > 0 &&
+                    ` (${i.satuanList!.map((s) => s.satuan.name).join(", ")})`}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+      </>
+    ),
+  };
+
+  // Kolom form per key baku — dipakai cek "wajib diisi".
+  const KOLOM: Record<string, keyof FormData> = {
+    paketName: "name",
+    paketRo: "roId",
+    paketKomponen: "komponenId",
+    paketIndikatorRo: "indikatorRoId",
+    paketJenis: "jenis",
+    paketMasa: "masaPelaksanaan",
+    paketDokLing: "dokLingStatus",
+  };
+
   const onSubmit = async (data: FormData) => {
+    const missing = findMissingPaketItem(
+      sections,
+      (key) => data[KOLOM[key]],
+      formValues,
+    );
+    if (missing) return toast.error(`Lengkapi field wajib "${missing}"`);
     const payload = {
       ...data,
+      formValues: toFormValueList(formValues),
       komponenId: data.komponenId || undefined,
       dokLingStatus: data.dokLingStatus || undefined,
       indikatorRoId: data.indikatorRoId || undefined,
@@ -267,294 +560,33 @@ export function PaketFormDialog({
             </div>
           ) : (
             <>
-              {/* === IDENTITAS === */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  <Package size={13} /> Identitas Paket
-                </div>
-
+              {/* Kode Paket digenerate otomatis saat paket dibuat — cuma
+                  ditampilkan (read-only) di mode edit, tidak bisa diisi
+                  manual. */}
+              {isEdit && editData?.kodePaket && (
                 <div className="space-y-2">
-                  <Label className="text-xs">
-                    Nama Paket <span className="text-destructive">*</span>
-                  </Label>
-                  <Input className="h-9 text-xs" {...register("name")} />
-                  {errors.name && (
-                    <p className="text-destructive text-xs">
-                      {errors.name.message}
-                    </p>
-                  )}
-                </div>
-
-                {/* Kode Paket digenerate otomatis saat paket dibuat — cuma
-                    ditampilkan (read-only) di mode edit, tidak bisa diisi
-                    manual. */}
-                {isEdit && editData?.kodePaket && (
-                  <div className="space-y-2">
-                    <Label className="text-xs">Kode Paket</Label>
-                    <Input
-                      className="h-9 text-xs bg-muted"
-                      value={editData.kodePaket}
-                      readOnly
-                    />
-                  </div>
-                )}
-
-                {/* Cascade nomenklatur: Program > Kegiatan > KRO mempersempit
-                    daftar RO. Opsional — boleh langsung pilih RO. */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Program</Label>
-                    <Select
-                      value={filterProgramId || NONE}
-                      onValueChange={(v) => pickProgram(v === NONE ? "" : v)}
-                    >
-                      <SelectTrigger className="w-full h-9 text-xs">
-                        <SelectValue placeholder="Semua program" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE}>Semua program</SelectItem>
-                        {programOptions.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.code} — {p.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Kegiatan</Label>
-                    <Select
-                      value={filterKegiatanId || NONE}
-                      onValueChange={(v) => pickKegiatan(v === NONE ? "" : v)}
-                    >
-                      <SelectTrigger className="w-full h-9 text-xs">
-                        <SelectValue placeholder="Semua kegiatan" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE}>Semua kegiatan</SelectItem>
-                        {kegiatanOptions.map((k) => (
-                          <SelectItem key={k.id} value={k.id}>
-                            {k.code} — {k.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">KRO</Label>
-                    <Select
-                      value={filterKroId || NONE}
-                      onValueChange={(v) => pickKro(v === NONE ? "" : v)}
-                    >
-                      <SelectTrigger className="w-full h-9 text-xs">
-                        <SelectValue placeholder="Semua KRO" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE}>Semua KRO</SelectItem>
-                        {kroOptions.map((k) => (
-                          <SelectItem key={k.id} value={k.id}>
-                            {k.code} — {k.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-xs">
-                    RO (Rincian Output){" "}
-                    <span className="text-destructive">*</span>
-                  </Label>
-                  <Select
-                    value={selectedRoId}
-                    onValueChange={handleRoChange}
-                    onOpenChange={(o) => o && setRoSearch("")}
-                  >
-                    <SelectTrigger className="w-full h-9 text-xs">
-                      <SelectValue placeholder="Pilih RO" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {roOptions.length > 20 && (
-                        <SelectSearchBox
-                          value={roSearch}
-                          onChange={setRoSearch}
-                          placeholder="Cari RO..."
-                        />
-                      )}
-                      {roOptions
-                        .filter(
-                          (r) =>
-                            !roSearch ||
-                            `${r.code} ${r.name}`
-                              .toLowerCase()
-                              .includes(roSearch.toLowerCase()),
-                        )
-                        .map((r) => (
-                          <SelectItem key={r.id} value={r.id}>
-                            <span className="font-medium">
-                              {r.kro.kegiatan.code} · {r.kro.code} · {r.code}
-                            </span>
-                            <span className="text-muted-foreground ml-2 text-xs">
-                              — {r.name}
-                            </span>
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                  {errors.roId && (
-                    <p className="text-destructive text-xs">
-                      {errors.roId.message}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-xs">Komponen</Label>
-                  <Select
-                    value={watch("komponenId") || NONE}
-                    onValueChange={(v) =>
-                      setValue("komponenId", v === NONE ? "" : v)
-                    }
-                    disabled={!selectedRoId}
-                    onOpenChange={(o) => o && setKomponenSearch("")}
-                  >
-                    <SelectTrigger className="w-full h-9 text-xs">
-                      <SelectValue
-                        placeholder={
-                          selectedRoId
-                            ? "Pilih komponen (opsional)"
-                            : "Pilih RO dulu"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                      {komponenOptions.length > 20 && (
-                        <SelectSearchBox
-                          value={komponenSearch}
-                          onChange={setKomponenSearch}
-                          placeholder="Cari komponen..."
-                        />
-                      )}
-                      {komponenOptions
-                        .filter(
-                          (k) =>
-                            !komponenSearch ||
-                            `${k.code} ${k.name}`
-                              .toLowerCase()
-                              .includes(komponenSearch.toLowerCase()),
-                        )
-                        .map((k) => (
-                          <SelectItem key={k.id} value={k.id}>
-                            {k.code} — {k.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label className="text-xs">Jenis Paket</Label>
-                    <Select
-                      value={watch("jenis")}
-                      onValueChange={(v) => setValue("jenis", v as any)}
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="FISIK">Fisik</SelectItem>
-                        <SelectItem value="NON_FISIK">Non-Fisik</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Masa Pelaksanaan</Label>
-                    <Select
-                      value={watch("masaPelaksanaan")}
-                      onValueChange={(v) =>
-                        setValue("masaPelaksanaan", v as any)
-                      }
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="SINGLE_YEAR">Single Year</SelectItem>
-                        <SelectItem value="MULTI_YEAR">Multi Year</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-
-              {/* === DOKUMEN LINGKUNGAN === */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  <MapPinned size={13} /> Dokumen Lingkungan
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">Dokumen Lingkungan</Label>
+                  <Label className="text-xs">Kode Paket</Label>
                   <Input
-                    className="h-9 text-xs"
-                    placeholder="Contoh: Sesuai / Belum Ada"
-                    {...register("dokLingStatus")}
+                    className="h-9 text-xs bg-muted"
+                    value={editData.kodePaket}
+                    readOnly
                   />
                 </div>
-              </div>
+              )}
 
-              {/* === INDIKATOR RO === */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  <Target size={13} /> Indikator RO
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">Indikator RO (IRO)</Label>
-                  <Select
-                    value={watch("indikatorRoId") || NONE}
-                    onValueChange={(v) =>
-                      setValue("indikatorRoId", v === NONE ? "" : v)
-                    }
-                    disabled={!selectedRoId}
-                    onOpenChange={(o) => o && setIndikatorRoSearch("")}
-                  >
-                    <SelectTrigger className="w-full h-9 text-xs">
-                      <SelectValue
-                        placeholder={
-                          selectedRoId ? "Pilih (opsional)" : "Pilih RO dulu"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-                      {indikatorRoOptions.length > 20 && (
-                        <SelectSearchBox
-                          value={indikatorRoSearch}
-                          onChange={setIndikatorRoSearch}
-                          placeholder="Cari indikator RO..."
-                        />
-                      )}
-                      {indikatorRoOptions
-                        .filter(
-                          (i) =>
-                            !indikatorRoSearch ||
-                            i.nama
-                              .toLowerCase()
-                              .includes(indikatorRoSearch.toLowerCase()),
-                        )
-                        .map((i) => (
-                          <SelectItem key={i.id} value={i.id}>
-                            {i.nama}
-                            {(i.satuanList?.length ?? 0) > 0 &&
-                              ` (${i.satuanList!.map((s) => s.satuan.name).join(", ")})`}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+              {/* Field paket ikut template tab Pemaketan (Master Data >
+                  Form Proyek) kegiatan RO yang dipilih. */}
+              <PaketTemplateFields
+                sections={sections}
+                renderers={renderers}
+                values={formValues}
+                onChange={(key, patch) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    [key]: { ...prev[key], ...patch },
+                  }))
+                }
+              />
 
               {/* === SKOR (read-only, diisi sistem nanti) === */}
               {isEdit && (

@@ -1,5 +1,13 @@
-import { IsOptional, IsEnum, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsOptional,
+  IsEnum,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { FormValueDto } from '../../proyek/dto/preview-skor.dto';
 
 export class CreatePaketDto {
   @ApiProperty()
@@ -38,4 +46,12 @@ export class CreatePaketDto {
   // PKPN/ISP/ISK/Tematik/fkb/fkw/mpa/catatan pindah ke Proyek (1 proyek =
   // 1 set tagging) — lihat CreateProyekDto.
   @ApiPropertyOptional() @IsOptional() @IsString() indikatorRoId?: string;
+
+  // Isian field custom tab Pemaketan (paket_form_value).
+  @ApiPropertyOptional({ type: [FormValueDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FormValueDto)
+  formValues?: FormValueDto[];
 }

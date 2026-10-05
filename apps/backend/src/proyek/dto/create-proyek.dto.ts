@@ -114,6 +114,14 @@ export class PaketDto {
 
   @ApiPropertyOptional() @IsOptional() @IsString() indikatorRoId?: string;
 
+  // Isian field custom tab Pemaketan (paket_form_value).
+  @ApiPropertyOptional({ type: [FormValueDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FormValueDto)
+  formValues?: FormValueDto[];
+
   @ApiPropertyOptional({ type: [AlokasiDto] })
   @IsOptional()
   @IsArray()

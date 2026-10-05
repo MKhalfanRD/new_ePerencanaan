@@ -11,6 +11,7 @@ import {
   generateKodeProyek,
   generateKodePaket,
 } from '../common/kode-generator';
+import { paketFormValueRows } from '../common/form-value-rows';
 
 const paketDetailInclude = {
   proyek: { select: { id: true, projectName: true, status: true } },
@@ -21,6 +22,7 @@ const paketDetailInclude = {
   },
   komponen: true,
   indikatorRo: true,
+  formValues: { include: { item: true, option: true } },
   alokasi: {
     include: { lokasi: true },
     orderBy: [{ tahun: 'asc' as const }, { status: 'asc' as const }],
@@ -72,6 +74,7 @@ export class PaketService {
           return generated;
         })());
       const kodePaket = await generateKodePaket(tx, kodeProyek);
+      const formValues = await paketFormValueRows(tx, dto.roId, dto.formValues);
 
       return tx.paket.create({
         data: {
@@ -84,6 +87,7 @@ export class PaketService {
           masaPelaksanaan: dto.masaPelaksanaan as any,
           dokLingStatus: dto.dokLingStatus,
           indikatorRoId: dto.indikatorRoId,
+          formValues: formValues.length ? { create: formValues } : undefined,
         },
         include: paketDetailInclude,
       });
@@ -106,20 +110,35 @@ export class PaketService {
     const paket = await this.prisma.paket.findUnique({ where: { id } });
     if (!paket) throw new NotFoundException('Paket tidak ditemukan');
 
-    const updated = await this.prisma.paket.update({
-      where: { id },
-      data: {
-        // kodePaket sengaja tidak diikutkan — dibuat sekali saat create,
-        // permanen, tidak bisa diubah lewat edit.
-        name: dto.name,
-        roId: dto.roId,
-        komponenId: dto.komponenId,
-        jenis: dto.jenis as any,
-        masaPelaksanaan: dto.masaPelaksanaan as any,
-        dokLingStatus: dto.dokLingStatus,
-        indikatorRoId: dto.indikatorRoId,
-      },
-      include: paketDetailInclude,
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // formValues tidak dikirim = jangan sentuh isian lama.
+      const formValues =
+        dto.formValues === undefined
+          ? undefined
+          : {
+              deleteMany: {},
+              create: await paketFormValueRows(
+                tx,
+                dto.roId ?? paket.roId,
+                dto.formValues,
+              ),
+            };
+      return tx.paket.update({
+        where: { id },
+        data: {
+          formValues,
+          // kodePaket sengaja tidak diikutkan — dibuat sekali saat create,
+          // permanen, tidak bisa diubah lewat edit.
+          name: dto.name,
+          roId: dto.roId,
+          komponenId: dto.komponenId,
+          jenis: dto.jenis as any,
+          masaPelaksanaan: dto.masaPelaksanaan as any,
+          dokLingStatus: dto.dokLingStatus,
+          indikatorRoId: dto.indikatorRoId,
+        },
+        include: paketDetailInclude,
+      });
     });
 
     await this.invalidateProyek(paket.proyekId);

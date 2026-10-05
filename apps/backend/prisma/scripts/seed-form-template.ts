@@ -42,6 +42,21 @@ const oldDump: OldDump | null =
     ? JSON.parse(fs.readFileSync(OLD_DUMP_PATH, 'utf-8'))
     : null;
 
+// Field bawaan yang pilihannya dari tabel master (lihat FormItem.optionSource).
+const BAKU_SOURCE: Record<string, string> = {
+  balaiId: 'balai',
+  periodeId: 'periode',
+  wilayahSungaiId: 'wilayahSungai',
+  sumberUsulanProyek: 'sumberUsulan',
+  kegiatanPrioritasId: 'kegiatanPrioritas',
+  indikatorSasaranProgramId: 'isp',
+  indikatorSasaranKegiatanId: 'isk',
+  tematikRenjaId: 'tematikRenja',
+  pkpnId: 'pkpn',
+  taggingDinamis: 'taggingDinamis',
+  provinceId: 'wilayah',
+};
+
 type ItemDef = {
   key: string;
   label: string;
@@ -107,10 +122,29 @@ function tabStrukturalLokasi(): TabDef {
   };
 }
 function tabStrukturalPemaketan(): TabDef {
-  // Tidak ada item — bagian pemaketan (tambah/kelola paket) selalu tampil
-  // utuh saat tab ini aktif, belum ada sub-field yang bisa diatur granular
-  // (lihat proyek-form-dialog.tsx, TAB pemaketan tidak dibungkus per-field).
-  return { key: 'pemaketan', label: 'Pemaketan', bobot: null, sections: [] };
+  // Field per PAKET (bukan per proyek) — key paket* dirender renderer khusus
+  // (paket-template.tsx), item custom tambahan admin disimpan di
+  // paket_form_value. Blok alokasi tahun berjalan tetap di luar template.
+  return {
+    key: 'pemaketan',
+    label: 'Pemaketan',
+    bobot: null,
+    sections: [
+      {
+        key: 'data-paket',
+        label: 'Data Paket',
+        items: [
+          { key: 'paketName', label: 'Nama Paket', fieldType: 'TEXT' },
+          { key: 'paketRo', label: 'RO (Rincian Output)', fieldType: 'DROPDOWN' },
+          { key: 'paketKomponen', label: 'Komponen', fieldType: 'DROPDOWN' },
+          { key: 'paketIndikatorRo', label: 'Indikator RO (IRO)', fieldType: 'DROPDOWN' },
+          { key: 'paketJenis', label: 'Jenis Paket', fieldType: 'DROPDOWN' },
+          { key: 'paketMasa', label: 'Masa Pelaksanaan', fieldType: 'DROPDOWN' },
+          { key: 'paketDokLing', label: 'Dokumen Lingkungan (status)', fieldType: 'TEXT' },
+        ],
+      },
+    ],
+  };
 }
 function tabStrukturalDokumen(): TabDef {
   return {
@@ -277,11 +311,11 @@ function tabTematik7691(): TabDef {
         key: 'tematik',
         label: 'Tematik',
         items: [
-          { key: 'kegiatanPrioritasId', label: 'RPJMN — PN / PP / KP', fieldType: 'CHECKBOX', score: 1 },
-          { key: 'indikatorSasaranProgramId', label: 'Indikator Sasaran Program (ISP)', fieldType: 'CHECKBOX', score: 1 },
-          { key: 'indikatorSasaranKegiatanId', label: 'Indikator Sasaran Kegiatan (ISK)', fieldType: 'CHECKBOX', score: 1 },
-          { key: 'tematikRenjaId', label: 'Tematik RENJA', fieldType: 'CHECKBOX', score: 1 },
-          { key: 'pkpnId', label: 'PKPN', fieldType: 'CHECKBOX', score: 1 },
+          { key: 'kegiatanPrioritasId', label: 'RPJMN — PN / PP / KP', fieldType: 'DROPDOWN', score: 1 },
+          { key: 'indikatorSasaranProgramId', label: 'Indikator Sasaran Program (ISP)', fieldType: 'DROPDOWN', score: 1 },
+          { key: 'indikatorSasaranKegiatanId', label: 'Indikator Sasaran Kegiatan (ISK)', fieldType: 'DROPDOWN', score: 1 },
+          { key: 'tematikRenjaId', label: 'Tematik RENJA', fieldType: 'DROPDOWN', score: 1 },
+          { key: 'pkpnId', label: 'PKPN', fieldType: 'DROPDOWN', score: 1 },
           { key: 'fkb', label: 'FKB', fieldType: 'CHECKBOX', score: 1 },
           { key: 'fkw', label: 'FKW', fieldType: 'CHECKBOX', score: 1 },
           { key: 'mpa', label: 'MPA', fieldType: 'CHECKBOX', score: 1 },
@@ -533,6 +567,7 @@ async function seedKegiatan(kegiatanId: string, tabs: TabDef[]) {
                   thresholdValue: it.thresholdValue ?? null,
                   conditionItemId: it.conditionItemId ?? null,
                   conditionValue: it.conditionValue ?? null,
+                  optionSource: BAKU_SOURCE[it.key] ?? null,
                   options: it.options
                     ? {
                         create: it.options.map((o, oi) => ({

@@ -29,7 +29,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { FieldControl } from "@/components/master/field-control";
+import {
+  FieldControl,
+  type FieldControlValue,
+} from "@/components/master/field-control";
+import { sourceRowsFor, subLabel, useSourceData } from "@/lib/option-sources";
+import {
+  PaketLabel,
+  PaketTemplateFields,
+  PAKET_ALWAYS_REQUIRED_KEYS,
+  PAKET_BAKU_KEYS,
+  findMissingPaketItem,
+  fromFormValueRows,
+  paketSections,
+  toFormValueList,
+} from "./paket-template";
 import { cn } from "@/lib/utils";
 import {
   isItemWide,
@@ -84,6 +98,8 @@ export interface FormItemNode {
   isActive?: boolean;
   score?: number | null;
   required?: boolean;
+  optionSource?: string | null;
+  subLabels?: Record<string, string> | null;
   options: FormItemOption[];
 }
 export interface FormTabNode {
@@ -105,7 +121,7 @@ interface FormTemplateTree {
   tabs: FormTabNode[];
 }
 
-type FormValueEntry = { value?: string | boolean | number; note?: string };
+type FormValueEntry = FieldControlValue;
 
 interface PkpnOpt {
   id: string;
@@ -189,6 +205,13 @@ const schema = z.object({
       outcomeTarget: z.number().optional(),
       outcomeUnit: z.string().optional(),
       catatan: z.string().optional(),
+      // Isian field custom tab Pemaketan (key FormItem -> nilai).
+      formValues: z
+        .record(
+          z.string(),
+          z.object({ value: z.any(), note: z.string().optional() }),
+        )
+        .optional(),
     }),
   ),
 
@@ -250,6 +273,9 @@ interface Props {
   // refetch `formTemplate` di sini, karena mode admin TIDAK simpan salinan
   // template terpisah (dialog ini satu-satunya sumber datanya).
   adminRefreshToken?: number;
+  // Naik tiap isi tabel master diubah dari kanvas ("Kelola data …") —
+  // daftar Balai/PKPN/dst di form ikut di-fetch ulang.
+  masterRefreshToken?: number;
   initialKegiatanId?: string;
 }
 
@@ -315,6 +341,7 @@ const FIELD_TO_TAB: Record<string, (typeof TABS)[number]["value"]> = {
 export const BAKU_ITEM_KEYS = new Set<string>([
   ...Object.keys(FIELD_TO_TAB),
   "dokumenPendukung",
+  ...PAKET_BAKU_KEYS,
 ]);
 
 // Subset BAKU_ITEM_KEYS yang kolomnya NOT NULL di tabel Proyek (lihat
@@ -324,6 +351,7 @@ export const ALWAYS_REQUIRED_BAKU_KEYS = new Set<string>([
   "balaiId",
   "periodeId",
   "projectName",
+  ...PAKET_ALWAYS_REQUIRED_KEYS,
 ]);
 
 function SectionHeader({
@@ -359,6 +387,7 @@ export function ProyekFormDialog({
   adminMode = false,
   adminHandlers,
   adminRefreshToken,
+  masterRefreshToken,
   embedded = false,
   initialKegiatanId,
 }: Props) {
@@ -386,7 +415,7 @@ export function ProyekFormDialog({
     null,
   );
   const [formValuesMap, setFormValuesMap] = useState<
-    Record<string, { value?: string | boolean | number; note?: string }>
+    Record<string, FieldControlValue>
   >({});
 
   const [pnList, setPnList] = useState<PrioritasNasional[]>([]);
@@ -505,7 +534,7 @@ export function ProyekFormDialog({
         },
       )
       .finally(() => setLoadingMaster(false));
-  }, [open]);
+  }, [open, masterRefreshToken]);
 
   useEffect(() => {
     if (!open) return;
@@ -635,29 +664,14 @@ export function ProyekFormDialog({
       setFormValuesMap({});
       return;
     }
-    const map: typeof formValuesMap = {};
-    for (const fv of editData.formValues) {
-      // Checkbox polos tercentang tidak menyimpan value/valueText/valueNumber
-      // apa pun — cuma keberadaan barisnya = "dicentang" (lihat
-      // proyek.service.ts hitungEvaluasi). Kalau ketiganya kosong & item ini
-      // tidak punya opsi, itu tandanya checkbox true, bukan field kosong.
-      const value =
-        fv.option?.value ??
-        fv.valueNumber ??
-        fv.valueText ??
-        (fv.option ? undefined : true);
-      map[fv.item.key] = {
-        value,
-        note: fv.option ? (fv.valueText ?? undefined) : undefined,
-      };
-    }
+    const map: typeof formValuesMap = fromFormValueRows(editData.formValues);
     setFormValuesMap(map);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editData, open]);
 
   const setFormValue = (
     key: string,
-    patch: { value?: string | boolean | number; note?: string },
+    patch: FieldControlValue,
   ) =>
     setFormValuesMap((prev) => ({
       ...prev,
@@ -747,6 +761,19 @@ export function ProyekFormDialog({
   // key-nya tidak ada di situ, dianggap field custom & dirender generik
   // lewat FieldControl. Judul section cuma ditampilkan mulai section ke-2
   // (section pertama sudah terwakili oleh SectionHeader tab).
+  // Baris master utk field custom ber-sumber master (field bawaan punya
+  // daftar sendiri di renderer-nya).
+  const sourceData = useSourceData(
+    (formTemplate?.tabs ?? []).flatMap((t) =>
+      t.sections.flatMap((s) =>
+        s.items
+          .filter((i) => !BAKU_ITEM_KEYS.has(i.key))
+          .map((i) => i.optionSource),
+      ),
+    ),
+    (adminRefreshToken ?? 0) + (masterRefreshToken ?? 0),
+  );
+
   const renderTemplatedTab = (
     value: (typeof TABS)[number]["value"],
     renderers: Record<string, (item: FormItemNode) => React.ReactNode>,
@@ -763,6 +790,15 @@ export function ProyekFormDialog({
             item={item}
             value={formValuesMap[item.key]}
             onChange={(patch) => setFormValue(item.key, patch)}
+            sourceRows={
+              item.optionSource
+                ? sourceRowsFor(
+                    item.key,
+                    item.optionSource,
+                    sourceData[item.optionSource] ?? [],
+                  )
+                : undefined
+            }
             uploadedFileName={
               pendingItemFiles[item.id]?.name ?? itemDokumen[item.id]?.fileName
             }
@@ -974,6 +1010,12 @@ export function ProyekFormDialog({
         <CascadingWilayah
           value={Object.fromEntries(WILAYAH_KEYS.map((k) => [k, watch(k)]))}
           onChange={setWilayah}
+          labels={{
+            province: subLabel(item, "province"),
+            city: subLabel(item, "city"),
+            district: subLabel(item, "district"),
+            village: subLabel(item, "village"),
+          }}
         />
       </div>
     ),
@@ -1078,6 +1120,16 @@ export function ProyekFormDialog({
     statusDokumenLingkungan: { tahunField: "tahunDokumenLingkungan" },
     statusLarap: { tahunField: "tahunLarap" },
   };
+  // Pilihan field enum bawaan (status kriteria, kewenangan, kebutuhan tanah):
+  // label ikut opsi template (bisa diedit admin), value tetap. Opsi yang
+  // belum ada di template pakai label default.
+  const enumOptions = (item: FormItemNode, defaults: [string, string][]) =>
+    defaults.map(([value, label]) => (
+      <SelectItem key={value} value={value}>
+        {item.options.find((o) => o.value === value)?.label || label}
+      </SelectItem>
+    ));
+
   const renderKriteriaStatus = (item: FormItemNode) => {
     const statusField = item.key as
       | "statusStudiLayak"
@@ -1094,14 +1146,16 @@ export function ProyekFormDialog({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="RENCANA">Rencana</SelectItem>
-            <SelectItem value="SUDAH_ADA">Sudah Ada</SelectItem>
-            <SelectItem value="TIDAK_PERLU">Tidak Perlu</SelectItem>
+            {enumOptions(item, [
+              ["RENCANA", "Rencana"],
+              ["SUDAH_ADA", "Sudah Ada"],
+              ["TIDAK_PERLU", "Tidak Perlu"],
+            ])}
           </SelectContent>
         </Select>
         <Input
           type="number"
-          placeholder="Tahun"
+          placeholder={subLabel(item, "tahun")}
           className="h-9 text-xs"
           disabled={status === "TIDAK_PERLU"}
           {...register(tahunField, { setValueAs: toOptionalNumber })}
@@ -1118,15 +1172,17 @@ export function ProyekFormDialog({
       <div key={item.id} className="space-y-2">
         <Label className="text-xs">{item.label}</Label>
         <Select
-          value={watch("kebutuhanTanah") ? "ya" : "tidak"}
-          onValueChange={(v) => setValue("kebutuhanTanah", v === "ya")}
+          value={String(!!watch("kebutuhanTanah"))}
+          onValueChange={(v) => setValue("kebutuhanTanah", v === "true")}
         >
           <SelectTrigger className="h-9 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="tidak">Tidak Ada</SelectItem>
-            <SelectItem value="ya">Ada</SelectItem>
+            {enumOptions(item, [
+              ["false", "Tidak Ada"],
+              ["true", "Ada"],
+            ])}
           </SelectContent>
         </Select>
       </div>
@@ -1139,8 +1195,10 @@ export function ProyekFormDialog({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="PUSAT">Pusat</SelectItem>
-            <SelectItem value="DAERAH">Daerah</SelectItem>
+            {enumOptions(item, [
+              ["PUSAT", "Pusat"],
+              ["DAERAH", "Daerah"],
+            ])}
           </SelectContent>
         </Select>
       </div>
@@ -1153,7 +1211,7 @@ export function ProyekFormDialog({
         <p className="text-xs font-medium text-muted-foreground">{item.label}</p>
         <div className="grid grid-cols-3 gap-4">
           <div className="space-y-2">
-            <Label>Prioritas Nasional (PN)</Label>
+            <Label>{subLabel(item, "pn")}</Label>
             <Select
               value={selectedPnId || NONE}
               onValueChange={(v) => {
@@ -1180,7 +1238,7 @@ export function ProyekFormDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Program Prioritas (PP)</Label>
+            <Label>{subLabel(item, "pp")}</Label>
             <Select
               value={selectedPpId || NONE}
               onValueChange={(v) => {
@@ -1210,7 +1268,7 @@ export function ProyekFormDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Kegiatan Prioritas (KP)</Label>
+            <Label>{subLabel(item, "kp")}</Label>
             <Select
               value={watch("kegiatanPrioritasId") || NONE}
               onValueChange={(v) =>
@@ -1245,7 +1303,7 @@ export function ProyekFormDialog({
     indikatorSasaranProgramId: (item) => (
       <React.Fragment key={item.id}>
         <div className="space-y-2">
-          <Label>Sasaran Program (SP)</Label>
+          <Label>{subLabel(item, "sp")}</Label>
           <Select
             value={selectedSpId || NONE}
             onValueChange={(v) => {
@@ -1313,7 +1371,7 @@ export function ProyekFormDialog({
     indikatorSasaranKegiatanId: (item) => (
       <React.Fragment key={item.id}>
         <div className="space-y-2">
-          <Label>Sasaran Kegiatan (SK)</Label>
+          <Label>{subLabel(item, "sk")}</Label>
           <Select
             value={selectedSkId || NONE}
             onValueChange={(v) => {
@@ -1637,6 +1695,219 @@ export function ProyekFormDialog({
     ? roList.filter((r) => r.kro.kegiatan.id === selectedKegiatanId)
     : roList;
 
+  // ===== Tab Pemaketan — field paket ikut template (paket-template.tsx).
+  // Renderer field baku per paket ke-i; field custom lewat FieldControl,
+  // nilainya di paket.${i}.formValues. =====
+  const paketTemplateSections = paketSections(formTemplate?.tabs);
+
+  const setPaketFormValue = (
+    i: number,
+    key: string,
+    patch: FieldControlValue,
+  ) => {
+    const cur = watch(`paket.${i}.formValues`) ?? {};
+    setValue(`paket.${i}.formValues`, {
+      ...cur,
+      [key]: { ...cur[key], ...patch },
+    });
+  };
+
+  const paketRenderers = (
+    i: number,
+  ): Record<string, (item: FormItemNode) => React.ReactNode> => {
+    const selectedRO = roList.find((r) => r.id === watch(`paket.${i}.roId`));
+    const komponenOptions = komponenList.filter(
+      (k) => k.roId === selectedRO?.id,
+    );
+    return {
+      paketName: (item) => (
+        <>
+          <PaketLabel item={item} />
+          <Input
+            className="h-9 text-xs"
+            placeholder="Contoh: Pembangunan Bendungan A Paket I"
+            {...register(`paket.${i}.name`)}
+          />
+        </>
+      ),
+      paketRo: (item) => (
+        <>
+          <PaketLabel item={item} />
+          <Select
+            value={watch(`paket.${i}.roId`)}
+            onValueChange={(v) => {
+              setValue(`paket.${i}.roId`, v);
+              const ro = roList.find((r) => r.id === v);
+              setValue(`paket.${i}.outputUnit`, ro?.satuan?.name || "");
+              setValue(`paket.${i}.outcomeUnit`, "");
+              setValue(`paket.${i}.komponenId`, "");
+              setValue(`paket.${i}.indikatorRoId`, "");
+            }}
+            onOpenChange={(o) => o && setRoSearch("")}
+          >
+            <SelectTrigger className="w-full h-9 text-xs">
+              <SelectValue placeholder="Pilih RO" />
+            </SelectTrigger>
+            <SelectContent>
+              {roOptionsFiltered.length > 20 && (
+                <SelectSearchBox
+                  value={roSearch}
+                  onChange={setRoSearch}
+                  placeholder="Cari RO..."
+                />
+              )}
+              {roOptionsFiltered
+                .filter(
+                  (r) =>
+                    !roSearch ||
+                    `${r.code} ${r.name}`
+                      .toLowerCase()
+                      .includes(roSearch.toLowerCase()),
+                )
+                .map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    <span className="font-medium">
+                      {r.kro.kegiatan.code} · {r.kro.code} · {r.code}
+                    </span>
+                    <span className="text-muted-foreground ml-2 text-xs">
+                      — {r.name}
+                    </span>
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </>
+      ),
+      paketKomponen: (item) => (
+        <>
+          <PaketLabel item={item} />
+          <Select
+            value={watch(`paket.${i}.komponenId`) || NONE}
+            onValueChange={(v) =>
+              setValue(`paket.${i}.komponenId`, v === NONE ? "" : v)
+            }
+            disabled={!selectedRO}
+          >
+            <SelectTrigger className="h-9 text-xs">
+              <SelectValue placeholder="Opsional" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+              {komponenOptions.map((k) => (
+                <SelectItem key={k.id} value={k.id}>
+                  {k.code} — {k.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </>
+      ),
+      paketIndikatorRo: (item) => (
+        <>
+          <PaketLabel item={item} />
+          <Select
+            value={watch(`paket.${i}.indikatorRoId`) || NONE}
+            onValueChange={(v) => {
+              setValue(`paket.${i}.indikatorRoId`, v === NONE ? "" : v);
+              const ind = (selectedRO?.indikatorRO ?? []).find(
+                (x) => x.id === v,
+              );
+              setValue(
+                `paket.${i}.outcomeUnit`,
+                ind?.satuanList?.[0]?.satuan.name || "",
+              );
+            }}
+            disabled={!selectedRO}
+          >
+            <SelectTrigger className="h-9 text-xs">
+              <SelectValue placeholder="Opsional" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>— Tidak ada —</SelectItem>
+              {(selectedRO?.indikatorRO ?? []).map((ind) => (
+                <SelectItem key={ind.id} value={ind.id}>
+                  {ind.nama}
+                  {(ind.satuanList?.length ?? 0) > 0 &&
+                    ` (${ind.satuanList!.map((s) => s.satuan.name).join(", ")})`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </>
+      ),
+      paketJenis: (item) => (
+        <>
+          <PaketLabel item={item} />
+          <Select
+            value={watch(`paket.${i}.jenis`)}
+            onValueChange={(v) => setValue(`paket.${i}.jenis`, v as any)}
+          >
+            <SelectTrigger className="h-9 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="FISIK">Fisik</SelectItem>
+              <SelectItem value="NON_FISIK">Non-Fisik</SelectItem>
+            </SelectContent>
+          </Select>
+        </>
+      ),
+      paketMasa: (item) => (
+        <>
+          <PaketLabel item={item} />
+          <Select
+            value={watch(`paket.${i}.masaPelaksanaan`)}
+            onValueChange={(v) =>
+              setValue(`paket.${i}.masaPelaksanaan`, v as any)
+            }
+          >
+            <SelectTrigger className="h-9 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="SINGLE_YEAR">Single Year</SelectItem>
+              <SelectItem value="MULTI_YEAR">Multi Year</SelectItem>
+            </SelectContent>
+          </Select>
+        </>
+      ),
+      paketDokLing: (item) => (
+        <>
+          <PaketLabel item={item} />
+          <Input
+            className="h-9 text-xs"
+            placeholder="Contoh: Sesuai / Belum Ada"
+            {...register(`paket.${i}.dokLingStatus`)}
+          />
+        </>
+      ),
+    };
+  };
+
+  // Kolom Paket per key baku — dipakai cek "wajib diisi".
+  const PAKET_KOLOM: Record<string, string> = {
+    paketName: "name",
+    paketRo: "roId",
+    paketKomponen: "komponenId",
+    paketIndikatorRo: "indikatorRoId",
+    paketJenis: "jenis",
+    paketMasa: "masaPelaksanaan",
+    paketDokLing: "dokLingStatus",
+  };
+  const findMissingPaket = () => {
+    if (isEdit) return null;
+    const paketList = watch("paket") ?? [];
+    for (let i = 0; i < paketList.length; i++) {
+      const label = findMissingPaketItem(
+        paketTemplateSections,
+        (key) => (paketList[i] as Record<string, unknown>)[PAKET_KOLOM[key]],
+        paketList[i].formValues ?? {},
+      );
+      if (label) return `${label}" di Paket #${i + 1}`;
+    }
+    return null;
+  };
+
   const spOptionsFiltered = (() => {
     const kegiatan = kegiatanList.find((k) => k.id === selectedKegiatanId);
     if (!kegiatan) return sasaranProgramList;
@@ -1758,10 +2029,7 @@ export function ProyekFormDialog({
   // pendek supaya tetap terasa "langsung".
   // formValuesMap -> payload backend (FormValueDto[]) — cuma kirim yang
   // benar-benar terisi (dropdown kepilih atau checkbox tercentang).
-  const buildFormValues = () =>
-    Object.entries(formValuesMap)
-      .filter(([, v]) => v.value !== undefined && v.value !== "")
-      .map(([key, v]) => ({ key, value: v.value, note: v.note }));
+  const buildFormValues = () => toFormValueList(formValuesMap);
 
   const watchedForPreview = watch();
   const paket0Form = watchedForPreview.paket?.[0];
@@ -1903,6 +2171,7 @@ export function ProyekFormDialog({
             masaPelaksanaan: p.masaPelaksanaan,
             dokLingStatus: p.dokLingStatus || undefined,
             indikatorRoId: p.indikatorRoId || undefined,
+            formValues: toFormValueList(p.formValues ?? {}),
             alokasi: [
               {
                 tahun: p.tahun,
@@ -1961,7 +2230,8 @@ export function ProyekFormDialog({
   const findMissingRequiredItem = () => {
     if (!formTemplate) return null;
     for (const tabNode of formTemplate.tabs) {
-      if (tabNode.isActive === false) continue;
+      // Field paket dicek per paket (findMissingPaket), bukan di sini.
+      if (tabNode.isActive === false || tabNode.key === "pemaketan") continue;
       const tabValue = TABS.find(
         (t) => TAB_KEY_MAP[t.value] === tabNode.key,
       )?.value;
@@ -1988,7 +2258,7 @@ export function ProyekFormDialog({
                 : isEmptyValue(watch(item.key as keyof FormData))
             : item.fieldType === "UPLOAD"
               ? !pendingItemFiles[item.id] && !itemDokumen[item.id]
-              : item.fieldType === "CHECKBOX"
+              : item.fieldType === "CHECKBOX" && !item.optionSource
                 ? !formValuesMap[item.key]?.value
                 : isEmptyValue(formValuesMap[item.key]?.value);
           if (isEmpty) return { tabValue, label: item.label };
@@ -2139,6 +2409,27 @@ export function ProyekFormDialog({
                   <>
                     {renderTabHeader("pemaketan")}
                     {adminHandlers.note("pemaketan")}
+                    {renderTemplatedTab(
+                      "pemaketan",
+                      Object.fromEntries(
+                        PAKET_BAKU_KEYS.map((k) => [
+                          k,
+                          (item: FormItemNode) => (
+                            <FieldControl
+                              key={item.id}
+                              mode="preview"
+                              item={{
+                                ...item,
+                                required:
+                                  PAKET_ALWAYS_REQUIRED_KEYS.includes(k) ||
+                                  item.required,
+                              }}
+                            />
+                          ),
+                        ]),
+                      ),
+                      "grid grid-cols-1 sm:grid-cols-2 gap-3",
+                    )}
                   </>
                 ) : isEdit ? (
                   <div className="pl-12 space-y-3">
@@ -2222,9 +2513,6 @@ export function ProyekFormDialog({
                             const selectedRO = roList.find(
                               (r) => r.id === watch(`paket.${i}.roId`),
                             );
-                            const komponenOptions = komponenList.filter(
-                              (k) => k.roId === selectedRO?.id,
-                            );
                             const selectedIndikatorSatuan =
                               (selectedRO?.indikatorRO ?? []).find(
                                 (ind) =>
@@ -2251,221 +2539,21 @@ export function ProyekFormDialog({
                                   </Button>
                                 </div>
 
-                                <div className="space-y-2">
-                                  <Label className="text-xs">
-                                    Nama Paket{" "}
-                                    <span className="text-destructive">*</span>
-                                  </Label>
-                                  <Input
-                                    className="h-9 text-xs"
-                                    placeholder="Contoh: Pembangunan Bendungan A Paket I"
-                                    {...register(`paket.${i}.name`)}
-                                  />
-                                </div>
+                                <PaketTemplateFields
+                                  sections={paketTemplateSections}
+                                  renderers={paketRenderers(i)}
+                                  values={watch(`paket.${i}.formValues`) ?? {}}
+                                  onChange={(key, patch) =>
+                                    setPaketFormValue(i, key, patch)
+                                  }
+                                />
 
-                                <div className="space-y-2">
-                                  <Label className="text-xs">
-                                    RO (Rincian Output){" "}
-                                    <span className="text-destructive">*</span>
-                                  </Label>
-                                  <Select
-                                    value={watch(`paket.${i}.roId`)}
-                                    onValueChange={(v) => {
-                                      setValue(`paket.${i}.roId`, v);
-                                      const ro = roList.find((r) => r.id === v);
-                                      setValue(
-                                        `paket.${i}.outputUnit`,
-                                        ro?.satuan?.name || "",
-                                      );
-                                      setValue(`paket.${i}.outcomeUnit`, "");
-                                      setValue(`paket.${i}.komponenId`, "");
-                                      setValue(`paket.${i}.indikatorRoId`, "");
-                                    }}
-                                    onOpenChange={(o) => o && setRoSearch("")}
-                                  >
-                                    <SelectTrigger className="w-full h-9 text-xs">
-                                      <SelectValue placeholder="Pilih RO" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {roOptionsFiltered.length > 20 && (
-                                        <SelectSearchBox
-                                          value={roSearch}
-                                          onChange={setRoSearch}
-                                          placeholder="Cari RO..."
-                                        />
-                                      )}
-                                      {roOptionsFiltered
-                                        .filter(
-                                          (r) =>
-                                            !roSearch ||
-                                            `${r.code} ${r.name}`
-                                              .toLowerCase()
-                                              .includes(roSearch.toLowerCase()),
-                                        )
-                                        .map((r) => (
-                                          <SelectItem key={r.id} value={r.id}>
-                                            <span className="font-medium">
-                                              {r.kro.kegiatan.code} ·{" "}
-                                              {r.kro.code} · {r.code}
-                                            </span>
-                                            <span className="text-muted-foreground ml-2 text-xs">
-                                              — {r.name}
-                                            </span>
-                                          </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div className="space-y-2">
-                                    <Label className="text-xs">Komponen</Label>
-                                    <Select
-                                      value={
-                                        watch(`paket.${i}.komponenId`) || NONE
-                                      }
-                                      onValueChange={(v) =>
-                                        setValue(
-                                          `paket.${i}.komponenId`,
-                                          v === NONE ? "" : v,
-                                        )
-                                      }
-                                      disabled={!selectedRO}
-                                    >
-                                      <SelectTrigger className="h-9 text-xs">
-                                        <SelectValue placeholder="Opsional" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value={NONE}>
-                                          — Tidak ada —
-                                        </SelectItem>
-                                        {komponenOptions.map((k) => (
-                                          <SelectItem key={k.id} value={k.id}>
-                                            {k.code} — {k.name}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label className="text-xs">
-                                      Indikator RO
-                                    </Label>
-                                    <Select
-                                      value={
-                                        watch(`paket.${i}.indikatorRoId`) ||
-                                        NONE
-                                      }
-                                      onValueChange={(v) => {
-                                        setValue(
-                                          `paket.${i}.indikatorRoId`,
-                                          v === NONE ? "" : v,
-                                        );
-                                        const ind = (
-                                          selectedRO?.indikatorRO ?? []
-                                        ).find((x) => x.id === v);
-                                        setValue(
-                                          `paket.${i}.outcomeUnit`,
-                                          ind?.satuanList?.[0]?.satuan.name ||
-                                            "",
-                                        );
-                                      }}
-                                      disabled={!selectedRO}
-                                    >
-                                      <SelectTrigger className="h-9 text-xs">
-                                        <SelectValue placeholder="Opsional" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value={NONE}>
-                                          — Tidak ada —
-                                        </SelectItem>
-                                        {(selectedRO?.indikatorRO ?? []).map(
-                                          (ind) => (
-                                            <SelectItem
-                                              key={ind.id}
-                                              value={ind.id}
-                                            >
-                                              {ind.nama}
-                                              {(ind.satuanList?.length ?? 0) >
-                                                0 &&
-                                                ` (${ind
-                                                  .satuanList!.map(
-                                                    (s) => s.satuan.name,
-                                                  )
-                                                  .join(", ")})`}
-                                            </SelectItem>
-                                          ),
-                                        )}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div className="space-y-2">
-                                    <Label className="text-xs">
-                                      Jenis Paket
-                                    </Label>
-                                    <Select
-                                      value={watch(`paket.${i}.jenis`)}
-                                      onValueChange={(v) =>
-                                        setValue(`paket.${i}.jenis`, v as any)
-                                      }
-                                    >
-                                      <SelectTrigger className="h-9 text-xs">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="FISIK">
-                                          Fisik
-                                        </SelectItem>
-                                        <SelectItem value="NON_FISIK">
-                                          Non-Fisik
-                                        </SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label className="text-xs">
-                                      Masa Pelaksanaan
-                                    </Label>
-                                    <Select
-                                      value={watch(
-                                        `paket.${i}.masaPelaksanaan`,
-                                      )}
-                                      onValueChange={(v) =>
-                                        setValue(
-                                          `paket.${i}.masaPelaksanaan`,
-                                          v as any,
-                                        )
-                                      }
-                                    >
-                                      <SelectTrigger className="h-9 text-xs">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="SINGLE_YEAR">
-                                          Single Year
-                                        </SelectItem>
-                                        <SelectItem value="MULTI_YEAR">
-                                          Multi Year
-                                        </SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                  <Label className="text-xs">
-                                    Dokumen Lingkungan (status)
-                                  </Label>
-                                  <Input
-                                    className="h-9 text-xs"
-                                    placeholder="Contoh: Sesuai / Belum Ada"
-                                    {...register(`paket.${i}.dokLingStatus`)}
-                                  />
-                                </div>
-
+                                {/* Alokasi tahun berjalan — tetap di luar
+                                    template (punya dialog alokasi sendiri
+                                    setelah proyek dibuat). */}
+                                <p className="text-xs font-semibold text-muted-foreground pt-1">
+                                  Alokasi Tahun Berjalan
+                                </p>
                                 <div className="grid grid-cols-2 gap-4">
                                   <div className="space-y-2">
                                     <Label className="text-xs">Tahun</Label>
@@ -2845,6 +2933,12 @@ export function ProyekFormDialog({
                   if (missing) {
                     setActiveTab(missing.tabValue);
                     toast.error(`Lengkapi field wajib "${missing.label}"`);
+                    return;
+                  }
+                  const missingPaket = findMissingPaket();
+                  if (missingPaket) {
+                    setActiveTab("pemaketan");
+                    toast.error(`Lengkapi field wajib "${missingPaket}`);
                     return;
                   }
                   handleSubmit(onSubmit, onInvalid)();

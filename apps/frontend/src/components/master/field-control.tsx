@@ -58,9 +58,13 @@ export interface FieldControlItem {
   // hardcode di sana, bukan dari database — lihat BAKU_PREVIEW.
   placeholder?: string;
   required?: boolean;
+  // Sumber pilihan dari tabel master (lihat lib/option-sources.tsx) — kalau
+  // ada, pilihan diambil dari `sourceRows`, bukan item.options.
+  optionSource?: string | null;
 }
 export type FieldControlValue = {
-  value?: string | boolean | number;
+  // string[] = checkbox multi-pilih dari master.
+  value?: string | boolean | number | string[];
   note?: string;
 };
 
@@ -73,6 +77,7 @@ export function FieldControl({
   uploading,
   onUpload,
   onRemoveUpload,
+  sourceRows,
 }: {
   item: FieldControlItem;
   mode: "preview" | "fill";
@@ -87,6 +92,7 @@ export function FieldControl({
   uploading?: boolean;
   onUpload?: (files: File[]) => void;
   onRemoveUpload?: () => void;
+  sourceRows?: { value: string; label: string }[];
 }) {
   const preview = mode === "preview";
 
@@ -104,7 +110,9 @@ export function FieldControl({
 
   switch (item.fieldType) {
     case "DROPDOWN": {
-      const activeOptions = item.options.filter((o) => o.isActive !== false);
+      const activeOptions = item.optionSource
+        ? (sourceRows ?? []).map((r) => ({ id: r.value, ...r }))
+        : item.options.filter((o) => o.isActive !== false);
       return (
         <div className="space-y-2">
           <FieldLabel item={item} />
@@ -131,6 +139,43 @@ export function FieldControl({
       );
     }
     case "CHECKBOX":
+      if (item.optionSource) {
+        // Centang multi-pilih dari baris master.
+        const picked = Array.isArray(value?.value) ? value.value : [];
+        return (
+          <div className="space-y-2">
+            <FieldLabel item={item} />
+            <div className="max-h-48 overflow-y-auto rounded-md border p-2 space-y-1.5">
+              {(sourceRows ?? []).length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Belum ada data di master.
+                </p>
+              )}
+              {(sourceRows ?? []).map((r) => (
+                <label
+                  key={r.value}
+                  className="flex items-center gap-2 text-xs"
+                >
+                  <input
+                    type="checkbox"
+                    disabled={preview}
+                    className="h-4 w-4 accent-primary"
+                    checked={!preview && picked.includes(r.value)}
+                    onChange={(e) =>
+                      onChange?.({
+                        value: e.target.checked
+                          ? [...picked, r.value]
+                          : picked.filter((v) => v !== r.value),
+                      })
+                    }
+                  />
+                  {r.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+      }
       return (
         <label className="flex items-center gap-2 text-xs font-medium">
           <input

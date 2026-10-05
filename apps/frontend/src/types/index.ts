@@ -43,7 +43,7 @@ export interface PrioritasNasional {
 export interface ProyekFormValue {
   id: string;
   itemId: string;
-  item: { key: string; label: string };
+  item: { key: string; label: string; fieldType?: string; optionSource?: string | null };
   optionId?: string | null;
   option?: { value: string; label: string } | null;
   valueText?: string | null;
@@ -132,6 +132,8 @@ export interface Paket {
   // Untuk ranking prioritas antar paket — algoritma penilaian menyusul.
   score?: string;
   alokasi: Alokasi[];
+  // Isian field custom tab Pemaketan (paket_form_value, bentuk sama).
+  formValues?: ProyekFormValue[];
 }
 
 export interface Alokasi {

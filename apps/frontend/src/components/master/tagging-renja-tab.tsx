@@ -27,7 +27,7 @@ interface Item {
   name: string;
 }
 
-function useFlatMaster(endpoint: string, label: string) {
+export function useFlatMaster(endpoint: string, label: string) {
   const [data, setData] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<Item | "new" | null>(null);
@@ -120,7 +120,7 @@ function useFlatMaster(endpoint: string, label: string) {
   };
 }
 
-function FlatMasterTable({
+export function FlatMasterTable({
   title,
   m,
 }: {

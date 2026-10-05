@@ -77,6 +77,25 @@ import {
   type FormItemNode,
   type FormTabNode,
 } from "@/components/proyek/proyek-form-dialog";
+import {
+  OPTION_SOURCES,
+  SUB_LABEL_DEFAULTS,
+  sourceRowsFor,
+  useSourceData,
+} from "@/lib/option-sources";
+import { SOURCE_EDITORS } from "@/lib/option-source-editors";
+
+const MANUAL = "__MANUAL__";
+// Field bawaan berpilihan tetap sistem (enum) — value tidak bisa diubah,
+// label & skor bisa.
+const ENUM_ITEM_KEYS = new Set([
+  "statusStudiLayak",
+  "statusDed",
+  "statusDokumenLingkungan",
+  "statusLarap",
+  "kewenangan",
+  "kebutuhanTanah",
+]);
 
 /**
  * Kanvas "Form Proyek" — admin aktif/nonaktifkan bagian form pembuatan
@@ -89,7 +108,7 @@ import {
 
 const TAB_NOTES: Partial<Record<TabKey, string>> = {
   pemaketan:
-    "Bagian pemaketan (tambah & kelola paket pekerjaan) selalu tampil utuh saat tab ini aktif — belum ada sub-bagian yang bisa diatur terpisah.",
+    "Field di sini diisi per paket (form Buat Proyek & dialog Tambah/Edit Paket). Nama Paket, RO, Jenis & Masa Pelaksanaan selalu tampil. Blok alokasi tahun berjalan selalu tampil di bawah field paket. Field upload tidak tersedia untuk paket.",
   evaluasi:
     "Tab ini menampilkan hasil hitung skor otomatis dari tab Dasar Pelaksanaan, Kriteria Teknis, Tagging, Valuasi, dan Kinerja — tidak ada yang perlu diatur di sini.",
 };
@@ -235,14 +254,13 @@ export function FormProyekTab({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
-  // Daftar pilihan "Sumber Usulan Proyek" di form diambil dari master ini,
-  // bukan dari item.options — opsi cuma nyimpan skor per nama.
-  const [sumberUsulanMaster, setSumberUsulanMaster] = useState<string[]>([]);
-  useEffect(() => {
-    api
-      .get("/master/sumber-usulan-proyek")
-      .then((res) => setSumberUsulanMaster(res.data.map((s: { name: string }) => s.name)));
-  }, []);
+  // Baris semua tabel master (utk skor per baris di "Sumber pilihan") &
+  // dialog "Kelola data …" yang membuka editor master-nya. masterToken naik
+  // tiap dialog ditutup supaya daftar di kanvas & preview form ikut baru.
+  const [masterToken, setMasterToken] = useState(0);
+  const sourceData = useSourceData(Object.keys(OPTION_SOURCES), masterToken);
+  const [masterDialog, setMasterDialog] = useState<string | null>(null);
+  const [newItemSource, setNewItemSource] = useState<string | null>(null);
 
   useEffect(() => {
     api.get("/master/kegiatan").then((res) => {
@@ -297,11 +315,16 @@ export function FormProyekTab({
         key: newItemLabel.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-"),
         label: newItemLabel.trim(),
         fieldType: newItemType,
+        optionSource:
+          newItemType === "DROPDOWN" || newItemType === "CHECKBOX"
+            ? newItemSource
+            : null,
         required: newItemRequired,
       });
       setAddItemSectionId(null);
       setNewItemLabel("");
       setNewItemType("CHECKBOX");
+      setNewItemSource(null);
       setNewItemRequired(false);
       bump();
     } catch (err: any) {
@@ -503,92 +526,306 @@ export function FormProyekTab({
   // yang lagi diedit jadi lebih tinggi dari tetangganya — itu wajar karena
   // tiap field sudah punya card/border sendiri, bukan lagi satu blok rata
   // yang bikin ruang kosong membingungkan.
-  // Field baku ber-opsi (status kesiapan, kewenangan, sumber usulan, dst):
-  // pilihannya dikunci (dari enum/master), admin cuma atur skor per pilihan.
-  // Sumber Usulan: baris = isi master; opsi yang belum ada dibuat saat skor
-  // pertama kali diisi, opsi yang namanya sudah hilang dari master ditandai.
-  const renderBakuOptionScores = (item: FormItemNode) => {
-    const fromMaster = item.key === "sumberUsulanProyek";
-    const rows = fromMaster
-      ? [
-          ...sumberUsulanMaster.map((name) => ({
-            name,
-            opt: item.options.find((o) => o.value === name),
-            stale: false,
-          })),
-          ...item.options
-            .filter((o) => !sumberUsulanMaster.includes(o.value))
-            .map((o) => ({ name: o.label, opt: o, stale: true })),
-        ]
-      : item.options.map((o) => ({ name: o.label, opt: o, stale: false }));
+  // ===== Sumber pilihan (manual / tabel master) — lihat lib/option-sources =====
+  // Simpan skor 1 pilihan. Opsi utk baris master dibuat saat skornya pertama
+  // kali diisi (value = nilai yang disimpan field).
+  const saveOptionScore = async (
+    item: FormItemNode,
+    row: { value: string; label: string },
+    opt: FormItemNode["options"][number] | undefined,
+    v: number | null,
+  ) => {
+    if (opt) {
+      if (v !== opt.score) patchOption(opt.id, { score: v });
+      return;
+    }
+    if (v == null) return;
+    try {
+      await api.post("/master/form-item-option", {
+        itemId: item.id,
+        value: row.value,
+        label: row.label,
+        score: v,
+      });
+      bump();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal menyimpan skor");
+    }
+  };
 
-    const saveScore = async (
-      name: string,
-      opt: (typeof item.options)[number] | undefined,
-      v: number | null,
-    ) => {
-      if (opt) {
-        if (v !== opt.score) patchOption(opt.id, { score: v });
-        return;
-      }
-      if (v == null) return;
-      try {
-        await api.post("/master/form-item-option", {
-          itemId: item.id,
-          value: name,
-          label: name,
-          score: v,
-        });
-        bump();
-      } catch (err: any) {
-        toast.error(err.response?.data?.message || "Gagal menyimpan skor");
-      }
-    };
+  const scoreInput = (
+    defaultValue: number | null | undefined,
+    onSave: (v: number | null) => void,
+  ) => (
+    <Input
+      type="number"
+      placeholder="skor"
+      className="h-7 w-16 text-[11px] shrink-0"
+      defaultValue={defaultValue ?? ""}
+      onBlur={(e) => onSave(e.target.value ? Number(e.target.value) : null)}
+    />
+  );
 
+  // Pilihan tetap sistem (status kriteria, kewenangan, kebutuhan tanah):
+  // value tetap, label & skor bisa diubah.
+  const renderEnumOptions = (item: FormItemNode) => (
+    <div className="space-y-1.5">
+      <Label className="text-[10px] text-muted-foreground">
+        Pilihan (nilai tetap sistem — label & skor bisa diubah)
+      </Label>
+      {item.options.map((opt) => (
+        <div key={opt.id} className="flex items-center gap-2">
+          <Input
+            className="h-7 flex-1 text-[11px]"
+            defaultValue={opt.label}
+            onBlur={(e) =>
+              e.target.value &&
+              e.target.value !== opt.label &&
+              patchOption(opt.id, { label: e.target.value })
+            }
+          />
+          {scoreInput(opt.score, (v) => saveOptionScore(item, opt, opt, v))}
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderMasterOptions = (item: FormItemNode, source: string) => {
+    const def = OPTION_SOURCES[source];
+    const rows = sourceRowsFor(item.key, source, sourceData[source] ?? []);
+    const rowValues = new Set(rows.map((r) => r.value));
+    const stale = item.options.filter((o) => !rowValues.has(o.value));
+    const Editor = SOURCE_EDITORS[source];
     return (
       <div className="space-y-1.5">
-        <Label className="text-[10px] text-muted-foreground">
-          Skor per pilihan
-          {fromMaster && " (daftar dari Master Data Sumber Usulan Proyek)"}
-        </Label>
-        {rows.map(({ name, opt, stale }) => (
-          <div key={opt?.id ?? name} className="flex items-center gap-2">
-            <span
-              className={cn(
-                "flex-1 text-[11px] truncate",
-                stale && "text-muted-foreground line-through",
-              )}
-              title={stale ? "Tidak ada lagi di master data" : undefined}
+        <div className="flex items-center justify-between gap-2">
+          <Label className="text-[10px] text-muted-foreground">
+            Pilihan dari Master Data {def?.label}
+          </Label>
+          {Editor && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[11px] shrink-0"
+              onClick={() => setMasterDialog(source)}
             >
-              {name}
-            </span>
-            <Input
-              type="number"
-              placeholder="skor"
-              className="h-7 w-16 text-[11px] shrink-0"
-              defaultValue={opt?.score ?? ""}
-              onBlur={(e) =>
-                saveScore(
-                  name,
-                  opt,
-                  e.target.value ? Number(e.target.value) : null,
-                )
-              }
-            />
-            {stale && opt && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-muted-foreground/60 hover:text-destructive shrink-0"
-                onClick={() =>
-                  setDeleteTarget({ type: "option", id: opt.id, label: name })
-                }
-              >
-                <Trash2 size={11} />
-              </Button>
-            )}
-          </div>
+              <ExternalLink size={11} className="mr-1" />
+              Kelola data {def?.label}
+            </Button>
+          )}
+        </div>
+        {!def?.endpoint ? (
+          <p className="text-[11px] text-muted-foreground">
+            Data referensi resmi, tidak dikelola di aplikasi ini.
+          </p>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="flex-1 text-[11px] text-muted-foreground">
+                Skor jika terisi (dipakai baris yang skornya kosong)
+              </span>
+              {scoreInput(item.score, (v) => {
+                if (v !== item.score) patchItem(item.id, { score: v });
+              })}
+            </div>
+            <div className="max-h-60 overflow-y-auto rounded-md border divide-y">
+              {rows.length === 0 && (
+                <p className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                  Belum ada data — tambah lewat &quot;Kelola data&quot;.
+                </p>
+              )}
+              {rows.map((row) => {
+                const opt = item.options.find((o) => o.value === row.value);
+                return (
+                  <div key={row.value} className="flex items-center gap-2 px-2 py-1">
+                    <span className="flex-1 text-[11px] truncate" title={row.label}>
+                      {row.label}
+                    </span>
+                    {scoreInput(opt?.score, (v) =>
+                      saveOptionScore(item, row, opt, v),
+                    )}
+                  </div>
+                );
+              })}
+              {stale.map((opt) => (
+                <div key={opt.id} className="flex items-center gap-2 px-2 py-1">
+                  <span
+                    className="flex-1 text-[11px] truncate text-muted-foreground line-through"
+                    title="Tidak ada lagi di master data"
+                  >
+                    {opt.label}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground/60 hover:text-destructive shrink-0"
+                    onClick={() =>
+                      setDeleteTarget({ type: "option", id: opt.id, label: opt.label })
+                    }
+                  >
+                    <Trash2 size={11} />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderManualOptions = (item: FormItemNode) => (
+    <div className="space-y-1.5">
+      <Label className="text-[10px] text-muted-foreground">
+        Pilihan dropdown
+      </Label>
+      {item.options.map((opt) => (
+        <div key={opt.id} className="flex items-center gap-2">
+          <Switch
+            checked={opt.isActive !== false}
+            onChange={(v) => patchOption(opt.id, { isActive: v })}
+          />
+          <Input
+            className="h-7 flex-1 text-[11px]"
+            defaultValue={opt.label}
+            onBlur={(e) =>
+              e.target.value !== opt.label &&
+              patchOption(opt.id, { label: e.target.value })
+            }
+          />
+          {scoreInput(opt.score, (v) => {
+            if (v !== opt.score) patchOption(opt.id, { score: v });
+          })}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-muted-foreground/60 hover:text-destructive shrink-0"
+            onClick={() =>
+              setDeleteTarget({
+                type: "option",
+                id: opt.id,
+                label: opt.label,
+              })
+            }
+          >
+            <Trash2 size={11} />
+          </Button>
+        </div>
+      ))}
+      <div className="flex items-center gap-2 pt-0.5">
+        <Input
+          className="h-7 flex-1 text-[11px]"
+          placeholder="Tambah pilihan baru..."
+          value={newOptionLabel[item.id] ?? ""}
+          onChange={(e) =>
+            setNewOptionLabel((prev) => ({
+              ...prev,
+              [item.id]: e.target.value,
+            }))
+          }
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submitAddOption(item.id);
+            }
+          }}
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-[11px] shrink-0"
+          onClick={() => submitAddOption(item.id)}
+        >
+          <Plus size={11} className="mr-1" />
+          Tambah
+        </Button>
+      </div>
+    </div>
+  );
+
+  // Select "Sumber pilihan": field bawaan terkunci ke master aslinya (kolom
+  // FK di tabel Proyek); field custom bebas Manual / master mana pun.
+  const sourceSelect = (
+    value: string | null | undefined,
+    onChange: (v: string | null) => void,
+    locked: boolean,
+  ) => (
+    <Select
+      value={value ?? MANUAL}
+      onValueChange={(v) => onChange(v === MANUAL ? null : v)}
+      disabled={locked}
+    >
+      <SelectTrigger className="h-8 text-xs bg-white">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={MANUAL}>Manual (ketik pilihan sendiri)</SelectItem>
+        {Object.entries(OPTION_SOURCES).map(([k, d]) => (
+          <SelectItem key={k} value={k}>
+            Master: {d.label}
+          </SelectItem>
         ))}
+      </SelectContent>
+    </Select>
+  );
+
+  const renderSourceBlock = (item: FormItemNode) => {
+    if (ENUM_ITEM_KEYS.has(item.key)) return renderEnumOptions(item);
+    const isBaku = BAKU_ITEM_KEYS.has(item.key);
+    const pilihan = item.fieldType === "DROPDOWN" || item.fieldType === "CHECKBOX";
+    // Field bawaan tanpa sumber (Nama Proyek, FKB, dst) & field non-pilihan.
+    if (isBaku ? !item.optionSource : !pilihan) return null;
+    return (
+      <div className="space-y-2 rounded-md border bg-muted/30 p-2">
+        <div className="space-y-1">
+          <Label className="text-[10px] text-muted-foreground">
+            Sumber pilihan{isBaku && " (terkunci — field bawaan)"}
+          </Label>
+          {sourceSelect(
+            item.optionSource,
+            (v) => patchItem(item.id, { optionSource: v }),
+            isBaku,
+          )}
+          {item.optionSource && item.fieldType === "CHECKBOX" && (
+            <p className="text-[10px] text-muted-foreground">
+              Checkbox + master = daftar centang, bisa pilih lebih dari satu.
+            </p>
+          )}
+        </div>
+        {item.optionSource
+          ? renderMasterOptions(item, item.optionSource)
+          : item.fieldType === "DROPDOWN" && renderManualOptions(item)}
+      </div>
+    );
+  };
+
+  // Label bagian dalam field gabungan (mis. PN/PP/KP) — kosong = default.
+  const renderSubLabels = (item: FormItemNode) => {
+    const defaults = SUB_LABEL_DEFAULTS[item.key];
+    if (!defaults) return null;
+    return (
+      <div className="space-y-1">
+        <Label className="text-[10px] text-muted-foreground">
+          Label bagian di dalam field
+        </Label>
+        <div className="grid grid-cols-2 gap-2">
+          {Object.entries(defaults).map(([part, def]) => (
+            <Input
+              key={part}
+              className="h-8 text-xs"
+              placeholder={def}
+              defaultValue={item.subLabels?.[part] ?? ""}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if (v === (item.subLabels?.[part] ?? "")) return;
+                const next = { ...(item.subLabels ?? {}) };
+                if (v) next[part] = v;
+                else delete next[part];
+                patchItem(item.id, { subLabels: next });
+              }}
+            />
+          ))}
+        </div>
       </div>
     );
   };
@@ -647,10 +884,40 @@ export function FormProyekTab({
               </SelectContent>
             </Select>
           </div>
+          {!isBaku && (
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">
+                Tipe field
+              </Label>
+              <Select
+                value={item.fieldType}
+                onValueChange={(v) =>
+                  patchItem(item.id, {
+                    fieldType: v,
+                    ...(v !== "DROPDOWN" && v !== "CHECKBOX"
+                      ? { optionSource: null }
+                      : {}),
+                  })
+                }
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FIELD_TYPE_OPTIONS.map((ft) => (
+                    <SelectItem key={ft} value={ft}>
+                      {FIELD_TYPE_LABEL[ft]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {/* Field baku cuma dapat input skor kalau memang item berskor
               (mis. checkbox Tagging) — Balai/Periode dst tidak dinilai. */}
           {(!isBaku || item.score != null) &&
             !item.options.length &&
+            !item.optionSource &&
             item.thresholdValue == null && (
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground">
@@ -703,92 +970,14 @@ export function FormProyekTab({
           </div>
         )}
 
-        {isBaku &&
-          (item.options.some((o) => o.score != null) ||
-            item.key === "sumberUsulanProyek") &&
-          renderBakuOptionScores(item)}
-
-        {!isBaku && item.fieldType === "DROPDOWN" && (
-          <div className="space-y-1.5">
-            <Label className="text-[10px] text-muted-foreground">
-              Pilihan dropdown
-            </Label>
-            {item.options.map((opt) => (
-              <div key={opt.id} className="flex items-center gap-2">
-                <Switch
-                  checked={opt.isActive !== false}
-                  onChange={(v) => patchOption(opt.id, { isActive: v })}
-                />
-                <Input
-                  className="h-7 flex-1 text-[11px]"
-                  defaultValue={opt.label}
-                  onBlur={(e) =>
-                    e.target.value !== opt.label &&
-                    patchOption(opt.id, { label: e.target.value })
-                  }
-                />
-                <Input
-                  type="number"
-                  placeholder="skor"
-                  className="h-7 w-16 text-[11px] shrink-0"
-                  defaultValue={opt.score ?? ""}
-                  onBlur={(e) => {
-                    const v = e.target.value ? Number(e.target.value) : null;
-                    if (v !== opt.score) patchOption(opt.id, { score: v });
-                  }}
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 text-muted-foreground/60 hover:text-destructive shrink-0"
-                  onClick={() =>
-                    setDeleteTarget({
-                      type: "option",
-                      id: opt.id,
-                      label: opt.label,
-                    })
-                  }
-                >
-                  <Trash2 size={11} />
-                </Button>
-              </div>
-            ))}
-            <div className="flex items-center gap-2 pt-0.5">
-              <Input
-                className="h-7 flex-1 text-[11px]"
-                placeholder="Tambah pilihan baru..."
-                value={newOptionLabel[item.id] ?? ""}
-                onChange={(e) =>
-                  setNewOptionLabel((prev) => ({
-                    ...prev,
-                    [item.id]: e.target.value,
-                  }))
-                }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    submitAddOption(item.id);
-                  }
-                }}
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-[11px] shrink-0"
-                onClick={() => submitAddOption(item.id)}
-              >
-                <Plus size={11} className="mr-1" />
-                Tambah
-              </Button>
-            </div>
-          </div>
-        )}
+        {renderSubLabels(item)}
+        {renderSourceBlock(item)}
       </div>
     );
   };
 
   const renderAdminSectionsBody: ProyekFormAdminHandlers["sectionsBody"] = (
-    _tabKey,
+    tabKey,
     tabId,
     sections,
     renderItem,
@@ -954,6 +1143,7 @@ export function FormProyekTab({
                                             Nonaktif
                                           </Badge>
                                         )}
+                                        {!ALWAYS_REQUIRED_BAKU_KEYS.has(item.key) && (
                                         <Button
                                           variant="ghost"
                                           size="icon"
@@ -975,6 +1165,7 @@ export function FormProyekTab({
                                             <Eye size={13} />
                                           )}
                                         </Button>
+                                        )}
                                         <Button
                                           variant={isEditing ? "default" : "ghost"}
                                           size="icon"
@@ -986,6 +1177,7 @@ export function FormProyekTab({
                                         >
                                           <Pencil size={12} />
                                         </Button>
+                                        {!ALWAYS_REQUIRED_BAKU_KEYS.has(item.key) && (
                                         <Button
                                           variant="ghost"
                                           size="icon"
@@ -1001,6 +1193,7 @@ export function FormProyekTab({
                                         >
                                           <Trash2 size={12} />
                                         </Button>
+                                        )}
                                       </div>
 
                                       {renderItem(item)}
@@ -1049,13 +1242,26 @@ export function FormProyekTab({
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {FIELD_TYPE_OPTIONS.map((ft) => (
+                                    {FIELD_TYPE_OPTIONS.filter(
+                                      // Upload paket belum didukung (dokumen
+                                      // pendukung terikat ke proyek).
+                                      (ft) =>
+                                        tabKey !== "pemaketan" ||
+                                        ft !== "UPLOAD",
+                                    ).map((ft) => (
                                       <SelectItem key={ft} value={ft}>
                                         {FIELD_TYPE_LABEL[ft]}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>
                                 </Select>
+                                {(newItemType === "DROPDOWN" ||
+                                  newItemType === "CHECKBOX") &&
+                                  sourceSelect(
+                                    newItemSource,
+                                    setNewItemSource,
+                                    false,
+                                  )}
                                 <div className="flex items-center justify-between">
                                   <Label className="text-[10px] text-muted-foreground">
                                     Wajib diisi
@@ -1214,9 +1420,38 @@ export function FormProyekTab({
           adminMode
           adminHandlers={adminHandlers}
           adminRefreshToken={refreshToken}
+          masterRefreshToken={masterToken}
           initialKegiatanId={kegiatanId}
         />
       )}
+
+      {/* Dialog: kelola isi tabel master langsung dari kanvas — editor yang
+          SAMA dengan tab master-nya (berlaku utk semua kegiatan). */}
+      <Dialog
+        open={!!masterDialog}
+        onOpenChange={(o) => {
+          if (o) return;
+          setMasterDialog(null);
+          setMasterToken((t) => t + 1);
+        }}
+      >
+        <DialogContent className="sm:max-w-5xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Kelola data {masterDialog && OPTION_SOURCES[masterDialog]?.label}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Perubahan di sini langsung tersimpan ke Master Data dan berlaku
+            untuk semua kegiatan.
+          </p>
+          {masterDialog &&
+            (() => {
+              const Editor = SOURCE_EDITORS[masterDialog];
+              return Editor ? <Editor /> : null;
+            })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog: tambah section */}
       <Dialog

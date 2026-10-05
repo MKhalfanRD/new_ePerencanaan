@@ -11,6 +11,11 @@ import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreateProyekDto } from './dto/create-proyek.dto';
+import {
+  paketFormValueRows,
+  storedValue,
+  toFormValueRows,
+} from '../common/form-value-rows';
 import { UpdateProyekDto } from './dto/update-proyek.dto';
 import { QueryProyekDto } from './dto/query-proyek.dto';
 import { generateKodeProyek } from '../common/kode-generator';
@@ -85,6 +90,7 @@ const proyekInclude = Prisma.validator<Prisma.ProyekInclude>()({
       indikatorRo: {
         include: { satuanList: { include: { satuan: true } } },
       },
+      formValues: { include: { item: true, option: true } },
       alokasi: {
         include: { lokasi: true },
         orderBy: [
@@ -315,28 +321,12 @@ export class ProyekService {
     // Simpan cuma item yang BUKAN backed kolom fixed/rasio — itu sudah
     // tersimpan di kolomnya sendiri (mis. Kategori Proyek, item Kinerja).
     const formValueCreates: Prisma.ProyekFormValueCreateManyProyekInput[] =
-      [];
-    for (const f of formValues ?? []) {
-      if (FIXED_ITEM_KEYS.has(f.key) || f.key in RATIO_ITEM_KEYS) continue;
-      const item = allItems.find((i) => i.key === f.key);
-      if (!item) continue;
-      // Checkbox tanpa opsi yang tidak dicentang (value === false, tanpa
-      // catatan) tidak perlu baris sama sekali — konsisten dengan "tidak
-      // ada baris = tidak dicentang" yang dipakai form-skor.ts & hidrasi
-      // formValuesMap di frontend.
-      if (!item.options.length && f.value === false && !f.note) continue;
-      const option = item.options.find((o) => o.value === String(f.value));
-      formValueCreates.push({
-        itemId: item.id,
-        optionId: option?.id,
-        valueText: option
-          ? f.note
-          : typeof f.value === 'string'
-            ? f.value
-            : f.note,
-        valueNumber: typeof f.value === 'number' ? f.value : undefined,
-      });
-    }
+      toFormValueRows(
+        allItems,
+        formValues?.filter(
+          (f) => !FIXED_ITEM_KEYS.has(f.key) && !(f.key in RATIO_ITEM_KEYS),
+        ),
+      );
 
     return { skorEvaluasi, formValueCreates };
   }
@@ -424,6 +414,12 @@ export class ProyekService {
         dto.formValues,
       );
 
+      const paketValues = await Promise.all(
+        (dto.paket ?? []).map((p) =>
+          paketFormValueRows(tx, p.roId, p.formValues),
+        ),
+      );
+
       return tx.proyek.create({
         data: {
           balaiId: dto.balaiId,
@@ -474,6 +470,9 @@ export class ProyekService {
                   masaPelaksanaan: p.masaPelaksanaan as any,
                   dokLingStatus: p.dokLingStatus,
                   indikatorRoId: p.indikatorRoId,
+                  formValues: paketValues[idx].length
+                    ? { create: paketValues[idx] }
+                    : undefined,
 
                   alokasi: p.alokasi
                     ? {
@@ -831,11 +830,7 @@ export class ProyekService {
 
     const formValues: FormValueDto[] = proyek.formValues.map((fv) => ({
       key: fv.item.key,
-      value:
-        fv.option?.value ??
-        fv.valueText ??
-        fv.valueNumber ??
-        fv.valueDate?.toISOString(),
+      value: storedValue(fv) as FormValueDto['value'],
     }));
 
     const { skorEvaluasi } = await this.hitungEvaluasi(

@@ -559,9 +559,19 @@ model FormItem {
   conditionItemId String?
   conditionValue  String?
 
-  options FormItemOption[]
-  values  ProyekFormValue[]
-  dokumen DokumenPendukung[]
+  // Sumber pilihan Dropdown/Checkbox: null = opsi manual (form_item_option),
+  // selain itu key tabel master (balai, pkpn, kegiatanPrioritas, ... — lihat
+  // frontend lib/option-sources.tsx). Opsi item ber-sumber master cuma
+  // nyimpan skor per baris master (value = nilai yang disimpan field).
+  optionSource String? @db.VarChar(50)
+  // Override label bagian dalam field gabungan, mis. Tematik
+  // {"pn": "...", "pp": "...", "kp": "..."} — null = label default.
+  subLabels Json?
+
+  options     FormItemOption[]
+  values      ProyekFormValue[]
+  paketValues PaketFormValue[]
+  dokumen     DokumenPendukung[]
 
   @@map("form_item")
 }
@@ -578,7 +588,8 @@ model FormItemOption {
   score    Int?    @db.SmallInt
   bobot    Float?
 
-  values ProyekFormValue[]
+  values      ProyekFormValue[]
+  paketValues PaketFormValue[]
 
   @@map("form_item_option")
 }
@@ -604,6 +615,30 @@ model ProyekFormValue {
   @@unique([proyekId, itemId])
   @@index([itemId])
   @@map("proyek_form_value")
+}
+
+// Isian field custom tab Pemaketan, per paket (lihat proyek_form_value).
+model PaketFormValue {
+  id      String @id @default(cuid())
+  paketId String
+  paket   Paket  @relation(fields: [paketId], references: [id], onDelete: Cascade)
+
+  itemId String
+  item   FormItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  optionId String?
+  option   FormItemOption? @relation(fields: [optionId], references: [id])
+
+  valueText   String?   @db.Text
+  valueNumber Float?
+  valueDate   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([paketId, itemId])
+  @@index([itemId])
+  @@map("paket_form_value")
 }
 
 // =============================================
@@ -892,7 +927,8 @@ model Paket {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  alokasi Alokasi[]
+  alokasi    Alokasi[]
+  formValues PaketFormValue[]
 
   @@index([proyekId])
   @@index([roId])

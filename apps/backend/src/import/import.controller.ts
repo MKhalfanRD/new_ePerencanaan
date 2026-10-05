@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
   UseGuards,
@@ -45,12 +46,19 @@ export class ImportController {
     return this.importService.preview(file.buffer);
   }
 
+  @ApiOperation({ summary: 'Daftar kolom template import (wajib/opsional)' })
+  @Roles('ADMINISTRATOR', 'SATKER')
+  @Get('template-columns')
+  getTemplateColumns() {
+    return this.importService.getTemplateColumns();
+  }
+
   @ApiOperation({
     summary: 'Commit hasil import setelah resolusi balai selesai',
   })
   @Roles('ADMINISTRATOR', 'SATKER')
   @Post('commit')
   async commit(@Body() dto: CommitImportDto, @CurrentUser() user: any) {
-    return this.importService.commit(dto, user.userId);
+    return this.importService.commit(dto, user.userId, user.username);
   }
 }

@@ -1,42 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  Search,
-  ShieldAlert,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Search, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
-
-interface LogRow {
-  id: string;
-  username: string;
-  roleCode?: string | null;
-  method: string;
-  path: string;
-  entity?: string | null;
-  entityId?: string | null;
-  statusCode: number;
-  ip?: string | null;
-  meta?: Record<string, unknown> | null;
-  createdAt: string;
-  user?: { id: string; name: string } | null;
-}
-
-const warnaMethod: Record<string, string> = {
-  POST: "text-emerald-600 bg-emerald-50",
-  PATCH: "text-amber-600 bg-amber-50",
-  PUT: "text-amber-600 bg-amber-50",
-  DELETE: "text-red-600 bg-red-50",
-};
+import { ActivityLogRow, MODUL, namaModul, ceritakanAktivitas } from "@/lib/activity-log";
+import { ActivityDetailDialog } from "@/components/activity-log/activity-detail-dialog";
 
 /**
  * Log aktivitas seluruh user. Sengaja hanya untuk SUPER_ADMIN — backend
@@ -45,13 +26,17 @@ const warnaMethod: Record<string, string> = {
  */
 export default function ActivityLogPage() {
   const { user } = useAuthStore();
-  const [rows, setRows] = useState<LogRow[]>([]);
+  const [rows, setRows] = useState<ActivityLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [modul, setModul] = useState("SEMUA");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [detailRow, setDetailRow] = useState<ActivityLogRow | null>(null);
 
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
@@ -70,7 +55,16 @@ export default function ActivityLogPage() {
     }
     setLoading(true);
     api
-      .get("/activity-log", { params: { page, limit: 50, search: debounced } })
+      .get("/activity-log", {
+        params: {
+          page,
+          limit: 50,
+          search: debounced,
+          entity: modul !== "SEMUA" ? modul : undefined,
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
+        },
+      })
       .then((res) => {
         setRows(res.data.data);
         setTotalPages(res.data.meta.totalPages);
@@ -78,7 +72,7 @@ export default function ActivityLogPage() {
       })
       .catch(() => toast.error("Gagal memuat log aktivitas"))
       .finally(() => setLoading(false));
-  }, [page, debounced, isSuperAdmin]);
+  }, [page, debounced, modul, dateFrom, dateTo, isSuperAdmin]);
 
   if (!isSuperAdmin) {
     return (
@@ -97,21 +91,69 @@ export default function ActivityLogPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Log Aktivitas</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Rekam jejak seluruh perubahan data per pengguna dan role
+          Siapa melakukan apa, kapan, dan di bagian mana. Klik baris untuk lihat
+          detail perubahan.
         </p>
       </div>
 
-      <div className="relative max-w-md">
-        <Search
-          size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-        />
-        <Input
-          className="h-9 pl-9 text-sm"
-          placeholder="Cari username atau endpoint..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="relative max-w-xs flex-1">
+          <Search
+            size={14}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            className="h-9 pl-9 text-sm"
+            placeholder="Cari nama pengguna..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <Select
+          value={modul}
+          onValueChange={(v) => {
+            setModul(v);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="h-9 w-44 text-sm">
+            <SelectValue placeholder="Semua modul" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="SEMUA">Semua modul</SelectItem>
+            {Object.entries(MODUL).map(([key, label]) => (
+              <SelectItem key={key} value={key}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="flex items-end gap-2">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Dari tanggal</label>
+            <Input
+              type="date"
+              className="h-9 w-36 text-sm"
+              value={dateFrom}
+              onChange={(e) => {
+                setDateFrom(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Sampai tanggal</label>
+            <Input
+              type="date"
+              className="h-9 w-36 text-sm"
+              value={dateTo}
+              onChange={(e) => {
+                setDateTo(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       {loading ? (
@@ -123,57 +165,61 @@ export default function ActivityLogPage() {
           Belum ada aktivitas tercatat
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-xs">
-            <thead className="bg-muted/50 text-left">
+        <div className="overflow-x-auto rounded-lg border bg-card shadow-sm">
+          <table className="w-full text-sm">
+            <thead className="bg-muted text-left">
               <tr>
-                <th className="px-3 py-2 font-semibold">Waktu</th>
-                <th className="px-3 py-2 font-semibold">Pengguna</th>
-                <th className="px-3 py-2 font-semibold">Role</th>
-                <th className="px-3 py-2 font-semibold">Aksi</th>
-                <th className="px-3 py-2 font-semibold">Endpoint</th>
-                <th className="px-3 py-2 font-semibold">Status</th>
-                <th className="px-3 py-2 font-semibold">IP</th>
+                <th className="px-4 py-2.5 font-semibold text-foreground">Waktu</th>
+                <th className="px-4 py-2.5 font-semibold text-foreground">Pengguna</th>
+                <th className="px-4 py-2.5 font-semibold text-foreground">Modul</th>
+                <th className="px-4 py-2.5 font-semibold text-foreground">Aktivitas</th>
+                <th className="px-4 py-2.5 font-semibold text-foreground">IP</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-accent/30">
-                  <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-                    {new Date(r.createdAt).toLocaleString("id-ID", {
-                      dateStyle: "short",
-                      timeStyle: "medium",
-                    })}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className="font-medium">{r.user?.name ?? r.username}</span>
-                    <span className="ml-1 text-muted-foreground">
-                      ({r.username})
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">
-                    <Badge variant="outline" className="text-[10px]">
-                      {r.roleCode ?? "—"}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-2">
-                    <span
-                      className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${
-                        warnaMethod[r.method] ?? "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {r.method}
-                    </span>
-                  </td>
-                  <td className="max-w-[320px] truncate px-3 py-2 font-mono text-[10.5px]">
-                    {r.path}
-                  </td>
-                  <td className="px-3 py-2">{r.statusCode}</td>
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {r.ip ?? "—"}
-                  </td>
-                </tr>
-              ))}
+              {rows.map((r, i) => {
+                const canOpen = (r.meta?.changes ?? []).length > 0;
+                return (
+                  <tr
+                    key={r.id}
+                    onClick={() => canOpen && setDetailRow(r)}
+                    className={`${i % 2 === 1 ? "bg-muted/30" : ""} hover:bg-accent/40 ${
+                      canOpen ? "cursor-pointer" : ""
+                    }`}
+                  >
+                    <td className="whitespace-nowrap px-4 py-2.5 text-foreground">
+                      {new Date(r.createdAt).toLocaleString("id-ID", {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      })}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span className="font-medium text-foreground">
+                        {r.user?.name ?? r.username}
+                      </span>
+                      <Badge variant="outline" className="ml-2 text-[10px]">
+                        {r.roleCode ?? "—"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <Badge variant="secondary" className="text-xs font-normal">
+                        {namaModul(r.entity)}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2.5 text-foreground">
+                      {ceritakanAktivitas(r)}
+                      {canOpen && (
+                        <span className="ml-1.5 text-xs text-primary underline">
+                          lihat detail
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-muted-foreground">
+                      {r.ip ?? "—"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -206,6 +252,8 @@ export default function ActivityLogPage() {
           </div>
         </div>
       )}
+
+      <ActivityDetailDialog row={detailRow} onClose={() => setDetailRow(null)} />
     </div>
   );
 }

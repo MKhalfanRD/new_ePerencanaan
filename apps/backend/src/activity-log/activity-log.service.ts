@@ -13,16 +13,49 @@ export class ActivityLogService {
     userId?: string;
     roleCode?: string;
     search?: string;
+    entity?: string;
+    entityId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    relatedProyekId?: string;
   }) {
-    const where: Prisma.ActivityLogWhereInput = {};
-    if (q.userId) where.userId = q.userId;
-    if (q.roleCode) where.roleCode = q.roleCode;
-    if (q.search) {
-      where.OR = [
-        { username: { contains: q.search, mode: 'insensitive' } },
-        { path: { contains: q.search, mode: 'insensitive' } },
-      ];
+    const and: Prisma.ActivityLogWhereInput[] = [];
+    if (q.userId) and.push({ userId: q.userId });
+    if (q.roleCode) and.push({ roleCode: q.roleCode });
+    if (q.entity) and.push({ entity: q.entity });
+    if (q.entityId) and.push({ entityId: q.entityId });
+    if (q.dateFrom || q.dateTo) {
+      and.push({
+        createdAt: {
+          ...(q.dateFrom ? { gte: new Date(q.dateFrom) } : {}),
+          ...(q.dateTo ? { lte: new Date(q.dateTo) } : {}),
+        },
+      });
     }
+    if (q.relatedProyekId) {
+      // Widget "Riwayat Perubahan" di detail Proyek — selain mutasi Proyek
+      // itu sendiri, Paket/Alokasi di bawahnya juga disimpan log-nya dengan
+      // meta.proyekId (lihat activity-log.interceptor.ts), supaya histori
+      // proyek tidak cuma menampilkan baris proyeknya saja.
+      and.push({
+        OR: [
+          { entity: 'proyek', entityId: q.relatedProyekId },
+          {
+            entity: { in: ['paket', 'alokasi'] },
+            meta: { path: ['proyekId'], equals: q.relatedProyekId },
+          },
+        ],
+      });
+    }
+    if (q.search) {
+      and.push({
+        OR: [
+          { username: { contains: q.search, mode: 'insensitive' } },
+          { path: { contains: q.search, mode: 'insensitive' } },
+        ],
+      });
+    }
+    const where: Prisma.ActivityLogWhereInput = and.length ? { AND: and } : {};
 
     const [data, total] = await Promise.all([
       this.prisma.activityLog.findMany({

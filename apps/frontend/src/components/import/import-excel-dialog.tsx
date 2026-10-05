@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import {
   Upload,
   FileSpreadsheet,
@@ -67,6 +67,10 @@ interface ParseError {
   balaiName: string;
   reason: string;
 }
+interface TemplateColumn {
+  key: string;
+  required: boolean;
+}
 
 interface PreviewResult {
   sessionId: string;
@@ -112,6 +116,28 @@ interface Props {
 
 const formatRupiah = (val: number) =>
   new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(val);
+
+// Satu contoh valid per kolom wajib supaya file template langsung bisa
+// diisi tanpa menebak format (lihat validasi di import.service.ts).
+const CONTOH_WAJIB: Record<string, string> = {
+  jenisPaket: "F",
+  masaLaksana: "Single Year",
+  namaPaket: "Contoh Paket Normalisasi Sungai",
+  kdKegiatan: "5601",
+  kdRO: "EAA",
+};
+
+function downloadTemplate(columns: TemplateColumn[]) {
+  const header = columns.map((c) =>
+    c.key === "kodeProyek" ? "KodeProyek" : c.key,
+  );
+  const contoh = columns.map((c) => CONTOH_WAJIB[c.key] ?? "");
+  const ws = XLSX.utils.aoa_to_sheet([header, contoh]);
+  ws["!cols"] = columns.map(() => ({ wch: 16 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Template Import");
+  XLSX.writeFile(wb, `template-import-proyek-${Date.now()}.xlsx`);
+}
 
 function downloadErrorsToExcel(errors: ParseError[], filename: string) {
   const rows = errors.map((e) => ({
@@ -252,8 +278,19 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
   const [result, setResult] = useState<CommitResult | null>(null);
   const [showParseErrors, setShowParseErrors] = useState(false);
   const [showCommitErrors, setShowCommitErrors] = useState(false);
+  const [templateColumns, setTemplateColumns] = useState<TemplateColumn[]>(
+    [],
+  );
 
   const duplicatePerPage = 10;
+
+  useEffect(() => {
+    if (!open || templateColumns.length > 0) return;
+    api
+      .get<TemplateColumn[]>("/import/template-columns")
+      .then((res) => setTemplateColumns(res.data))
+      .catch(() => undefined);
+  }, [open, templateColumns.length]);
 
   const reset = () => {
     setStep("upload");
@@ -498,6 +535,33 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   meminta konfirmasi sebelum data disimpan.
                 </p>
               </div>
+
+              {templateColumns.length > 0 && (
+                <div className="rounded-lg border p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium">
+                      Belum punya file? Download template kosong
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => downloadTemplate(templateColumns)}
+                    >
+                      <Download size={12} className="mr-1.5" /> Download
+                      Template
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Kolom wajib:{" "}
+                    {templateColumns
+                      .filter((c) => c.required)
+                      .map((c) => c.key)
+                      .join(", ")}
+                    . Kolom lain opsional, boleh dikosongkan.
+                  </p>
+                </div>
+              )}
 
               {/* DB.xlsx tidak punya kolom Tahun/Status — dipilih sekali untuk
                   seluruh file yang diimpor */}

@@ -6,6 +6,11 @@ import {
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../prisma/prisma.service';
 import { CommitImportDto } from './dto/import.dto';
+import {
+  changesForCreate,
+  diffEntity,
+} from '../activity-log/activity-log.util';
+import { generateKodeProyek } from '../common/kode-generator';
 
 /**
  * Parser Excel untuk format `DB.xlsx` (bukan lagi RKA-K/L per-RO/tahun yang
@@ -17,7 +22,7 @@ import { CommitImportDto } from './dto/import.dto';
 
 // Posisi kolom (1-based) sesuai header asli DB.xlsx — lihat
 // docs-planning/audit-restrukturisasi-db-xlsx.md §1 untuk daftar lengkapnya.
-const COL = {
+export const COL = {
   kodeProyek: 1,
   namaProyek: 2,
   kdBalai: 3,
@@ -545,13 +550,15 @@ export class ImportService {
       newTotal: number;
     }[] = [];
 
+    const matchedBalaiId = new Map(
+      matched.map((m) => [m.excelName, m.balaiId]),
+    );
     for (const [groupKey, rows] of groups) {
       const first = rows[0];
-      if (!first.kodeProyek) continue; // tanpa KodeProyek tidak bisa dicek duplikat
-      const existing = await this.prisma.proyek.findFirst({
-        where: { kodeProyek: first.kodeProyek, deletedAt: null },
-        include: { paket: { include: { alokasi: true } } },
-      });
+      const existing = await this.findExistingProyek(
+        rows,
+        matchedBalaiId.get(first.balaiName),
+      );
       if (existing) {
         const existingTotal = existing.paket
           .flatMap((p) => p.alokasi)
@@ -603,7 +610,61 @@ export class ImportService {
     return groups;
   }
 
-  async commit(dto: CommitImportDto, userId: string) {
+  /**
+   * Proyek dianggap sudah ada kalau KodeProyek-nya sama, atau (tanpa kode)
+   * nama + balai + kegiatan sama. Kegiatan cuma punya 1 program, jadi
+   * kegiatan sama = program sama. Nama sama tapi kegiatan beda = proyek lain.
+   */
+  private async findExistingProyek(
+    rows: ParsedPaketRow[],
+    balaiId: number | undefined,
+  ) {
+    const first = rows[0];
+    const include = { paket: { include: { alokasi: true } } };
+    if (first.kodeProyek) {
+      const byKode = await this.prisma.proyek.findFirst({
+        where: { kodeProyek: first.kodeProyek, deletedAt: null },
+        include,
+      });
+      if (byKode) return byKode;
+    }
+    if (balaiId == null) return null;
+    return this.prisma.proyek.findFirst({
+      where: {
+        deletedAt: null,
+        balaiId,
+        projectName: { equals: first.namaProyek.trim(), mode: 'insensitive' },
+        paket: {
+          some: {
+            deletedAt: null,
+            ro: {
+              kro: {
+                kegiatanId: { in: [...new Set(rows.map((r) => r.kdKegiatan))] },
+              },
+            },
+          },
+        },
+      },
+      include,
+    });
+  }
+
+  /** Daftar kolom template import, dalam urutan kolom asli, dengan flag wajib/opsional. */
+  getTemplateColumns() {
+    const REQUIRED = new Set([
+      'jenisPaket',
+      'masaLaksana',
+      'namaPaket',
+      'kdKegiatan',
+      'kdRO',
+    ]);
+    return Object.keys(COL).map((key) => ({
+      key,
+      required: REQUIRED.has(key),
+    }));
+  }
+
+  async commit(dto: CommitImportDto, userId: string, username: string) {
     const session = importSessions.get(dto.sessionId);
     if (!session) {
       throw new NotFoundException(
@@ -894,15 +955,24 @@ export class ImportService {
     let skippedProyek = 0;
     let createdPaket = 0;
 
+    // KodePaket kosong di Excel -> generate dengan pola yang sama seperti
+    // create manual (lihat src/common/kode-generator.ts).
+    const withKodePaket = <T extends { kodePaket?: string }>(
+      paket: T[],
+      kodeProyek: string,
+    ) =>
+      paket.map((p, idx) => ({
+        ...p,
+        kodePaket:
+          p.kodePaket ??
+          `PA${kodeProyek.slice(2)}${String(idx + 1).padStart(4, '0')}`,
+      }));
+
     for (const [groupKey, groupRows] of groups) {
       const first = groupRows[0];
       const balaiId = balaiMap.get(first.balaiName)!;
 
-      const existing = first.kodeProyek
-        ? await this.prisma.proyek.findFirst({
-            where: { kodeProyek: first.kodeProyek, deletedAt: null },
-          })
-        : null;
+      const existing = await this.findExistingProyek(groupRows, balaiId);
 
       if (existing) {
         const decision = decisions.get(groupKey) ?? 'skip';
@@ -911,9 +981,15 @@ export class ImportService {
           continue;
         }
         try {
-          const paketData = (
-            await Promise.all(groupRows.map(buildPaketData))
-          ).filter((p): p is NonNullable<typeof p> => p !== null);
+          // Proyek lama hasil import sebelumnya bisa belum punya kode.
+          const kodeProyek =
+            existing.kodeProyek ?? (await generateKodeProyek(this.prisma));
+          const paketData = withKodePaket(
+            (await Promise.all(groupRows.map(buildPaketData))).filter(
+              (p): p is NonNullable<typeof p> => p !== null,
+            ),
+            kodeProyek,
+          );
           const sumberUsulanReplace = parseSumberUsulan(
             first.sumberUsulanProyekRaw,
           );
@@ -921,9 +997,10 @@ export class ImportService {
           await this.prisma.paket.deleteMany({
             where: { proyekId: existing.id },
           });
-          await this.prisma.proyek.update({
+          const updated = await this.prisma.proyek.update({
             where: { id: existing.id },
             data: {
+              kodeProyek,
               projectName: first.namaProyek,
               balaiId,
               kewenangan: (first.kewenangan || 'PUSAT') as any,
@@ -945,6 +1022,27 @@ export class ImportService {
           });
           updatedProyek++;
           createdPaket += paketData.length;
+          await this.prisma.activityLog
+            .create({
+              data: {
+                userId,
+                username,
+                method: 'POST',
+                path: '/import/commit',
+                entity: 'proyek',
+                entityId: existing.id,
+                statusCode: 200,
+                meta: {
+                  resource: 'Proyek',
+                  source: 'import',
+                  kodeProyek,
+                  aksi: 'replace',
+                  sessionId: dto.sessionId,
+                  changes: diffEntity(existing, updated),
+                } as any,
+              },
+            })
+            .catch(() => undefined);
         } catch (err: any) {
           commitErrors.push({
             excelRowNumber: first.excelRowNumber,
@@ -958,13 +1056,18 @@ export class ImportService {
 
       // Proyek baru
       try {
-        const paketData = (
-          await Promise.all(groupRows.map(buildPaketData))
-        ).filter((p): p is NonNullable<typeof p> => p !== null);
+        const kodeProyek =
+          first.kodeProyek || (await generateKodeProyek(this.prisma));
+        const paketData = withKodePaket(
+          (await Promise.all(groupRows.map(buildPaketData))).filter(
+            (p): p is NonNullable<typeof p> => p !== null,
+          ),
+          kodeProyek,
+        );
         const sumberUsulan = parseSumberUsulan(first.sumberUsulanProyekRaw);
-        await this.prisma.proyek.create({
+        const created = await this.prisma.proyek.create({
           data: {
-            kodeProyek: first.kodeProyek || undefined,
+            kodeProyek,
             projectName: first.namaProyek,
             balaiId,
             periodeId: await this.resolvePeriodeId(dto.tahun),
@@ -989,6 +1092,27 @@ export class ImportService {
         });
         createdProyek++;
         createdPaket += paketData.length;
+        await this.prisma.activityLog
+          .create({
+            data: {
+              userId,
+              username,
+              method: 'POST',
+              path: '/import/commit',
+              entity: 'proyek',
+              entityId: created.id,
+              statusCode: 200,
+              meta: {
+                resource: 'Proyek',
+                source: 'import',
+                kodeProyek,
+                aksi: 'create',
+                sessionId: dto.sessionId,
+                changes: changesForCreate(created),
+              } as any,
+            },
+          })
+          .catch(() => undefined);
       } catch (err: any) {
         commitErrors.push({
           excelRowNumber: first.excelRowNumber,

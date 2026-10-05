@@ -20,7 +20,16 @@ import api from "@/lib/api";
 interface Item {
   id: string;
   name: string;
+  code?: string | null;
 }
+
+type FormData = { name: string; code: string };
+
+// Kolom `code` @unique — string kosong harus jadi null supaya tidak bentrok.
+const toPayload = (d: { name: string; code?: string }) => ({
+  name: d.name.trim(),
+  code: d.code?.trim() || null,
+});
 
 export function WilayahSungaiTab() {
   const [data, setData] = useState<Item[]>([]);
@@ -33,7 +42,7 @@ export function WilayahSungaiTab() {
     handleSubmit,
     reset,
     formState: { isSubmitting },
-  } = useForm<{ name: string }>();
+  } = useForm<FormData>();
 
   const fetch = async () => {
     setLoading(true);
@@ -55,22 +64,22 @@ export function WilayahSungaiTab() {
 
   const openAdd = () => {
     setEditData(null);
-    reset({ name: "" });
+    reset({ name: "", code: "" });
     setShowForm(true);
   };
   const openEdit = (item: Item) => {
     setEditData(item);
-    reset({ name: item.name });
+    reset({ name: item.name, code: item.code ?? "" });
     setShowForm(true);
   };
 
-  const onSubmit = async (data: { name: string }) => {
+  const onSubmit = async (data: FormData) => {
     try {
       if (editData) {
-        await api.patch(`/master/wilayah-sungai/${editData.id}`, data);
+        await api.patch(`/master/wilayah-sungai/${editData.id}`, toPayload(data));
         toast.success("Wilayah Sungai berhasil diperbarui");
       } else {
-        await api.post("/master/wilayah-sungai", data);
+        await api.post("/master/wilayah-sungai", toPayload(data));
         toast.success("Wilayah Sungai berhasil ditambahkan");
       }
       setShowForm(false);
@@ -113,11 +122,12 @@ export function WilayahSungaiTab() {
         (d) => d.name.toLowerCase() === name.toLowerCase(),
       );
       try {
+        const payload = toPayload({ name, code: row.code });
         if (existing) {
-          await api.patch(`/master/wilayah-sungai/${existing.id}`, { name });
+          await api.patch(`/master/wilayah-sungai/${existing.id}`, payload);
           updated++;
         } else {
-          await api.post("/master/wilayah-sungai", { name });
+          await api.post("/master/wilayah-sungai", payload);
           created++;
         }
       } catch {
@@ -134,14 +144,17 @@ export function WilayahSungaiTab() {
         title="Wilayah Sungai"
         data={data}
         loading={loading}
-        columns={[{ key: "name", label: "Nama" }]}
+        columns={[
+          { key: "code", label: "Kode" },
+          { key: "name", label: "Nama" },
+        ]}
         onAdd={openAdd}
         onEdit={openEdit}
         onDelete={onDelete}
         onBulkDelete={onBulkDelete}
         onImport={onImportRows}
         exportable
-        searchKeys={["name"]}
+        searchKeys={["code", "name"]}
       />
 
       <Dialog open={showForm} onOpenChange={(v) => !v && setShowForm(false)}>
@@ -155,6 +168,14 @@ export function WilayahSungaiTab() {
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Kode</Label>
+              <Input
+                className="h-10"
+                placeholder="Contoh: 01.01.A3"
+                {...register("code")}
+              />
+            </div>
             <div className="space-y-2">
               <Label>
                 Nama <span className="text-destructive">*</span>

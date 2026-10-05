@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Building2,
   FolderTree,
@@ -33,8 +34,25 @@ const tabs = [
   { id: "sasaran", label: "Sasaran SP / SK", icon: Flag },
 ];
 
+const TAB_IDS = tabs.map((t) => t.id);
+
 export default function MasterPage() {
-  const [activeTab, setActiveTab] = useState("nomenklatur");
+  return (
+    <Suspense>
+      <MasterPageInner />
+    </Suspense>
+  );
+}
+
+function MasterPageInner() {
+  const searchParams = useSearchParams();
+  // Deep-link dari Log Aktivitas (`/master?tab=...`) — buka tab yang sesuai
+  // dengan resource yang baru diubah.
+  const [activeTab, setActiveTab] = useState(() => {
+    const tab = searchParams.get("tab");
+    return tab && TAB_IDS.includes(tab) ? tab : "nomenklatur";
+  });
+  const initialKegiatanId = searchParams.get("kegiatanId") ?? undefined;
 
   return (
     <div className="space-y-5">
@@ -69,7 +87,9 @@ export default function MasterPage() {
         {activeTab === "balai" && <BalaiTab />}
         {activeTab === "nomenklatur" && <NomenklaturTab />}
         {activeTab === "wilayah-sungai" && <WilayahSungaiTab />}
-        {activeTab === "form-proyek" && <FormProyekTab />}
+        {activeTab === "form-proyek" && (
+          <FormProyekTab initialKegiatanId={initialKegiatanId} />
+        )}
         {activeTab === "pnppkp" && <PnppkpTab />}
         {activeTab === "tagging-renja" && <TaggingRenjaTab />}
         {activeTab === "sasaran" && <SasaranTab />}

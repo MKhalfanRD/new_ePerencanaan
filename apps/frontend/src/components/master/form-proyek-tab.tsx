@@ -184,7 +184,11 @@ function Sortable({
 
 type DeleteTarget = { type: "section" | "item" | "option"; id: string; label: string };
 
-export function FormProyekTab() {
+export function FormProyekTab({
+  initialKegiatanId,
+}: {
+  initialKegiatanId?: string;
+} = {}) {
   const [kegiatanList, setKegiatanList] = useState<Kegiatan[]>([]);
   const [kegiatanId, setKegiatanId] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -234,7 +238,8 @@ export function FormProyekTab() {
   useEffect(() => {
     api.get("/master/kegiatan").then((res) => {
       setKegiatanList(res.data);
-      if (res.data.length) setKegiatanId((prev) => prev || res.data[0].id);
+      if (res.data.length)
+        setKegiatanId((prev) => prev || initialKegiatanId || res.data[0].id);
     });
   }, []);
 

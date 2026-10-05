@@ -137,7 +137,7 @@ export function MasterTable<T extends { id: string | number }>({
     search && searchKeys.length > 0
       ? data.filter((item) =>
           searchKeys.some((key) =>
-            String(item[key]).toLowerCase().includes(search.toLowerCase()),
+            String(item[key] ?? "").toLowerCase().includes(search.toLowerCase()),
           ),
         )
       : data;

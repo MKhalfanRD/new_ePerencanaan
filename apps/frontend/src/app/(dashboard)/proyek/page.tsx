@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { Suspense, useEffect, useState, useMemo, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Plus,
   Search,
@@ -89,7 +90,16 @@ const byYearOf = (
 };
 
 export default function ProyekPage() {
+  return (
+    <Suspense>
+      <ProyekPageInner />
+    </Suspense>
+  );
+}
+
+function ProyekPageInner() {
   const { user } = useAuthStore();
+  const searchParams = useSearchParams();
   const [proyekList, setProyekList] = useState<Proyek[]>([]);
   const [showImport, setShowImport] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -187,6 +197,18 @@ export default function ProyekPage() {
     }, 400);
     return () => clearTimeout(timeout);
   }, [search]);
+
+  // Deep-link dari Log Aktivitas (`/proyek?id=...`) — buka langsung sheet
+  // detail proyek itu tanpa user harus cari manual di list.
+  useEffect(() => {
+    const id = searchParams.get("id");
+    if (!id) return;
+    api
+      .get<Proyek>(`/proyek/${id}`)
+      .then((res) => setDetailData(res.data))
+      .catch(() => toast.error("Proyek tidak ditemukan"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const handleDelete = async () => {
     if (!deleteId) return;

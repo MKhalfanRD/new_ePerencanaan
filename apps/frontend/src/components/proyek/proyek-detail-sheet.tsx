@@ -58,6 +58,7 @@ import {
   exportProyekDetailToExcel,
   exportProyekDetailToPDF,
 } from "@/lib/export-utils";
+import { RiwayatPerubahan } from "@/components/activity-log/riwayat-panel";
 import { AlokasiFormDialog } from "./alokasi-form-dialog";
 import { AlokasiExpandPanel } from "./alokasi-expand-panel";
 import { PaketFormDialog } from "./paket-form-dialog";
@@ -826,6 +827,8 @@ export function ProyekDetailSheet({
               </div>
             )}
           </div>
+
+          <RiwayatPerubahan entity="proyek" entityId={proyek.id} />
         </SheetBody>
       </SheetContent>
 

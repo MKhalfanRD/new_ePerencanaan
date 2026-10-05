@@ -25,6 +25,11 @@ export class ActivityLogController {
     @Query('userId') userId?: string,
     @Query('roleCode') roleCode?: string,
     @Query('search') search?: string,
+    @Query('entity') entity?: string,
+    @Query('entityId') entityId?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('relatedProyekId') relatedProyekId?: string,
   ) {
     return this.service.findAll({
       page: Number(page) || 1,
@@ -32,6 +37,11 @@ export class ActivityLogController {
       userId,
       roleCode,
       search,
+      entity,
+      entityId,
+      dateFrom,
+      dateTo,
+      relatedProyekId,
     });
   }
 }

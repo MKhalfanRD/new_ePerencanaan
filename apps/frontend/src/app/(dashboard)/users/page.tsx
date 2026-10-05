@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Plus, Search, UserCheck, UserX, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -39,10 +40,21 @@ interface User {
 }
 
 export default function UsersPage() {
+  return (
+    <Suspense>
+      <UsersPageInner />
+    </Suspense>
+  );
+}
+
+function UsersPageInner() {
   const { user: currentUser } = useAuthStore();
+  const searchParams = useSearchParams();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  // Deep-link dari Log Aktivitas (`/users?q=...`) — isi kotak pencarian
+  // langsung dengan username/nama record yang mau dicari.
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
   const [showForm, setShowForm] = useState(false);
   const [editData, setEditData] = useState<User | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);

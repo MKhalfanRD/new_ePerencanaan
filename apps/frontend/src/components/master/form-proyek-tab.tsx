@@ -235,6 +235,15 @@ export function FormProyekTab({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
+  // Daftar pilihan "Sumber Usulan Proyek" di form diambil dari master ini,
+  // bukan dari item.options — opsi cuma nyimpan skor per nama.
+  const [sumberUsulanMaster, setSumberUsulanMaster] = useState<string[]>([]);
+  useEffect(() => {
+    api
+      .get("/master/sumber-usulan-proyek")
+      .then((res) => setSumberUsulanMaster(res.data.map((s: { name: string }) => s.name)));
+  }, []);
+
   useEffect(() => {
     api.get("/master/kegiatan").then((res) => {
       setKegiatanList(res.data);
@@ -494,6 +503,96 @@ export function FormProyekTab({
   // yang lagi diedit jadi lebih tinggi dari tetangganya — itu wajar karena
   // tiap field sudah punya card/border sendiri, bukan lagi satu blok rata
   // yang bikin ruang kosong membingungkan.
+  // Field baku ber-opsi (status kesiapan, kewenangan, sumber usulan, dst):
+  // pilihannya dikunci (dari enum/master), admin cuma atur skor per pilihan.
+  // Sumber Usulan: baris = isi master; opsi yang belum ada dibuat saat skor
+  // pertama kali diisi, opsi yang namanya sudah hilang dari master ditandai.
+  const renderBakuOptionScores = (item: FormItemNode) => {
+    const fromMaster = item.key === "sumberUsulanProyek";
+    const rows = fromMaster
+      ? [
+          ...sumberUsulanMaster.map((name) => ({
+            name,
+            opt: item.options.find((o) => o.value === name),
+            stale: false,
+          })),
+          ...item.options
+            .filter((o) => !sumberUsulanMaster.includes(o.value))
+            .map((o) => ({ name: o.label, opt: o, stale: true })),
+        ]
+      : item.options.map((o) => ({ name: o.label, opt: o, stale: false }));
+
+    const saveScore = async (
+      name: string,
+      opt: (typeof item.options)[number] | undefined,
+      v: number | null,
+    ) => {
+      if (opt) {
+        if (v !== opt.score) patchOption(opt.id, { score: v });
+        return;
+      }
+      if (v == null) return;
+      try {
+        await api.post("/master/form-item-option", {
+          itemId: item.id,
+          value: name,
+          label: name,
+          score: v,
+        });
+        bump();
+      } catch (err: any) {
+        toast.error(err.response?.data?.message || "Gagal menyimpan skor");
+      }
+    };
+
+    return (
+      <div className="space-y-1.5">
+        <Label className="text-[10px] text-muted-foreground">
+          Skor per pilihan
+          {fromMaster && " (daftar dari Master Data Sumber Usulan Proyek)"}
+        </Label>
+        {rows.map(({ name, opt, stale }) => (
+          <div key={opt?.id ?? name} className="flex items-center gap-2">
+            <span
+              className={cn(
+                "flex-1 text-[11px] truncate",
+                stale && "text-muted-foreground line-through",
+              )}
+              title={stale ? "Tidak ada lagi di master data" : undefined}
+            >
+              {name}
+            </span>
+            <Input
+              type="number"
+              placeholder="skor"
+              className="h-7 w-16 text-[11px] shrink-0"
+              defaultValue={opt?.score ?? ""}
+              onBlur={(e) =>
+                saveScore(
+                  name,
+                  opt,
+                  e.target.value ? Number(e.target.value) : null,
+                )
+              }
+            />
+            {stale && opt && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground/60 hover:text-destructive shrink-0"
+                onClick={() =>
+                  setDeleteTarget({ type: "option", id: opt.id, label: name })
+                }
+              >
+                <Trash2 size={11} />
+              </Button>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const renderItemSettingsFields = (item: FormItemNode) => {
     const isBaku = BAKU_ITEM_KEYS.has(item.key);
     const isAlwaysRequiredBaku = ALWAYS_REQUIRED_BAKU_KEYS.has(item.key);
@@ -548,7 +647,11 @@ export function FormProyekTab({
               </SelectContent>
             </Select>
           </div>
-          {!isBaku && !item.options.length && item.thresholdValue == null && (
+          {/* Field baku cuma dapat input skor kalau memang item berskor
+              (mis. checkbox Tagging) — Balai/Periode dst tidak dinilai. */}
+          {(!isBaku || item.score != null) &&
+            !item.options.length &&
+            item.thresholdValue == null && (
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground">
                 Skor
@@ -599,6 +702,11 @@ export function FormProyekTab({
             />
           </div>
         )}
+
+        {isBaku &&
+          (item.options.some((o) => o.score != null) ||
+            item.key === "sumberUsulanProyek") &&
+          renderBakuOptionScores(item)}
 
         {!isBaku && item.fieldType === "DROPDOWN" && (
           <div className="space-y-1.5">

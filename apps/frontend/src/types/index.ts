@@ -200,6 +200,18 @@ export interface Proyek {
   kebutuhanTanah: boolean;
   wilayahSungaiId?: string;
   wilayahSungai?: { id: string; name: string };
+  tipeKoordinat?: "TITIK" | "GARIS" | "POLIGON";
+  coordinates?: number[][];
+  latitude?: number;
+  longitude?: number;
+  provinceId?: string;
+  provinceName?: string;
+  cityId?: string;
+  cityName?: string;
+  districtId?: string;
+  districtName?: string;
+  villageId?: string;
+  villageName?: string;
 
   // === Dasar Pelaksanaan === nama dari master data SumberUsulanProyek
   sumberUsulanProyek?: string;

@@ -2,6 +2,7 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -142,15 +143,25 @@ export class CreateProyekDto {
   @IsEnum(['PUSAT', 'DAERAH'])
   kewenangan?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: ['TITIK', 'GARIS', 'POLIGON'] })
   @IsOptional()
-  @IsString()
-  provinceId?: string;
+  @IsIn(['TITIK', 'GARIS', 'POLIGON'])
+  tipeKoordinat?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional() @IsOptional() @IsString() provinceId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() provinceName?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() cityId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() cityName?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() districtId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() districtName?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() villageId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() villageName?: string;
+
+  @ApiPropertyOptional({
+    description: 'Untuk tipe GARIS/POLIGON, array [[lat,lng],...]',
+  })
   @IsOptional()
-  @IsString()
-  cityId?: string;
+  coordinates?: number[][];
 
   @ApiPropertyOptional()
   @IsOptional()

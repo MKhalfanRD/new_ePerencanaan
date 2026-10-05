@@ -733,10 +733,20 @@ model Proyek {
   projectName String     @db.Text
   kewenangan  Kewenangan @default(PUSAT)
 
-  provinceId String? @db.VarChar(10)
-  cityId     String? @db.VarChar(10)
-  latitude   Float?
-  longitude  Float?
+  // Lokasi proyek — format sama persis dgn LokasiAlokasi: TITIK pakai
+  // latitude/longitude, GARIS/POLIGON pakai coordinates [[lat,lng],...].
+  tipeKoordinat TipeKoordinat @default(TITIK)
+  provinceId    String?       @db.VarChar(10)
+  provinceName  String?       @db.VarChar(100)
+  cityId        String?       @db.VarChar(10)
+  cityName      String?       @db.VarChar(100)
+  districtId    String?       @db.VarChar(10)
+  districtName  String?       @db.VarChar(100)
+  villageId     String?       @db.VarChar(10)
+  villageName   String?       @db.VarChar(100)
+  latitude      Float?
+  longitude     Float?
+  coordinates   Json?
 
   // Kesesuaian proyek cuma dua hal: wilayah sungai & kebutuhan tanah.
   // Kolom RTRW/Pola SDA/Masterplan dibuang — tidak dipakai di form.

@@ -40,6 +40,8 @@ import {
 } from "@/lib/form-item-width";
 import type { TabKey } from "@/lib/form-item-width";
 import api from "@/lib/api";
+import { CascadingWilayah } from "@/components/map/cascading-wilayah";
+import { LokasiPeta } from "@/components/map/lokasi-peta";
 import {
   Balai,
   Periode,
@@ -132,6 +134,20 @@ const schema = z.object({
   periodeId: z.number({ error: "Periode wajib dipilih" }),
   projectName: z.string().min(1, "Nama proyek wajib diisi"),
   wilayahSungaiId: z.string().optional(),
+
+  // Tab Lokasi Proyek — format sama dgn lokasi alokasi
+  tipeKoordinat: z.enum(["TITIK", "GARIS", "POLIGON"]),
+  coordinates: z.array(z.array(z.number())),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
+  provinceId: z.string().optional(),
+  provinceName: z.string().optional(),
+  cityId: z.string().optional(),
+  cityName: z.string().optional(),
+  districtId: z.string().optional(),
+  districtName: z.string().optional(),
+  villageId: z.string().optional(),
+  villageName: z.string().optional(),
 
   // Tab 2: Dasar Pelaksanaan — nilai dari master data SumberUsulanProyek
   sumberUsulanProyek: z.string().optional(),
@@ -240,6 +256,7 @@ interface Props {
 const TABS = [
   { value: "identitas", label: "Identitas Proyek" },
   { value: "dasar", label: "Dasar Pelaksanaan" },
+  { value: "lokasi", label: "Lokasi Proyek" },
   { value: "kriteria", label: "Kriteria Teknis" },
   { value: "pemaketan", label: "Pemaketan" },
   { value: "tagging", label: "Tagging" },
@@ -256,6 +273,10 @@ const FIELD_TO_TAB: Record<string, (typeof TABS)[number]["value"]> = {
   periodeId: "identitas",
   projectName: "identitas",
   wilayahSungaiId: "identitas",
+  provinceId: "lokasi",
+  cityId: "lokasi",
+  latitude: "lokasi",
+  longitude: "lokasi",
   sumberUsulanProyek: "dasar",
   sumberUsulanLainnya: "dasar",
   justifikasiProyek: "dasar",
@@ -428,6 +449,8 @@ export function ProyekFormDialog({
     defaultValues: {
       kewenangan: "PUSAT",
       kebutuhanTanah: false,
+      tipeKoordinat: "TITIK",
+      coordinates: [],
       statusStudiLayak: "RENCANA",
       statusDed: "RENCANA",
       statusLarap: "RENCANA",
@@ -495,6 +518,18 @@ export function ProyekFormDialog({
         periodeId: editData.periode.id,
         projectName: editData.projectName,
         wilayahSungaiId: editData.wilayahSungaiId || "",
+        tipeKoordinat: editData.tipeKoordinat ?? "TITIK",
+        coordinates: editData.coordinates ?? [],
+        latitude: editData.latitude ?? undefined,
+        longitude: editData.longitude ?? undefined,
+        provinceId: editData.provinceId ?? undefined,
+        provinceName: editData.provinceName ?? undefined,
+        cityId: editData.cityId ?? undefined,
+        cityName: editData.cityName ?? undefined,
+        districtId: editData.districtId ?? undefined,
+        districtName: editData.districtName ?? undefined,
+        villageId: editData.villageId ?? undefined,
+        villageName: editData.villageName ?? undefined,
         sumberUsulanProyek: editData.sumberUsulanProyek,
         sumberUsulanLainnya: editData.sumberUsulanLainnya || "",
         justifikasiProyek: editData.justifikasiProyek || "",
@@ -554,6 +589,8 @@ export function ProyekFormDialog({
       reset({
         kewenangan: "PUSAT",
         kebutuhanTanah: false,
+        tipeKoordinat: "TITIK",
+        coordinates: [],
         statusStudiLayak: "RENCANA",
         statusDed: "RENCANA",
         statusLarap: "RENCANA",
@@ -653,6 +690,7 @@ export function ProyekFormDialog({
   const TAB_KEY_MAP: Record<(typeof TABS)[number]["value"], string> = {
     identitas: "identitas",
     dasar: "dasar",
+    lokasi: "lokasi",
     kriteria: "kesiapan",
     pemaketan: "pemaketan",
     tagging: "tematik",
@@ -906,6 +944,62 @@ export function ProyekFormDialog({
               ))}
           </SelectContent>
         </Select>
+      </div>
+    ),
+  };
+
+  // Wilayah administratif (provinsi s/d desa) & peta (titik/garis/poligon)
+  // — komponen yang SAMA dengan dialog lokasi alokasi.
+  const WILAYAH_KEYS = [
+    "provinceId",
+    "provinceName",
+    "cityId",
+    "cityName",
+    "districtId",
+    "districtName",
+    "villageId",
+    "villageName",
+  ] as const;
+  const setWilayah = (w: Partial<Record<(typeof WILAYAH_KEYS)[number], string>>) => {
+    for (const k of WILAYAH_KEYS) setValue(k, w[k], { shouldDirty: true });
+  };
+
+  const lokasiRenderers: Record<string, (item: FormItemNode) => React.ReactNode> = {
+    provinceId: (item) => (
+      <div key={item.id} className="space-y-2 col-span-full">
+        <Label>
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+        <CascadingWilayah
+          value={Object.fromEntries(WILAYAH_KEYS.map((k) => [k, watch(k)]))}
+          onChange={setWilayah}
+        />
+      </div>
+    ),
+    // Sudah tercakup "Wilayah Administratif" — dihapus dari template oleh
+    // migrasi 20261005000000, ini cuma jaga-jaga template lama.
+    cityId: () => null,
+    latitude: (item) => (
+      <div key={item.id} className="space-y-2 col-span-full">
+        <Label>
+          {item.label}
+          {item.required && <span className="text-destructive"> *</span>}
+        </Label>
+        <LokasiPeta
+          value={{
+            tipeKoordinat: watch("tipeKoordinat"),
+            latitude: watch("latitude"),
+            longitude: watch("longitude"),
+            coordinates: watch("coordinates") ?? [],
+          }}
+          onChange={(p) => {
+            for (const [k, v] of Object.entries(p))
+              setValue(k as "latitude", v as never, { shouldDirty: true });
+          }}
+          onWilayahDetected={setWilayah}
+          readOnly={previewMode}
+        />
       </div>
     ),
   };
@@ -1887,7 +1981,11 @@ export function ProyekFormDialog({
               ? isEdit
                 ? dokumenList.length === 0
                 : pendingFiles.length === 0
-              : isEmptyValue(watch(item.key as keyof FormData))
+              : item.key === "latitude"
+                ? watch("tipeKoordinat") === "TITIK"
+                  ? watch("latitude") == null
+                  : (watch("coordinates") ?? []).length < 2
+                : isEmptyValue(watch(item.key as keyof FormData))
             : item.fieldType === "UPLOAD"
               ? !pendingItemFiles[item.id] && !itemDokumen[item.id]
               : item.fieldType === "CHECKBOX"
@@ -2012,6 +2110,16 @@ export function ProyekFormDialog({
                   "dasar",
                   dasarRenderers,
                   TAB_GRID_CLASS.dasar!,
+                )}
+              </TabsContent>
+
+              {/* === TAB: LOKASI PROYEK === */}
+              <TabsContent value="lokasi" className="space-y-5">
+                {renderTabHeader("lokasi")}
+                {renderTemplatedTab(
+                  "lokasi",
+                  lokasiRenderers,
+                  TAB_GRID_CLASS.lokasi!,
                 )}
               </TabsContent>
 

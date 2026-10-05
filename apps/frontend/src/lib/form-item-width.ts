@@ -17,6 +17,7 @@ const WIDE_FIELD_TYPES = new Set(["FIELDBOX", "UPLOAD", "CHECKBOX"]);
 export type TabKey =
   | "identitas"
   | "dasar"
+  | "lokasi"
   | "kesiapan"
   | "tematik"
   | "pemaketan"
@@ -29,6 +30,7 @@ export type TabKey =
 export const TAB_GRID_CLASS: Partial<Record<TabKey, string>> = {
   identitas: "grid grid-cols-1 sm:grid-cols-2 gap-3",
   dasar: "grid grid-cols-1 sm:grid-cols-2 gap-3",
+  lokasi: "grid grid-cols-1 sm:grid-cols-2 gap-3",
   kesiapan: "grid grid-cols-2 md:grid-cols-4 gap-3",
   tematik: "grid grid-cols-1 sm:grid-cols-2 gap-3",
   valuasi: "grid grid-cols-1 sm:grid-cols-2 gap-3",
@@ -42,6 +44,7 @@ export const KEGIATAN_GRID_CLASS = "grid grid-cols-2 gap-5";
 export const TAB_ICONS: Record<TabKey, LucideIcon> = {
   identitas: MapPin,
   dasar: ScrollText,
+  lokasi: MapPin,
   kesiapan: FileText,
   tematik: Tags,
   pemaketan: Tags,
@@ -57,6 +60,7 @@ export const TAB_DEFAULT_DESCRIPTIONS: Record<TabKey, string> = {
   identitas: "Informasi dasar mengenai proyek dan unit pelaksana",
   dasar:
     "Sumber usulan dan justifikasi proyek — dipakai skor evaluasi tab Dasar Pelaksanaan/Kesiapan Teknis",
+  lokasi: "Provinsi, kabupaten/kota, dan titik lokasi proyek di peta",
   kesiapan:
     "Kesiapan dokumen teknis — dipakai skor evaluasi tab Dasar Pelaksanaan/Kesiapan Teknis",
   tematik: "RPJMN, RENSTRA, RENJA, PKPN, dan tagging lainnya",

@@ -97,9 +97,10 @@ function tabStrukturalLokasi(): TabDef {
         key: 'lokasi',
         label: 'Lokasi Proyek',
         items: [
-          { key: 'provinceId', label: 'Provinsi', fieldType: 'DROPDOWN' },
-          { key: 'cityId', label: 'Kabupaten/Kota', fieldType: 'DROPDOWN' },
-          { key: 'latitude', label: 'Titik Lokasi (peta)', fieldType: 'TEXT' },
+          // provinceId = seluruh wilayah administratif (provinsi s/d desa),
+          // latitude = peta titik/garis/poligon — lihat proyek-form-dialog.
+          { key: 'provinceId', label: 'Wilayah Administratif', fieldType: 'DROPDOWN' },
+          { key: 'latitude', label: 'Peta Lokasi', fieldType: 'TEXT' },
         ],
       },
     ],

@@ -730,8 +730,25 @@ export class MasterService {
   createSumberUsulanProyek(dto: any) {
     return this.prisma.sumberUsulanProyek.create({ data: dto });
   }
-  updateSumberUsulanProyek(id: string, dto: any) {
-    return this.prisma.sumberUsulanProyek.update({ where: { id }, data: dto });
+  // Proyek & opsi skor Form Proyek menyimpan NAMA (bukan id) — rename di
+  // sini harus ikut diterapkan ke keduanya, kalau tidak nilai proyek lama
+  // yatim & skornya diam-diam jadi 0.
+  async updateSumberUsulanProyek(id: string, dto: any) {
+    return this.prisma.$transaction(async (tx) => {
+      const lama = await tx.sumberUsulanProyek.findUniqueOrThrow({ where: { id } });
+      const baru = await tx.sumberUsulanProyek.update({ where: { id }, data: dto });
+      if (baru.name !== lama.name) {
+        await tx.proyek.updateMany({
+          where: { sumberUsulanProyek: lama.name },
+          data: { sumberUsulanProyek: baru.name },
+        });
+        await tx.formItemOption.updateMany({
+          where: { value: lama.name, item: { key: 'sumberUsulanProyek' } },
+          data: { value: baru.name, label: baru.name },
+        });
+      }
+      return baru;
+    });
   }
   async deleteSumberUsulanProyek(id: string) {
     await this.prisma.sumberUsulanProyek.delete({ where: { id } });
@@ -742,8 +759,18 @@ export class MasterService {
   createTaggingDinamis(dto: any) {
     return this.prisma.taggingDinamis.create({ data: dto });
   }
-  updateTaggingDinamis(id: string, dto: any) {
-    return this.prisma.taggingDinamis.update({ where: { id }, data: dto });
+  // Proyek.taggingDinamis = array NAMA — rename ikut diterapkan ke proyek.
+  async updateTaggingDinamis(id: string, dto: any) {
+    return this.prisma.$transaction(async (tx) => {
+      const lama = await tx.taggingDinamis.findUniqueOrThrow({ where: { id } });
+      const baru = await tx.taggingDinamis.update({ where: { id }, data: dto });
+      if (baru.name !== lama.name) {
+        await tx.$executeRaw`UPDATE "proyek"
+          SET "taggingDinamis" = array_replace("taggingDinamis", ${lama.name}, ${baru.name})
+          WHERE ${lama.name} = ANY("taggingDinamis")`;
+      }
+      return baru;
+    });
   }
   async deleteTaggingDinamis(id: string) {
     await this.prisma.taggingDinamis.delete({ where: { id } });

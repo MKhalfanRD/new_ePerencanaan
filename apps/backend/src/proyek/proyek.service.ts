@@ -108,6 +108,28 @@ const proyekInclude = Prisma.validator<Prisma.ProyekInclude>()({
   formValues: { include: { item: true, option: true } },
 });
 
+/** Kolom lokasi Proyek dari DTO — sama seperti LokasiAlokasi: TITIK cuma
+ * simpan lat/long, GARIS/POLIGON cuma coordinates (sisi lain dikosongkan
+ * supaya ganti tipe tidak meninggalkan data basi). */
+function lokasiData(dto: Partial<CreateProyekDto>) {
+  const titik = dto.tipeKoordinat === 'TITIK';
+  const adaTipe = dto.tipeKoordinat !== undefined;
+  return {
+    tipeKoordinat: dto.tipeKoordinat as any,
+    provinceId: dto.provinceId,
+    provinceName: dto.provinceName,
+    cityId: dto.cityId,
+    cityName: dto.cityName,
+    districtId: dto.districtId,
+    districtName: dto.districtName,
+    villageId: dto.villageId,
+    villageName: dto.villageName,
+    latitude: adaTipe && !titik ? null : dto.latitude,
+    longitude: adaTipe && !titik ? null : dto.longitude,
+    coordinates: adaTipe && titik ? Prisma.DbNull : (dto.coordinates ?? undefined),
+  };
+}
+
 /** FormItem.key yang dibackup kolom Proyek tetap — nilainya dibaca langsung
  * dari input, TIDAK disimpan lagi ke ProyekFormValue (sudah ada tempatnya).
  * Dipertahankan supaya admin bisa nonaktifkan/atur score-nya di tab Dasar
@@ -409,10 +431,7 @@ export class ProyekService {
           kodeProyek,
           projectName: dto.projectName,
           kewenangan: (dto.kewenangan ?? 'PUSAT') as any,
-          provinceId: dto.provinceId,
-          cityId: dto.cityId,
-          latitude: dto.latitude,
-          longitude: dto.longitude,
+          ...lokasiData(dto),
           kebutuhanTanah: dto.kebutuhanTanah ?? false,
           wilayahSungaiId: dto.wilayahSungaiId,
           kegiatanPrioritasId: dto.kegiatanPrioritasId,
@@ -681,10 +700,7 @@ export class ProyekService {
         periodeId: dto.periodeId,
         projectName: dto.projectName,
         kewenangan: dto.kewenangan as any,
-        provinceId: dto.provinceId,
-        cityId: dto.cityId,
-        latitude: dto.latitude,
-        longitude: dto.longitude,
+        ...lokasiData(dto),
         kebutuhanTanah: dto.kebutuhanTanah,
         wilayahSungaiId: dto.wilayahSungaiId,
         kegiatanPrioritasId: dto.kegiatanPrioritasId,

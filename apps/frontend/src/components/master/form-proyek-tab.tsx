@@ -59,6 +59,16 @@ import { SOURCE_EDITORS } from "@/lib/option-source-editors";
 import { nilaiKondisi } from "@/lib/form-condition";
 
 const MANUAL = "__MANUAL__";
+// Field paket bawaan yang pilihannya bertingkat dari Nomenklatur (bukan
+// daftar polos OPTION_SOURCES) — panel cuma menunjukkan sumbernya.
+const NOMENKLATUR_SOURCE: Record<string, { label: string; info: string }> = {
+  paketRo: {
+    label: "RO",
+    info: "Pilihan mengikuti kegiatan proyek; KRO ikut dari RO yang dipilih.",
+  },
+  paketKomponen: { label: "Komponen", info: "Pilihan mengikuti RO yang dipilih." },
+  paketIndikatorRo: { label: "Indikator RO", info: "Pilihan mengikuti RO yang dipilih." },
+};
 // Field bawaan berpilihan tetap sistem (enum) — value tidak bisa diubah,
 // label & skor bisa.
 const ENUM_ITEM_KEYS = new Set([
@@ -969,6 +979,36 @@ export function FormProyekTab({
           </div>
         )}
 
+        {NOMENKLATUR_SOURCE[item.key] && (
+          <div className="space-y-3 border-t pt-4">
+            <p className="text-sm font-bold">Pilihan</p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Isi pilihan dari</Label>
+              <Select value="nomenklatur" disabled>
+                <SelectTrigger className="h-8 text-xs bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="nomenklatur">
+                    Nomenklatur: {NOMENKLATUR_SOURCE[item.key].label}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-between gap-2 rounded-md bg-muted/60 px-2.5 py-2 text-[11px] text-muted-foreground">
+              <span>{NOMENKLATUR_SOURCE[item.key].info}</span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 text-[11px] text-foreground"
+                onClick={() => setMasterDialog("nomenklatur")}
+              >
+                Kelola data
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Pilihan */}
         {punyaPilihan && (
           <div className="space-y-3 border-t pt-4">
@@ -1000,7 +1040,7 @@ export function FormProyekTab({
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 shrink-0 text-[11px]"
+                    className="h-7 shrink-0 text-[11px] text-foreground"
                     onClick={() => setMasterDialog(item.optionSource!)}
                   >
                     Kelola data
@@ -1598,7 +1638,9 @@ export function FormProyekTab({
         <DialogContent className="sm:max-w-5xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Kelola data {masterDialog && OPTION_SOURCES[masterDialog]?.label}
+              Kelola data{" "}
+              {masterDialog &&
+                (OPTION_SOURCES[masterDialog]?.label ?? "Nomenklatur")}
             </DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground -mt-2">

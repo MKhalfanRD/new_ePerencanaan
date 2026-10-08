@@ -361,22 +361,26 @@ function SectionHeader({
   icon: Icon,
   title,
   description,
+  aside,
 }: {
   icon: any;
   title: string;
   description?: string;
+  // Isi di kanan, sebaris dengan judul (mis. "Total skor").
+  aside?: React.ReactNode;
 }) {
   return (
     <div className="flex items-center gap-3 pb-1">
       <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
         <Icon size={16} className="text-primary" />
       </div>
-      <div>
+      <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold">{title}</p>
         {description && (
           <p className="text-xs text-muted-foreground">{description}</p>
         )}
       </div>
+      {aside}
     </div>
   );
 }
@@ -749,15 +753,46 @@ export function ProyekFormDialog({
       description: node?.description || TAB_DEFAULT_DESCRIPTIONS[tabKey],
     };
   };
+  // Total skor isian 1 tab (tab ber-bobot yang semua skornya bisa dihitung
+  // di layar — bukan rasio Valuasi yang dihitung server). null = tanpa label.
+  const totalSkorTab = (value: (typeof TABS)[number]["value"]) => {
+    const tabNode = formTemplate?.tabs.find((t) => t.key === TAB_KEY_MAP[value]);
+    if (!tabNode || tabNode.bobot == null) return null;
+    let dapat = 0;
+    let maks = 0;
+    for (const section of tabNode.sections)
+      for (const item of section.items) {
+        if (!isItemVisible(item)) continue;
+        if (item.thresholdValue != null) return null;
+        const sk = skorItem(section, item);
+        dapat += sk.dapat;
+        maks += sk.maks;
+      }
+    return maks > 0 ? { dapat, maks } : null;
+  };
+
   const renderTabHeader = (value: (typeof TABS)[number]["value"]) => {
     const tabKey = TAB_KEY_MAP[value] as TabKey;
-    return adminMode && adminHandlers ? (
-      adminHandlers.tabHeader(
+    if (adminMode && adminHandlers)
+      return adminHandlers.tabHeader(
         tabKey,
         formTemplate?.tabs.find((t) => t.key === tabKey),
-      )
-    ) : (
-      <SectionHeader {...tabHeader(value)} />
+      );
+    const total = totalSkorTab(value);
+    return (
+      <SectionHeader
+        {...tabHeader(value)}
+        aside={
+          total && (
+            <span
+              title="Jumlah skor dari isian di tab ini"
+              className="shrink-0 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary"
+            >
+              Total skor: {total.dapat} / {total.maks}
+            </span>
+          )
+        }
+      />
     );
   };
 
@@ -856,13 +891,6 @@ export function ProyekFormDialog({
       return adminHandlers.sectionsBody(tabKey, tabId, sections, renderItem, gridClass);
     }
 
-    // Tab berskor (punya bobot) yang semua skornya bisa dihitung di layar
-    // (bukan rasio Valuasi yang dihitung server) dapat label "Total skor".
-    const tabNode = formTemplate?.tabs.find((t) => t.key === TAB_KEY_MAP[value]);
-    let totalDapat = 0;
-    let totalMaks = 0;
-    let bisaTotal = tabNode?.bobot != null;
-
     // Field + kolom tambahannya (menjorok di bawah induk, section yang sama).
     const renderPohon = (
       section: FormTabNode["sections"][number],
@@ -870,12 +898,7 @@ export function ProyekFormDialog({
       depth: number,
     ): React.ReactNode[] => {
       if (!isItemVisible(item)) return [];
-      if (item.thresholdValue != null) bisaTotal = false;
       const sk = item.thresholdValue == null ? skorItem(section, item) : null;
-      if (sk) {
-        totalDapat += sk.dapat;
-        totalMaks += sk.maks;
-      }
       const penuh = depth > 0 || isItemWide(item) || SELALU_PENUH.has(item.key);
       return [
         <div
@@ -922,16 +945,6 @@ export function ProyekFormDialog({
 
     return (
       <div className="space-y-5">
-        {bisaTotal && totalMaks > 0 && (
-          <div className="flex justify-end">
-            <span
-              title="Jumlah skor dari isian di tab ini"
-              className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary"
-            >
-              Total skor: {totalDapat} / {totalMaks}
-            </span>
-          </div>
-        )}
         {isi.map(({ section, nodes }) => (
           <div key={section.id} className="space-y-3">
             {/* Judul bagian cuma perlu kalau tab punya >1 bagian (sama

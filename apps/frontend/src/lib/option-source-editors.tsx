@@ -31,4 +31,6 @@ export const SOURCE_EDITORS: Record<string, React.ComponentType> = {
   kegiatanPrioritas: PnppkpTab,
   isp: SasaranTab,
   isk: SasaranTab,
+  // RO / Komponen / Indikator RO paket (bukan sumber pilihan, cuma editor).
+  nomenklatur: NomenklaturTab,
 };

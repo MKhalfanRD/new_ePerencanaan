@@ -24,6 +24,8 @@ import {
   ScoringTabDef,
   ItemValueLookup,
   kondisiTerpenuhi,
+  rincianSkor,
+  RincianTab,
 } from './form-skor';
 import { LINTAS_KEGIATAN, roleEfektif } from '../auth/role';
 import { PreviewSkorDto, FormValueDto } from './dto/preview-skor.dto';
@@ -230,6 +232,7 @@ export class ProyekService {
   ): Promise<{
     skorEvaluasi: number | null;
     formValueCreates: Prisma.ProyekFormValueCreateManyProyekInput[];
+    rincian?: RincianTab[];
   }> {
     if (!roIdPaketPertama) {
       return { skorEvaluasi: null, formValueCreates: [] };
@@ -294,7 +297,11 @@ export class ProyekService {
       if (uploadedKeys.has(key)) return true;
       return genericValues.get(key);
     };
-    const tabs: ScoringTabDef[] = formTabs.map((t) => ({
+    const tabs: ScoringTabDef[] = formTabs
+      .sort((a, b) => a.order - b.order)
+      .map((t) => ({
+      key: t.key,
+      label: t.label,
       bobot: t.bobot,
       items: t.sections
         .flatMap((s) => s.items)
@@ -320,6 +327,7 @@ export class ProyekService {
     }));
 
     const skorEvaluasi = hitungSkorEvaluasi(tabs, lookup);
+    const rincian = rincianSkor(tabs, lookup);
 
     // Simpan cuma item yang BUKAN backed kolom fixed/rasio — itu sudah
     // tersimpan di kolomnya sendiri (mis. Kategori Proyek, item Kinerja).
@@ -331,7 +339,7 @@ export class ProyekService {
         ),
       );
 
-    return { skorEvaluasi, formValueCreates };
+    return { skorEvaluasi, formValueCreates, rincian };
   }
 
   /** Rasio dana/output/outcome paket ini — dipakai item Valuasi yang
@@ -364,7 +372,7 @@ export class ProyekService {
           }
         : undefined;
 
-    const { skorEvaluasi } = await this.hitungEvaluasi(
+    const { skorEvaluasi, rincian } = await this.hitungEvaluasi(
       this.prisma,
       dto,
       dto.roId,
@@ -373,7 +381,7 @@ export class ProyekService {
       dto.proyekId,
     );
 
-    return { skorEvaluasi };
+    return { skorEvaluasi, rincian: rincian ?? [] };
   }
 
   async create(dto: CreateProyekDto, userId: string, userRole?: string) {

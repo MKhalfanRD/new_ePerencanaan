@@ -275,6 +275,7 @@ export class MasterService {
         conditionValue: dto.conditionValue,
         width: dto.width,
         optionSource: dto.optionSource,
+        optionParentKey: dto.optionParentKey,
         subLabels: dto.subLabels,
       },
     });
@@ -295,6 +296,7 @@ export class MasterService {
         conditionValue: dto.conditionValue,
         width: dto.width,
         optionSource: dto.optionSource,
+        optionParentKey: dto.optionParentKey,
         subLabels: dto.subLabels,
       },
     });
@@ -408,6 +410,7 @@ export class MasterService {
                       conditionValue: i.conditionValue,
                       width: i.width,
                       optionSource: i.optionSource,
+                      optionParentKey: i.optionParentKey,
                       subLabels: i.subLabels ?? undefined,
                       options: {
                         create: i.options.map((o) => ({

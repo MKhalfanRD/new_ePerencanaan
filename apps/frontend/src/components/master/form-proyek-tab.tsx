@@ -53,10 +53,12 @@ import {
   OPTION_SOURCES,
   SUB_LABEL_DEFAULTS,
   sourceRowsFor,
+  sumberField,
   useSourceData,
 } from "@/lib/option-sources";
 import { SOURCE_EDITORS } from "@/lib/option-source-editors";
 import { nilaiKondisi } from "@/lib/form-condition";
+import { fmtSkor, maksTab } from "@/lib/form-score";
 
 const MANUAL = "__MANUAL__";
 // Field paket bawaan yang pilihannya bertingkat dari Nomenklatur (bukan
@@ -278,6 +280,15 @@ export function FormProyekTab({
   const patchSection = (sectionId: string, data: Record<string, unknown>) =>
     simpan(() => api.patch(`/master/form-section/${sectionId}`, data));
 
+  // Sumber bertingkat: kalau field induk yang cocok cuma satu, langsung pakai.
+  const indukTunggal = (src: string | null) => {
+    const parent = src ? OPTION_SOURCES[src]?.parent : undefined;
+    if (!parent || parent === "kegiatan") return null;
+    const calon = templateTabs.flatMap((t) =>
+      t.sections.flatMap((s) => s.items.filter((i) => sumberField(i) === parent)),
+    );
+    return calon.length === 1 ? calon[0].key : null;
+  };
   const submitAddItem = async () => {
     if (!fieldDialog || !newItemLabel.trim()) return;
     const { sectionId, parent } = fieldDialog;
@@ -293,6 +304,7 @@ export function FormProyekTab({
         label: newItemLabel.trim(),
         fieldType: newItemType,
         optionSource: pilihan ? newItemSource : null,
+        optionParentKey: pilihan ? indukTunggal(newItemSource) : null,
         required: newItemRequired,
         // Kolom tambahan: muncul hanya saat pilihan induknya dipilih.
         conditionItemId: parent?.item.key,
@@ -412,22 +424,121 @@ export function FormProyekTab({
       });
       bump();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Gagal menyimpan skor");
+      toast.error(err.response?.data?.message || "Gagal menyimpan bobot");
     }
   };
+
+  // Bobot terpakai 1 tab (lib/form-score maksTab) — opsional dengan satu
+  // bobot field/pilihan diganti, utk cek batas SEBELUM disimpan.
+  type UbahBobot = { itemId: string; value?: string };
+  const bobotTerpakai = (tab: FormTabNode, ubah?: UbahBobot & { score: number }) =>
+    maksTab(
+      tab.sections
+        .filter((sec) => sec.isActive !== false)
+        .flatMap((sec) => sec.items)
+        .map((i) => {
+          if (!ubah || i.id !== ubah.itemId) return i;
+          if (ubah.value == null) return { ...i, score: ubah.score };
+          const ada = i.options.some((o) => o.value === ubah.value);
+          return {
+            ...i,
+            options: ada
+              ? i.options.map((o) =>
+                  o.value === ubah.value ? { ...o, score: ubah.score } : o,
+                )
+              : [...i.options, { id: "", label: "", value: ubah.value, score: ubah.score, isActive: true }],
+          };
+        }),
+    );
+  // Bobot yang sedang DIKETIK (belum disimpan) — progress & info di panel
+  // ikut berubah tiap ketukan. bad = bukan angka >= 0.
+  const [draftBobot, setDraftBobot] = useState<
+    (UbahBobot & { score: number; label: string; bad?: boolean }) | null
+  >(null);
+  useEffect(() => setDraftBobot(null), [editItemId, activeTabKey]);
+  const parseBobot = (teks: string) => {
+    const t = teks.trim().replace(",", ".");
+    if (!t) return { v: null as number | null, bad: false };
+    const v = Number(t);
+    return { v, bad: Number.isNaN(v) || v < 0 };
+  };
+  const lewatBatas = (tab: FormTabNode, ubah: UbahBobot & { score: number }) =>
+    tab.bobot != null && bobotTerpakai(tab, ubah) > tab.bobot * 100 + 0.005;
 
   const scoreInput = (
     defaultValue: number | null | undefined,
     onSave: (v: number | null) => void,
-  ) => (
-    <Input
-      type="number"
-      placeholder="skor"
-      className="h-7 w-16 text-[11px] shrink-0"
-      defaultValue={defaultValue ?? ""}
-      onBlur={(e) => onSave(e.target.value ? Number(e.target.value) : null)}
-    />
-  );
+    cek: { tab: FormTabNode; label: string } & UbahBobot,
+  ) => {
+    const dariSini =
+      draftBobot?.itemId === cek.itemId && draftBobot.value === cek.value;
+    const merah =
+      dariSini && (draftBobot!.bad || lewatBatas(cek.tab, draftBobot!));
+    return (
+      <Input
+        type="text"
+        inputMode="decimal"
+        placeholder="bobot"
+        aria-invalid={merah || undefined}
+        className={cn(
+          "h-7 w-16 text-right text-[11px] shrink-0",
+          merah && "border-destructive text-destructive focus-visible:ring-destructive/30",
+        )}
+        defaultValue={defaultValue != null ? fmtSkor(defaultValue) : ""}
+        onChange={(e) => {
+          const { v, bad } = parseBobot(e.target.value);
+          setDraftBobot({ itemId: cek.itemId, value: cek.value, label: cek.label, score: v ?? 0, bad });
+        }}
+        onBlur={(e) => {
+          const { v, bad } = parseBobot(e.target.value);
+          // Lewat batas / bukan angka: tidak disimpan, tetap merah (info di
+          // bawah progress) sampai diperbaiki.
+          if (bad || (v != null && lewatBatas(cek.tab, { ...cek, score: v }))) return;
+          setDraftBobot(null);
+          onSave(v);
+        }}
+      />
+    );
+  };
+
+  // Progress bobot tab: terpakai / bobot tab, termasuk bobot yang sedang
+  // diketik (draftBobot). Info di bawahnya ikut berubah tiap ketukan.
+  const progressBobot = (tab: FormTabNode, ringkas = false) => {
+    if (tab.bobot == null) return null;
+    const batas = tab.bobot * 100;
+    const draft = draftBobot && !draftBobot.bad ? draftBobot : undefined;
+    const pakai = bobotTerpakai(tab, draft);
+    const lebih = pakai > batas + 0.005;
+    const salahKetik = !!draftBobot?.bad;
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-sm">
+          <span className={ringkas ? "text-xs text-muted-foreground" : "font-normal"}>
+            Bobot terpakai
+          </span>
+          <span className={cn("font-semibold tabular-nums", lebih && "text-destructive", ringkas && "text-xs")}>
+            {fmtSkor(pakai)} / {fmtSkor(batas)}
+          </span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn("h-full rounded-full transition-[width]", lebih ? "bg-destructive" : "bg-primary")}
+            style={{ width: `${batas > 0 ? Math.min(100, (pakai / batas) * 100) : 0}%` }}
+          />
+        </div>
+        <p
+          aria-live="polite"
+          className={cn("text-[11px]", lebih || salahKetik ? "text-destructive" : "text-muted-foreground")}
+        >
+          {salahKetik
+            ? "Bobot harus angka 0 atau lebih"
+            : lebih
+              ? `${draft && lewatBatas(tab, draft) ? `${draft.label} melebihi` : "Melebihi"} ${fmtSkor(pakai - batas)} bobot`
+              : `Sisa ${fmtSkor(batas - pakai)} bobot`}
+        </p>
+      </div>
+    );
+  };
 
   // Select "Sumber pilihan": field bawaan terkunci ke master aslinya (kolom
   // FK di tabel Proyek); field custom bebas Manual / master mana pun.
@@ -535,10 +646,10 @@ export function FormProyekTab({
 
   const labelSkor = (item: FormItemNode) =>
     item.fieldType === "UPLOAD"
-      ? "Skor kalau file diunggah"
+      ? "Bobot kalau file diunggah"
       : item.fieldType === "CHECKBOX"
-        ? "Skor kalau dicentang"
-        : "Skor kalau diisi";
+        ? "Bobot kalau dicentang"
+        : "Bobot kalau diisi";
 
   const bukaTambahField = (
     sectionId: string,
@@ -636,7 +747,7 @@ export function FormProyekTab({
         {tab.bobot != null && (
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="panel-bobot-tab" className="text-sm font-normal">
-              Bobot tab ini di skor evaluasi
+              Bobot maksimal tab
             </Label>
             <div className="flex items-center gap-1.5">
               <Input
@@ -646,7 +757,7 @@ export function FormProyekTab({
                 min={0}
                 max={100}
                 className="h-8 w-16 text-right text-sm"
-                defaultValue={Math.round(tab.bobot * 100)}
+                defaultValue={+(tab.bobot * 100).toFixed(2)}
                 onBlur={(e) => {
                   const pct = Number(e.target.value);
                   const v = Math.max(0, Math.min(100, pct)) / 100;
@@ -657,6 +768,7 @@ export function FormProyekTab({
             </div>
           </div>
         )}
+        {progressBobot(tab)}
         <div className="flex items-center justify-between gap-3">
           <Label className="text-sm font-normal">Tampil di form</Label>
           <Switch
@@ -792,7 +904,24 @@ export function FormProyekTab({
       : item.options.map((o) => ({ value: o.value, label: o.label, opt: o, stale: false }));
     const labelBisaDiubah = !item.optionSource;
     const manual = !item.optionSource && !isEnum;
-    const Editor = item.optionSource ? SOURCE_EDITORS[item.optionSource] : undefined;
+    const sumberDef = item.optionSource ? OPTION_SOURCES[item.optionSource] : undefined;
+    const editorKey = item.optionSource ? (sumberDef?.editor ?? item.optionSource) : undefined;
+    const Editor = editorKey ? SOURCE_EDITORS[editorKey] : undefined;
+    // Sumber bertingkat: kandidat field induk = field lain (tab mana pun)
+    // yang sumbernya cocok dengan induk sumber ini.
+    const calonInduk = (src: string | null) => {
+      const parent = src ? OPTION_SOURCES[src]?.parent : undefined;
+      if (!parent || parent === "kegiatan") return [];
+      return templateTabs.flatMap((t) =>
+        t.sections.flatMap((s) =>
+          s.items
+            .filter((i) => i.id !== item.id && sumberField(i) === parent)
+            .map((i) => ({ key: i.key, label: `${i.label} · ${t.label}` })),
+        ),
+      );
+    };
+    const indukList = calonInduk(item.optionSource ?? null);
+    const butuhInduk = !!sumberDef?.parent && sumberDef.parent !== "kegiatan";
     const anak = kolomTambahanDari(section, item);
 
     return (
@@ -941,6 +1070,8 @@ export function FormProyekTab({
           </div>
         )}
 
+        {berskor && progressBobot(tab, true)}
+
         {/* Skor field tanpa pilihan */}
         {berskor &&
           !induk &&
@@ -949,18 +1080,26 @@ export function FormProyekTab({
           item.thresholdValue == null && (
             <div className="flex items-center justify-between gap-3">
               <Label className="text-sm font-normal">{labelSkor(item)}</Label>
-              {scoreInput(item.score, (v) => {
-                if (v !== item.score) patchItem(item.id, { score: v });
-              })}
+              {scoreInput(
+                item.score,
+                (v) => {
+                  if (v !== item.score) patchItem(item.id, { score: v });
+                },
+                { tab, itemId: item.id, label: item.label },
+              )}
             </div>
           )}
         {item.thresholdValue != null && (
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-              <Label className="text-sm font-normal">Skor kalau terpenuhi</Label>
-              {scoreInput(item.score, (v) => {
-                if (v !== item.score) patchItem(item.id, { score: v });
-              })}
+              <Label className="text-sm font-normal">Bobot kalau terpenuhi</Label>
+              {scoreInput(
+                item.score,
+                (v) => {
+                  if (v !== item.score) patchItem(item.id, { score: v });
+                },
+                { tab, itemId: item.id, label: item.label },
+              )}
             </div>
             <div className="flex items-center justify-between gap-3">
               <Label className="text-sm font-normal">Ambang batas (standar)</Label>
@@ -1018,13 +1157,50 @@ export function FormProyekTab({
                 <Label className="text-xs">Isi pilihan dari</Label>
                 {sourceSelect(
                   item.optionSource,
-                  (v) => patchItem(item.id, { optionSource: v }),
+                  (v) => {
+                    // Induk ikut dipilihkan kalau calonnya cuma satu.
+                    const calon = calonInduk(v);
+                    patchItem(item.id, {
+                      optionSource: v,
+                      optionParentKey: calon.length === 1 ? calon[0].key : null,
+                    });
+                  },
                   isBaku,
                 )}
                 {item.fieldType === "CHECKBOX" && (
                   <p className="text-[11px] text-muted-foreground">
-                    Centang: user bisa memilih lebih dari satu; skor pilihan
+                    Centang: user bisa memilih lebih dari satu; bobot pilihan
                     yang dicentang dijumlahkan.
+                  </p>
+                )}
+              </div>
+            )}
+            {butuhInduk && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Mengikuti field</Label>
+                <Select
+                  value={item.optionParentKey ?? MANUAL}
+                  onValueChange={(v) =>
+                    patchItem(item.id, { optionParentKey: v === MANUAL ? null : v })
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={MANUAL}>— Pilih field induk —</SelectItem>
+                    {indukList.map((c) => (
+                      <SelectItem key={c.key} value={c.key}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!item.optionParentKey && (
+                  <p className="text-[11px] text-amber-700">
+                    {indukList.length
+                      ? "Pilih field induknya — tanpa induk, pilihan di form akan kosong."
+                      : "Belum ada field yang bisa jadi induk. Tambahkan dulu fieldnya, lalu pilih di sini."}
                   </p>
                 )}
               </div>
@@ -1032,16 +1208,20 @@ export function FormProyekTab({
             {item.optionSource && (
               <div className="flex items-center justify-between gap-2 rounded-md bg-muted/60 px-2.5 py-2 text-[11px] text-muted-foreground">
                 <span>
-                  {Editor
-                    ? "Daftar mengikuti data master, berlaku untuk semua kegiatan."
-                    : "Data referensi resmi, tidak dikelola di aplikasi ini."}
+                  {sumberDef?.parent === "kegiatan"
+                    ? "Pilihan mengikuti kegiatan proyek."
+                    : butuhInduk
+                      ? "Pilihan mengikuti isi field induk di atas."
+                      : Editor
+                        ? "Daftar mengikuti data master, berlaku untuk semua kegiatan."
+                        : "Data referensi resmi, tidak dikelola di aplikasi ini."}
                 </span>
                 {Editor && (
                   <Button
                     size="sm"
                     variant="outline"
                     className="h-7 shrink-0 text-[11px] text-foreground"
-                    onClick={() => setMasterDialog(item.optionSource!)}
+                    onClick={() => setMasterDialog(editorKey!)}
                   >
                     Kelola data
                   </Button>
@@ -1082,8 +1262,10 @@ export function FormProyekTab({
                         )}
                         {berskor &&
                           !row.stale &&
-                          scoreInput(row.opt?.score, (v) =>
-                            saveOptionScore(item, row, row.opt, v),
+                          scoreInput(
+                            row.opt?.score,
+                            (v) => saveOptionScore(item, row, row.opt, v),
+                            { tab, itemId: item.id, value: row.value, label: row.label },
                           )}
                         {(manual || row.stale) && row.opt && (
                           <Button
@@ -1479,7 +1661,7 @@ export function FormProyekTab({
           <p className="text-lg font-bold">Kegiatan ini belum punya Form Proyek</p>
           <p className="mt-2 text-sm text-[#59636e]">
             Cara tercepat: salin form dari kegiatan lain yang sudah lengkap,
-            lalu sesuaikan field, pilihan, dan skornya di sini.
+            lalu sesuaikan field, pilihan, dan bobotnya di sini.
           </p>
           <Button className="mt-6" onClick={() => setCloneOpen(true)}>
             <Copy size={14} className="mr-1.5" /> Salin dari kegiatan lain
@@ -1551,7 +1733,7 @@ export function FormProyekTab({
             <p className="rounded-md bg-primary/10 p-2.5 text-xs text-primary">
               Kolom ini hanya muncul di form kalau &quot;{fieldDialog.parent.label}&quot;{" "}
               {fieldDialog.parent.item.fieldType === "CHECKBOX" ? "dicentang" : "dipilih"}.
-              Kolom tambahan tidak punya skor sendiri: skor pilihan itu baru masuk
+              Kolom tambahan tidak punya bobot sendiri: bobot pilihan itu baru masuk
               setelah kolom ini diisi.
             </p>
           )}
@@ -1594,7 +1776,7 @@ export function FormProyekTab({
                 <Label>Isi pilihan dari</Label>
                 {sourceSelect(newItemSource, setNewItemSource, false)}
                 <p className="text-xs text-muted-foreground">
-                  Pilihan & skornya diatur setelah field dibuat, di panel kanan.
+                  Pilihan & bobotnya diatur setelah field dibuat, di panel kanan.
                 </p>
               </div>
             )}

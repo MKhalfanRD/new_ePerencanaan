@@ -586,6 +586,8 @@ export function PaketFormDialog({
                     [key]: { ...prev[key], ...patch },
                   }))
                 }
+                kolomBaku={(k) => watch(k as any)}
+                kegiatanId={selectedRO?.kro.kegiatan.id ?? filterKegiatanId}
               />
 
               {/* === SKOR (read-only, diisi sistem nanti) === */}

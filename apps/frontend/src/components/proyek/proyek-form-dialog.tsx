@@ -33,9 +33,9 @@ import {
   FieldControl,
   type FieldControlValue,
 } from "@/components/master/field-control";
-import { sourceRowsFor, subLabel, useSourceData } from "@/lib/option-sources";
+import { rowsForItem, subLabel, useSourceData } from "@/lib/option-sources";
 import { kondisiTerpenuhi } from "@/lib/form-condition";
-import { skorField } from "@/lib/form-score";
+import { fmtSkor, skorField } from "@/lib/form-score";
 import {
   PaketLabel,
   PaketTemplateFields,
@@ -101,6 +101,7 @@ export interface FormItemNode {
   score?: number | null;
   required?: boolean;
   optionSource?: string | null;
+  optionParentKey?: string | null;
   subLabels?: Record<string, string> | null;
   options: FormItemOption[];
 }
@@ -470,6 +471,8 @@ export function ProyekFormDialog({
 
   const [preview, setPreview] = useState<{
     skorEvaluasi: number | null;
+    // Nilai per tab ber-bobot (bobot % didapat / bobot tab).
+    rincian?: { key?: string; label?: string; dapat: number; bobot: number }[];
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
@@ -768,7 +771,10 @@ export function ProyekFormDialog({
         dapat += sk.dapat;
         maks += sk.maks;
       }
-    return maks > 0 ? { dapat, maks } : null;
+    // Skor = bobot % langsung: batas tab = bobot tab (mis. 30).
+    return maks > 0
+      ? { dapat: Math.min(dapat, tabNode.bobot * 100), maks: tabNode.bobot * 100 }
+      : null;
   };
 
   const renderTabHeader = (value: (typeof TABS)[number]["value"]) => {
@@ -788,7 +794,7 @@ export function ProyekFormDialog({
               title="Jumlah skor dari isian di tab ini"
               className="shrink-0 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary"
             >
-              Total skor: {total.dapat} / {total.maks}
+              Total skor: {fmtSkor(total.dapat)} / {fmtSkor(total.maks)}
             </span>
           )
         }
@@ -866,15 +872,7 @@ export function ProyekFormDialog({
             item={item}
             value={formValuesMap[item.key]}
             onChange={(patch) => setFormValue(item.key, patch)}
-            sourceRows={
-              item.optionSource
-                ? sourceRowsFor(
-                    item.key,
-                    item.optionSource,
-                    sourceData[item.optionSource] ?? [],
-                  )
-                : undefined
-            }
+            sourceRows={rowsForItem(item, sourceData, itemValue, selectedKegiatanId)}
             uploadedFileName={
               pendingItemFiles[item.id]?.name ?? itemDokumen[item.id]?.fileName
             }
@@ -921,7 +919,7 @@ export function ProyekFormDialog({
                   : "bg-muted text-muted-foreground",
               )}
             >
-              {sk.dapat > 0 ? `+${sk.dapat}` : `0 / ${sk.maks}`} skor
+              {sk.dapat > 0 ? `+${fmtSkor(sk.dapat)}` : `0 / ${fmtSkor(sk.maks)}`} skor
             </span>
           )}
           {renderItem(item)}
@@ -2496,7 +2494,7 @@ export function ProyekFormDialog({
                     {!adminMode && !isEdit && !previewMode && visitedTabs.has(t.value) && (
                       <span aria-label="sudah dibuka" className="text-emerald-600">✓</span>
                     )}
-                    {t.label}
+                    {tabHeader(t.value).title}
                     {adminMode && !isTabActive(t.value) && (
                       <span className="text-[10px] font-normal">(disembunyikan)</span>
                     )}
@@ -2725,6 +2723,8 @@ export function ProyekFormDialog({
                                   onChange={(key, patch) =>
                                     setPaketFormValue(i, key, patch)
                                   }
+                                  kolomBaku={(k) => watch(`paket.${i}.${k}` as any)}
+                                  kegiatanId={selectedKegiatanId}
                                 />
 
                                 {/* Alokasi tahun berjalan — tetap di luar
@@ -3028,18 +3028,37 @@ export function ProyekFormDialog({
                       kegiatan dari RO paket pertama.
                     </div>
                   ) : (
-                    <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-3">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Skor Evaluasi
-                      </span>
-                      <span className="text-2xl font-bold text-primary flex items-center gap-2">
-                        {previewLoading && (
-                          <Loader2 size={16} className="animate-spin" />
-                        )}
-                        {preview?.skorEvaluasi != null
-                          ? `${(preview.skorEvaluasi * 100).toFixed(1)}%`
-                          : "0%"}
-                      </span>
+                    <div className="space-y-3">
+                      {(preview?.rincian?.length ?? 0) > 0 && (
+                        <div className="rounded-lg border bg-white">
+                          <div className="flex justify-between border-b px-4 py-2 text-[11px] font-semibold text-muted-foreground">
+                            <span>Tab</span>
+                            <span>Skor / bobot</span>
+                          </div>
+                          {preview!.rincian!.map((r) => (
+                            <div
+                              key={r.key ?? r.label}
+                              className="flex justify-between border-b px-4 py-2 text-sm last:border-b-0"
+                            >
+                              <span>{r.label}</span>
+                              <span className="tabular-nums">
+                                {fmtSkor(r.dapat)} / {fmtSkor(r.bobot)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-3">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Skor Evaluasi
+                        </span>
+                        <span className="text-2xl font-bold text-primary flex items-center gap-2">
+                          {previewLoading && (
+                            <Loader2 size={16} className="animate-spin" />
+                          )}
+                          {fmtSkor((preview?.skorEvaluasi ?? 0) * 100)} / 100
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>

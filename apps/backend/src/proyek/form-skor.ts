@@ -2,11 +2,11 @@
  * Skor evaluasi proyek dari struktur Form Proyek (Master Data), menggantikan
  * evaluasi-skor.ts + evaluasi-deteksi.ts (MetodeEvaluasi/EvaluasiItem).
  *
- * Rumus per tab persis yang lama: (score didapat / score maksimum item aktif
- * di tab) x bobot tab, dijumlah semua tab skoring. Bobot/score per-ITEM di
- * schema (FormItem.bobot/FormItemOption.bobot) murni informasi tampilan
- * (mirror kolom "bobot" di excel) — TIDAK dipakai di rumus ini, sama seperti
- * MetodeEvaluasi dulu (cuma bobot per tab yang menentukan, bukan per item).
+ * Skor field/pilihan = BOBOT % LANGSUNG (desimal, mis. 2.73). Nilai tab =
+ * jumlah bobot yang didapat, dibatasi bobot tab x 100; skor evaluasi =
+ * jumlah nilai semua tab ber-bobot / 100 (pecahan 0..1, kolom skorEvaluasi).
+ * Tab tanpa bobot tidak dihitung. Admin dibatasi di kanvas supaya bobot
+ * terpakai (maksTab) tidak melebihi bobot tab.
  *
  * `lookup(key)` mengembalikan nilai isian proyek untuk sebuah FormItem.key:
  *   - Item BER-OPSI (dropdown): nilai dicocokkan ke `FormItemOption.value`
@@ -63,6 +63,8 @@ export interface ScoringItemDef {
   thresholdValue?: number | null;
 }
 export interface ScoringTabDef {
+  key?: string;
+  label?: string;
   bobot: number | null;
   items: ScoringItemDef[];
 }
@@ -121,25 +123,71 @@ function maksItem(item: ScoringItemDef): number {
     : Math.max(0, ...skor);
 }
 
+/**
+ * Bobot terpakai 1 tab = nilai tertinggi yang mungkin didapat. Field tanpa
+ * syarat dijumlah; field bersyarat dikelompokkan per field pemicu dan
+ * diambil kelompok nilai pemicu dengan jumlah terbesar (mis. set "Khusus
+ * pembangunan jaringan" vs "Khusus rehabilitasi" tidak dijumlah dua kali).
+ * Sama persis dengan frontend lib/form-score.ts & migrasi skor_jadi_bobot.
+ */
+export function maksTab(items: ScoringItemDef[]): number {
+  let total = 0;
+  const perPemicu = new Map<string, Map<string, number>>();
+  for (const i of items.filter((x) => x.isActive)) {
+    const m = maksItem(i);
+    if (!i.conditionItemId) {
+      total += m;
+      continue;
+    }
+    const grup = perPemicu.get(i.conditionItemId) ?? new Map<string, number>();
+    for (const v of nilaiKondisi(i.conditionValue)) grup.set(v, (grup.get(v) ?? 0) + m);
+    perPemicu.set(i.conditionItemId, grup);
+  }
+  for (const grup of perPemicu.values()) total += Math.max(0, ...grup.values());
+  return total;
+}
+
+export interface RincianTab {
+  key?: string;
+  label?: string;
+  // Bobot % didapat & bobot tab (%) — mis. 13.5 / 30.
+  dapat: number;
+  bobot: number;
+}
+
+const bulat = (n: number, d = 4) => Math.round(n * 10 ** d) / 10 ** d;
+
+/** Nilai per tab ber-bobot (dipakai rekap tab Evaluasi). */
+export function rincianSkor(
+  tabs: ScoringTabDef[],
+  lookup: ItemValueLookup,
+): RincianTab[] {
+  return tabs
+    .filter((t) => t.bobot != null)
+    .map((tab) => {
+      const items = tab.items.filter((i) => i.isActive);
+      const bobot = tab.bobot! * 100;
+      const dapat = items.reduce(
+        (s, i) =>
+          s + nilaiItem(i, lookup, items.filter((a) => a.conditionItemId === i.key)),
+        0,
+      );
+      return {
+        key: tab.key,
+        label: tab.label,
+        dapat: bulat(Math.min(dapat, bobot), 2),
+        bobot: bulat(bobot, 2),
+      };
+    });
+}
+
 export function hitungSkorEvaluasi(
   tabs: ScoringTabDef[],
   lookup: ItemValueLookup,
 ): number {
-  let total = 0;
-  for (const tab of tabs) {
-    if (tab.bobot == null) continue;
-    const items = tab.items.filter((i) => i.isActive);
-    const maks = items.reduce((s, i) => s + maksItem(i), 0);
-    if (maks <= 0) continue;
-    const dapat = items.reduce(
-      (s, i) =>
-        s + nilaiItem(i, lookup, items.filter((a) => a.conditionItemId === i.key)),
-      0,
-    );
-    total += (dapat / maks) * tab.bobot;
-  }
-  // 4 desimal — sama presisi kolom skorEvaluasi di schema.
-  return Math.round(total * 10000) / 10000;
+  const total = rincianSkor(tabs, lookup).reduce((s, r) => s + r.dapat, 0);
+  // Pecahan 0..1, 4 desimal — sama presisi kolom skorEvaluasi di schema.
+  return bulat(total / 100);
 }
 
 // Self-check — npx ts-node src/proyek/form-skor.ts
@@ -148,12 +196,13 @@ if (require.main === module) {
   const { strictEqual }: { strictEqual: (a: unknown, b: unknown) => void } =
     require('assert');
 
+  // Skor = bobot % langsung; nilai tab = jumlah yang didapat.
   const dasar: ScoringTabDef = {
     bobot: 0.3,
     items: [
       { key: 'sumberUsulanProyek', score: null, isActive: true, options: [
-        { value: 'Pemerintah Daerah', score: 1, isActive: true },
-        { value: 'Kementerian/Lembaga', score: 2, isActive: true },
+        { value: 'Pemerintah Daerah', score: 15, isActive: true },
+        { value: 'Kementerian/Lembaga', score: 30, isActive: true },
       ] },
     ],
   };
@@ -161,29 +210,27 @@ if (require.main === module) {
     bobot: 0.25,
     items: [
       { key: 'statusDed', score: null, isActive: true, options: [
-        { value: 'SUDAH_ADA', score: 2, isActive: true },
+        { value: 'SUDAH_ADA', score: 16.67, isActive: true },
         { value: 'RENCANA', score: 0, isActive: true },
       ] },
-      { key: 'kebutuhanTanah', score: 1, isActive: true, options: [] },
+      { key: 'kebutuhanTanah', score: 8.33, isActive: true, options: [] },
     ],
   };
-
   const lookupA: ItemValueLookup = (key) =>
     ({ sumberUsulanProyek: 'Kementerian/Lembaga', statusDed: 'SUDAH_ADA', kebutuhanTanah: false }[key]);
-  // dasar: dapat 2 / maks 2 * 0.3 = 0.3 ; kesiapan: (2+0)/(2+1)*0.25 = 0.1667
+  // 30 + 16.67 = 46.67% -> 0.4667
   strictEqual(hitungSkorEvaluasi([dasar, kesiapan], lookupA), 0.4667);
-
   const lookupKosong: ItemValueLookup = () => undefined;
   strictEqual(hitungSkorEvaluasi([dasar, kesiapan], lookupKosong), 0);
 
-  // Centang multi: skor pilihan dijumlahkan; maks = jumlah semua pilihan.
+  // Centang multi: bobot pilihan dijumlahkan.
   const sumber: ScoringTabDef = {
     bobot: 1,
     items: [
       { key: 'sumber', fieldType: 'CHECKBOX', score: null, isActive: true, options: [
-        { value: 'pemda', score: 2, isActive: true },
-        { value: 'masy', score: 1, isActive: true },
-        { value: 'lain', score: 1, isActive: true },
+        { value: 'pemda', score: 50, isActive: true },
+        { value: 'masy', score: 25, isActive: true },
+        { value: 'lain', score: 25, isActive: true },
       ] },
       // Kolom tambahan pilihan "lain": tanpa skor sendiri, jadi syarat.
       { key: 'ket', fieldType: 'TEXT', score: null, isActive: true, options: [],
@@ -192,20 +239,33 @@ if (require.main === module) {
   };
   const isi = (v: Record<string, unknown>) => (k: string) => v[k];
   strictEqual(hitungSkorEvaluasi([sumber], isi({ sumber: ['pemda', 'masy'] })), 0.75);
-  // "lain" dicentang tapi kolom tambahannya kosong -> belum dapat skor.
   strictEqual(hitungSkorEvaluasi([sumber], isi({ sumber: ['lain'] })), 0);
   strictEqual(hitungSkorEvaluasi([sumber], isi({ sumber: ['lain'], ket: '  ' })), 0);
   strictEqual(hitungSkorEvaluasi([sumber], isi({ sumber: ['lain'], ket: 'X' })), 0.25);
-  // Dropdown (satu pilihan) tetap skor pilihan terpilih.
+  // Dropdown: bobot pilihan terpilih.
   const dd: ScoringTabDef = {
     bobot: 1,
     items: [{ key: 'pkpnId', fieldType: 'DROPDOWN', score: null, isActive: true, options: [
-      { value: 'a', score: 3, isActive: true },
-      { value: 'b', score: 1, isActive: true },
+      { value: 'a', score: 30, isActive: true },
+      { value: 'b', score: 10, isActive: true },
     ] }],
   };
-  strictEqual(hitungSkorEvaluasi([dd], () => 'b'), 0.3333);
+  strictEqual(hitungSkorEvaluasi([dd], () => 'b'), 0.1);
   strictEqual(hitungSkorEvaluasi([dd], () => 'zzz'), 0);
+  // Nilai tab tidak bisa lewat bobot tab.
+  strictEqual(hitungSkorEvaluasi([{ bobot: 0.1, items: dd.items }], () => 'a'), 0.1);
+
+  // maksTab: set bersyarat alternatif tidak dijumlah dua kali.
+  const valuasi: ScoringItemDef[] = [
+    { key: 'kategori', score: null, isActive: true, options: [] },
+    { key: 'r1', score: 5, isActive: true, options: [], conditionItemId: 'kategori', conditionValue: 'bangun' },
+    { key: 'r2', score: 5, isActive: true, options: [], conditionItemId: 'kategori', conditionValue: 'bangun' },
+    { key: 'r3', score: 7, isActive: true, options: [], conditionItemId: 'kategori', conditionValue: 'rehab' },
+    { key: 'x', score: 3, isActive: true, options: [] },
+    { key: 'mati', score: 99, isActive: false, options: [] },
+  ];
+  strictEqual(maksTab(valuasi), 13);
+  strictEqual(maksTab(sumber.items), 100);
 
   // Kondisi: satu nilai, banyak nilai (JSON), boolean & checkbox multi.
   strictEqual(kondisiTerpenuhi('Lainnya', 'Lainnya'), true);
@@ -215,7 +275,6 @@ if (require.main === module) {
   strictEqual(kondisiTerpenuhi('true', true), true);
   strictEqual(kondisiTerpenuhi('true', undefined), false);
 
-  // Tab nonaktif/tanpa item aktif tidak boleh bikin NaN.
   strictEqual(hitungSkorEvaluasi([{ bobot: 0.2, items: [] }], lookupKosong), 0);
   strictEqual(hitungSkorEvaluasi([], lookupKosong), 0);
 

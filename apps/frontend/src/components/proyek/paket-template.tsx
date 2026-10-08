@@ -7,7 +7,7 @@ import {
 } from "@/components/master/field-control";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { sourceRowsFor, useSourceData } from "@/lib/option-sources";
+import { rowsForItem, useSourceData } from "@/lib/option-sources";
 import type { FormItemNode, FormTabNode } from "./proyek-form-dialog";
 
 /**
@@ -33,6 +33,12 @@ const PAKET_DEFAULT_ITEMS: [string, string, string][] = [
   ["paketDokLing", "Dokumen Lingkungan (status)", "TEXT"],
 ];
 export const PAKET_BAKU_KEYS = PAKET_DEFAULT_ITEMS.map(([k]) => k);
+// Item paket bawaan -> kolom form paket yang menyimpan nilainya.
+const PAKET_KOLOM: Record<string, string> = {
+  paketRo: "roId",
+  paketKomponen: "komponenId",
+  paketIndikatorRo: "indikatorRoId",
+};
 // Kolom NOT NULL di tabel Paket — selalu tampil & wajib walau admin
 // sembunyikan/hapus item-nya (jenis/masa cukup punya default).
 export const PAKET_ALWAYS_REQUIRED_KEYS = [
@@ -164,12 +170,20 @@ export function PaketTemplateFields({
   renderers,
   values,
   onChange,
+  kolomBaku,
+  kegiatanId,
 }: {
   sections: PaketSection[];
   renderers: Record<string, (item: FormItemNode) => React.ReactNode>;
   values: FormValuesMap;
   onChange: (key: string, patch: FieldControlValue) => void;
+  // Nilai kolom paket bawaan (roId/komponenId/indikatorRoId) — induk field
+  // ber-sumber bertingkat di paket yang sama.
+  kolomBaku: (kolom: string) => unknown;
+  kegiatanId?: string | null;
 }) {
+  const nilaiDiPaket = (key: string) =>
+    PAKET_KOLOM[key] ? kolomBaku(PAKET_KOLOM[key]) : values[key]?.value;
   const sourceData = useSourceData(
     sections.flatMap((s) =>
       s.items
@@ -208,15 +222,7 @@ export function PaketTemplateFields({
                     item={item}
                     value={values[item.key]}
                     onChange={(patch) => onChange(item.key, patch)}
-                    sourceRows={
-                      item.optionSource
-                        ? sourceRowsFor(
-                            item.key,
-                            item.optionSource,
-                            sourceData[item.optionSource] ?? [],
-                          )
-                        : undefined
-                    }
+                    sourceRows={rowsForItem(item, sourceData, nilaiDiPaket, kegiatanId)}
                   />
                 </div>
               ),

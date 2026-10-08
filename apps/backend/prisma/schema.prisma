@@ -545,7 +545,8 @@ model FormItem {
 
   // Dipakai kalau item TANPA opsi (mis. checkbox tunggal "Kewenangan
   // Pusat"): score item itu sendiri & bobotnya dalam tab.
-  score Int?   @db.SmallInt
+  // Bobot % langsung (desimal), mis. 2.73 = 2,73% skor evaluasi.
+  score Float?
   bobot Float?
 
   // Khusus tab Valuasi: nilai proyek (dihitung server dari paket) vs
@@ -564,6 +565,9 @@ model FormItem {
   // frontend lib/option-sources.tsx). Opsi item ber-sumber master cuma
   // nyimpan skor per baris master (value = nilai yang disimpan field).
   optionSource String? @db.VarChar(50)
+  // Sumber bertingkat (mis. satuanRo, komponen): KEY field induk yang
+  // pilihannya menyaring field ini (RO -> Satuan RO). null = tanpa induk.
+  optionParentKey String? @db.VarChar(100)
   // Override label bagian dalam field gabungan, mis. Tematik
   // {"pn": "...", "pp": "...", "kp": "..."} — null = label default.
   subLabels Json?
@@ -585,7 +589,8 @@ model FormItemOption {
   label    String  @db.VarChar(255)
   order    Int     @default(0) @db.SmallInt
   isActive Boolean @default(true)
-  score    Int?    @db.SmallInt
+  // Bobot % langsung (desimal), sama seperti FormItem.score.
+  score    Float?
   bobot    Float?
 
   values      ProyekFormValue[]

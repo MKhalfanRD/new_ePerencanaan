@@ -61,3 +61,32 @@ export function pilihanLengkap(
     .filter((k) => nilaiKondisi(k.conditionValue).includes(value))
     .every((k) => terisi(lookup(k.key)));
 }
+
+/**
+ * Bobot terpakai 1 tab (nilai tertinggi yang mungkin didapat) — SAMA
+ * dengan backend form-skor.ts maksTab(): field tanpa syarat dijumlah;
+ * field bersyarat per field pemicu diambil kelompok nilai terbesar.
+ */
+export function maksTab(items: (ScoreItem & { isActive?: boolean })[]): number {
+  let total = 0;
+  const perPemicu = new Map<string, Map<string, number>>();
+  for (const i of items.filter((x) => x.isActive !== false)) {
+    const m = skorField(i, () => undefined, []).maks;
+    if (!i.conditionItemId) {
+      total += m;
+      continue;
+    }
+    const grup = perPemicu.get(i.conditionItemId) ?? new Map<string, number>();
+    for (const v of nilaiKondisi(i.conditionValue)) grup.set(v, (grup.get(v) ?? 0) + m);
+    perPemicu.set(i.conditionItemId, grup);
+  }
+  for (const grup of perPemicu.values()) total += Math.max(0, ...grup.values());
+  return total;
+}
+
+/** Angka bobot/skor gaya Indonesia, maks 2 desimal (2,73). */
+export const fmtSkor = (n: number) =>
+  // "|| 0" buang -0 dari sisa pembulatan (15,0003 - 15).
+  (Math.round(n * 100) / 100 || 0).toLocaleString("id-ID", {
+    maximumFractionDigits: 2,
+  });

@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import { Paperclip, Upload } from "lucide-react";
+import { OPTION_SOURCES } from "@/lib/option-sources";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -95,6 +97,27 @@ export function FieldControl({
   sourceRows?: { value: string; label: string }[];
 }) {
   const preview = mode === "preview";
+
+  // Sumber bertingkat (Satuan RO ikut RO, dst.): nilai yang tidak ada lagi
+  // di pilihan (induknya diganti) dikosongkan; satu-satunya pilihan sumber
+  // autoPick langsung terisi. sourceRows undefined = data belum dimuat.
+  const def = item.optionSource ? OPTION_SOURCES[item.optionSource] : undefined;
+  const rowsKey = sourceRows?.map((r) => r.value).join("|");
+  const nilaiKey = JSON.stringify(value?.value ?? null);
+  useEffect(() => {
+    if (preview || !def?.rowsBy || !sourceRows || !onChange) return;
+    const ada = new Set(sourceRows.map((r) => r.value));
+    const v = value?.value;
+    if (Array.isArray(v)) {
+      const sisa = v.filter((x) => ada.has(x));
+      if (sisa.length !== v.length) onChange({ value: sisa });
+    } else if (v != null && v !== "" && !ada.has(String(v))) {
+      onChange({ value: undefined });
+    } else if ((v == null || v === "") && def.autoPick && sourceRows.length === 1) {
+      onChange({ value: sourceRows[0].value });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowsKey, nilaiKey, preview]);
 
   // Item "otomatis" (mis. rasio Valuasi dihitung server dari alokasi paket)
   // — bukan kontrol form sama sekali, di kedua mode.

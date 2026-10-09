@@ -466,6 +466,8 @@ enum FormFieldType {
   CHECKBOX
   FIELDBOX
   UPLOAD
+  // Rasio Valuasi: dihitung otomatis dari total paket (lihat FormItem.rasio).
+  RASIO
 }
 
 // Lebar tampilan field di grid form — nullable = ikut heuristik otomatis
@@ -524,6 +526,10 @@ model FormSection {
   label    String  @db.VarChar(150)
   order    Int     @default(0) @db.SmallInt
   isActive Boolean @default(true)
+  // Syarat tampil bagian: KEY field pemicu (tab mana pun) & nilai yang
+  // membuat bagian ini tampil + dihitung (JSON array). null = selalu tampil.
+  conditionItemId String? @db.VarChar(100)
+  conditionValue  String?
 
   items FormItem[]
 
@@ -568,6 +574,10 @@ model FormItem {
   // Sumber bertingkat (mis. satuanRo, komponen): KEY field induk yang
   // pilihannya menyaring field ini (RO -> Satuan RO). null = tanpa induk.
   optionParentKey String? @db.VarChar(100)
+  // Field tipe RASIO (tab Valuasi): {pembilang, penyebut: "A"|"B"|"C",
+  // operator: "<"|"<="|">"|">="|"=", satuan: "rp"|"ribu"|"juta"|"miliar"}.
+  // Standar = thresholdValue; bobot kalau terpenuhi = score.
+  rasio Json?
   // Override label bagian dalam field gabungan, mis. Tematik
   // {"pn": "...", "pp": "...", "kp": "..."} — null = label default.
   subLabels Json?

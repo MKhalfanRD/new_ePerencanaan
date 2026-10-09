@@ -61,6 +61,8 @@ export interface ScoringItemDef {
   // "Standar (S)" di sheet. Item tanpa opsi & tanpa threshold pakai truthy
   // check biasa (lihat nilaiItem).
   thresholdValue?: number | null;
+  // Simbol syarat rasio terhadap thresholdValue (default "<").
+  operator?: string | null;
 }
 export interface ScoringTabDef {
   key?: string;
@@ -78,6 +80,77 @@ export function terisi(raw: unknown): boolean {
 }
 
 const isMulti = (item: ScoringItemDef) => item.fieldType === 'CHECKBOX';
+
+// ===== Rasio Valuasi (field tipe RASIO) — SAMA dengan frontend
+// lib/form-score.ts. A/B/C = total semua paket (alokasi RENCANA). =====
+export interface RasioConfig {
+  pembilang?: string;
+  penyebut?: string;
+  operator?: string;
+  satuan?: string;
+}
+export interface RingkasPaket {
+  A: number; // total anggaran (Rp)
+  B: number; // total volume RO
+  C: number; // total volume Indikator RO
+  satuanB: string[]; // satuan volume RO yang dipakai (unik)
+  satuanC: string[];
+}
+export const SKALA_RP: Record<string, number> = {
+  rp: 1,
+  ribu: 1e3,
+  juta: 1e6,
+  miliar: 1e9,
+};
+export function bandingkan(nilai: number, operator: string, standar: number): boolean {
+  switch (operator) {
+    case '<=': return nilai <= standar;
+    case '>': return nilai > standar;
+    case '>=': return nilai >= standar;
+    case '=': return Math.abs(nilai - standar) < 1e-9;
+    default: return nilai < standar;
+  }
+}
+/** Jumlah anggaran/volume semua alokasi RENCANA semua paket. */
+export function ringkasPaket(
+  alokasi: {
+    status?: string | null;
+    total?: unknown;
+    outputTarget?: unknown;
+    outputUnit?: string | null;
+    outcomeTarget?: unknown;
+    outcomeUnit?: string | null;
+  }[],
+): RingkasPaket {
+  const rencana = alokasi.filter((a) => !a.status || a.status === 'RENCANA');
+  const unik = (xs: (string | null | undefined)[]) =>
+    [...new Set(xs.map((x) => x?.trim()).filter((x): x is string => !!x))];
+  return {
+    A: rencana.reduce((s, a) => s + Number(a.total ?? 0), 0),
+    B: rencana.reduce((s, a) => s + Number(a.outputTarget ?? 0), 0),
+    C: rencana.reduce((s, a) => s + Number(a.outcomeTarget ?? 0), 0),
+    satuanB: unik(rencana.map((a) => a.outputUnit)),
+    satuanC: unik(rencana.map((a) => a.outcomeUnit)),
+  };
+}
+/**
+ * Nilai rasio pembilang:penyebut. A dibagi skala satuan standar (mis. juta).
+ * null = tidak bisa dihitung (penyebut 0, atau volume bersatuan campur).
+ */
+export function hitungRasio(cfg: RasioConfig | null | undefined, r: RingkasPaket): number | null {
+  if (!cfg?.pembilang || !cfg.penyebut) return null;
+  const skala = SKALA_RP[cfg.satuan ?? 'juta'] ?? 1e6;
+  const nilai = (h: string): number | null =>
+    h === 'A' ? r.A / skala
+    : h === 'B' ? (r.satuanB.length > 1 ? null : r.B)
+    : h === 'C' ? (r.satuanC.length > 1 ? null : r.C)
+    : null;
+  const atas = nilai(cfg.pembilang);
+  const bawah = nilai(cfg.penyebut);
+  // Angka yang belum terisi (0) = belum bisa dihitung, bukan "lolos".
+  if (atas == null || bawah == null || atas === 0 || bawah === 0) return null;
+  return atas / bawah;
+}
 
 /**
  * Skor 1 item ber-pilihan: pilihan yang dipilih DAN semua kolom
@@ -106,12 +179,19 @@ function nilaiItem(
     return skor;
   }
   if (item.thresholdValue != null) {
+    if (raw == null || raw === '') return 0;
     const angka = typeof raw === 'number' ? raw : Number(raw);
-    return angka != null && !Number.isNaN(angka) && angka < item.thresholdValue
+    return !Number.isNaN(angka) &&
+      bandingkan(angka, item.operator ?? '<', item.thresholdValue)
       ? (item.score ?? 0)
       : 0;
   }
-  return terisi(raw) ? (item.score ?? 0) : 0;
+  // Centang tunggal/field biasa: kolom tambahannya (muncul saat dicentang,
+  // nilai "true") harus terisi dulu — sama dengan aturan pilihan di atas.
+  const kolom = anak.filter((a) => nilaiKondisi(a.conditionValue).includes('true'));
+  return terisi(raw) && kolom.every((a) => terisi(lookup(a.key)))
+    ? (item.score ?? 0)
+    : 0;
 }
 
 function maksItem(item: ScoringItemDef): number {
@@ -254,6 +334,40 @@ if (require.main === module) {
   strictEqual(hitungSkorEvaluasi([dd], () => 'zzz'), 0);
   // Nilai tab tidak bisa lewat bobot tab.
   strictEqual(hitungSkorEvaluasi([{ bobot: 0.1, items: dd.items }], () => 'a'), 0.1);
+
+  // Centang tunggal + kolom tambahan: bobot masuk setelah keterangan diisi.
+  const kinerja: ScoringTabDef = {
+    bobot: 0.15,
+    items: [
+      { key: 'k1', fieldType: 'CHECKBOX', score: 3, isActive: true, options: [] },
+      { key: 'ket1', fieldType: 'FIELDBOX', score: null, isActive: true, options: [],
+        conditionItemId: 'k1', conditionValue: '["true"]' },
+    ],
+  };
+  strictEqual(hitungSkorEvaluasi([kinerja], isi({ k1: true })), 0);
+  strictEqual(hitungSkorEvaluasi([kinerja], isi({ k1: true, ket1: 'ok' })), 0.03);
+  strictEqual(hitungSkorEvaluasi([kinerja], isi({ ket1: 'ok' })), 0);
+
+  // Rasio: semua paket (RENCANA saja), skala juta, simbol syarat.
+  const rk = ringkasPaket([
+    { status: 'RENCANA', total: 2_000_000_000, outputTarget: 100, outputUnit: 'meter' },
+    { status: 'REALISASI', total: 9_999_000_000, outputTarget: 999 },
+    { status: 'RENCANA', total: 1_600_000_000, outputTarget: 100, outputUnit: 'meter' },
+  ]);
+  strictEqual(rk.A, 3_600_000_000);
+  strictEqual(hitungRasio({ pembilang: 'A', penyebut: 'B', satuan: 'juta' }, rk), 18);
+  strictEqual(
+    hitungRasio({ pembilang: 'A', penyebut: 'B' }, { ...rk, satuanB: ['meter', 'unit'] }),
+    null,
+  );
+  const val: ScoringTabDef = {
+    bobot: 0.15,
+    items: [{ key: 'r', score: 5, isActive: true, options: [], thresholdValue: 20, operator: '<' }],
+  };
+  strictEqual(hitungSkorEvaluasi([val], () => 18), 0.05);
+  strictEqual(hitungRasio({ pembilang: 'C', penyebut: 'B' }, rk), null); // C masih 0
+  strictEqual(hitungSkorEvaluasi([val], () => null), 0);
+  strictEqual(hitungSkorEvaluasi([{ ...val, items: [{ ...val.items[0], operator: '>=' }] }], () => 18), 0);
 
   // maksTab: set bersyarat alternatif tidak dijumlah dua kali.
   const valuasi: ScoringItemDef[] = [

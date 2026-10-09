@@ -35,7 +35,7 @@ import {
 } from "@/components/master/field-control";
 import { rowsForItem, subLabel, useSourceData } from "@/lib/option-sources";
 import { kondisiTerpenuhi } from "@/lib/form-condition";
-import { fmtSkor, skorField } from "@/lib/form-score";
+import { fmtSkor, ringkasPaket, skorField } from "@/lib/form-score";
 import {
   PaketLabel,
   PaketTemplateFields,
@@ -102,6 +102,8 @@ export interface FormItemNode {
   required?: boolean;
   optionSource?: string | null;
   optionParentKey?: string | null;
+  // Field RASIO: rumus pembilang:penyebut, simbol & satuan standar.
+  rasio?: { pembilang?: string; penyebut?: string; operator?: string; satuan?: string } | null;
   subLabels?: Record<string, string> | null;
   options: FormItemOption[];
 }
@@ -117,6 +119,9 @@ export interface FormTabNode {
     key: string;
     label: string;
     isActive?: boolean;
+    // Syarat tampil bagian (KEY field pemicu + JSON array nilai).
+    conditionItemId?: string | null;
+    conditionValue?: string | null;
     items: FormItemNode[];
   }[];
 }
@@ -699,16 +704,30 @@ export function ProyekFormDialog({
       ? watch(key as keyof FormData)
       : formValuesMap[key]?.value;
   // Kanvas admin selalu menampilkan semua field (supaya bisa diatur).
+  // Bagian bersyarat (panel "Atur bagian" → Tampil kalau): field di
+  // dalamnya ikut tersembunyi & tidak dinilai/dikirim.
+  const bagianDariField = new Map(
+    (formTemplate?.tabs ?? []).flatMap((t) =>
+      t.sections.flatMap((s) => s.items.map((i) => [i.id, s] as const)),
+    ),
+  );
+  const isSectionVisible = (s?: {
+    conditionItemId?: string | null;
+    conditionValue?: string | null;
+  }) =>
+    adminMode ||
+    !s?.conditionItemId ||
+    kondisiTerpenuhi(s.conditionValue, itemValue(s.conditionItemId));
   const isItemVisible = (item: FormItemNode) =>
     adminMode ||
-    !item.conditionItemId ||
-    kondisiTerpenuhi(item.conditionValue, itemValue(item.conditionItemId));
+    ((!item.conditionItemId ||
+      kondisiTerpenuhi(item.conditionValue, itemValue(item.conditionItemId))) &&
+      isSectionVisible(bagianDariField.get(item.id)));
 
   const valuasiItems =
     formTemplate?.tabs
       .find((t) => t.key === "valuasi")
       ?.sections.flatMap((s) => s.items) ?? [];
-  const kategoriProyekItem = valuasiItems.find((i) => i.key === "kategoriProyek");
 
   const kinerjaItems = (
     formTemplate?.tabs
@@ -873,6 +892,8 @@ export function ProyekFormDialog({
             value={formValuesMap[item.key]}
             onChange={(patch) => setFormValue(item.key, patch)}
             sourceRows={rowsForItem(item, sourceData, itemValue, selectedKegiatanId)}
+            // Kanvas admin: tanpa data paket -> kartu rasio menampilkan rumus.
+            ringkasPaket={adminMode ? undefined : ringkasForm}
             uploadedFileName={
               pendingItemFiles[item.id]?.name ?? itemDokumen[item.id]?.fileName
             }
@@ -939,7 +960,7 @@ export function ProyekFormDialog({
         section,
         nodes: akar.flatMap((i) => renderPohon(section, i, 0)),
       };
-    });
+    }).filter((x) => x.nodes.length > 0);
 
     return (
       <div className="space-y-5">
@@ -2173,6 +2194,17 @@ export function ProyekFormDialog({
 
   const watchedForPreview = watch();
   const paket0Form = watchedForPreview.paket?.[0];
+  // A/B/C rasio Valuasi = total semua paket (alokasi RENCANA), sama dgn
+  // backend ringkasPaket().
+  const ringkasForm = ringkasPaket(
+    isEdit
+      ? (editData?.paket ?? []).flatMap((p) => p.alokasi ?? [])
+      : (watchedForPreview.paket ?? []).map((p) => ({
+          ...p,
+          total:
+            (p.rm ?? 0) + (p.rmp ?? 0) + (p.pln ?? 0) + (p.sbsn ?? 0) + (p.kpbu ?? 0),
+        })),
+  );
   const roIdPreview = isEdit ? editData?.paket?.[0]?.roId : paket0Form?.roId;
   const previewKey = JSON.stringify({
     roIdPreview,
@@ -2195,17 +2227,7 @@ export function ProyekFormDialog({
     fkw: watchedForPreview.fkw,
     mpa: watchedForPreview.mpa,
     taggingDinamis: watchedForPreview.taggingDinamis,
-    dana: isEdit
-      ? undefined
-      : [
-          paket0Form?.rm,
-          paket0Form?.rmp,
-          paket0Form?.pln,
-          paket0Form?.sbsn,
-          paket0Form?.kpbu,
-          paket0Form?.outputTarget,
-          paket0Form?.outcomeTarget,
-        ],
+    ringkasForm,
   });
 
   useEffect(() => {
@@ -2214,27 +2236,6 @@ export function ProyekFormDialog({
       return;
     }
     const timer = setTimeout(() => {
-      const editPaket0 = editData?.paket?.[0];
-      const totalDana = isEdit
-        ? editPaket0?.alokasi.reduce((s, a) => s + Number(a.total), 0)
-        : (paket0Form?.rm ?? 0) +
-          (paket0Form?.rmp ?? 0) +
-          (paket0Form?.pln ?? 0) +
-          (paket0Form?.sbsn ?? 0) +
-          (paket0Form?.kpbu ?? 0);
-      const outputTarget = isEdit
-        ? editPaket0?.alokasi.reduce(
-            (s, a) => s + Number(a.outputTarget ?? 0),
-            0,
-          )
-        : paket0Form?.outputTarget;
-      const outcomeTarget = isEdit
-        ? editPaket0?.alokasi.reduce(
-            (s, a) => s + Number(a.outcomeTarget ?? 0),
-            0,
-          )
-        : paket0Form?.outcomeTarget;
-
       setPreviewLoading(true);
       api
         .post("/proyek/preview-skor", {
@@ -2259,9 +2260,11 @@ export function ProyekFormDialog({
           fkw: watchedForPreview.fkw,
           mpa: watchedForPreview.mpa,
           taggingDinamis: watchedForPreview.taggingDinamis,
-          totalDana,
-          outputTarget,
-          outcomeTarget,
+          totalDana: ringkasForm.A,
+          outputTarget: ringkasForm.B,
+          outcomeTarget: ringkasForm.C,
+          outputUnits: ringkasForm.satuanB,
+          outcomeUnits: ringkasForm.satuanC,
           formValues: buildFormValues(),
           proyekId: editData?.id,
         })
@@ -2904,55 +2907,17 @@ export function ProyekFormDialog({
                 )}
               </TabsContent>
 
-              {/* === TAB: VALUASI PROYEK === Kategori Proyek dipilih manual;
-                  3 kriteria rasio dana/output/outcome dihitung OTOMATIS
-                  server-side dari alokasi paket vs ambang batas Master Data
-                  (lihat form-skor.ts) — tidak ada input manual untuk itu. */}
+              {/* === TAB: VALUASI PROYEK === generik dari template; kriteria
+                  rasio dihitung OTOMATIS server-side dari alokasi paket vs
+                  ambang batas Master Data (lihat form-skor.ts). */}
               <TabsContent value="valuasi" className="space-y-5">
                 {renderTabHeader("valuasi")}
-                {adminMode && adminHandlers ? (
-                  renderTemplatedTab("valuasi", {}, TAB_GRID_CLASS.valuasi!)
-                ) : (
-                <div className="pl-12 space-y-4 max-w-md">
-                  {kategoriProyekItem ? (
-                    <div className="space-y-2">
-                      <Label className="text-xs">{kategoriProyekItem.label}</Label>
-                      <Select
-                        value={kategoriProyekValue ?? NONE}
-                        onValueChange={(v) =>
-                          setFormValue("kategoriProyek", {
-                            value: v === NONE ? undefined : v,
-                          })
-                        }
-                      >
-                        <SelectTrigger className="w-full h-10">
-                          <SelectValue placeholder="Pilih kategori proyek" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NONE}>— Belum dipilih —</SelectItem>
-                          {kategoriProyekItem.options.map((o) => (
-                            <SelectItem key={o.id} value={o.value}>
-                              {o.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Kegiatan ini belum punya template Valuasi di Master Data.
-                    </p>
-                  )}
-                  <p className="text-[11px] text-muted-foreground">
-                    Kriteria rasio anggaran terhadap output/outcome dihitung
-                    otomatis dari alokasi paket, tidak perlu diisi manual.
-                  </p>
-                </div>
-                )}
+                {renderTemplatedTab("valuasi", {}, TAB_GRID_CLASS.valuasi!)}
               </TabsContent>
 
-              {/* === TAB: KINERJA PROYEK === checkbox + catatan, daftar item
-                  mengikuti Kategori Proyek yang dipilih di tab Valuasi. */}
+              {/* === TAB: KINERJA PROYEK === daftar kriteria mengikuti
+                  Kategori Proyek di tab Valuasi (syarat per field); field &
+                  kolom tambahannya dirender generik seperti tab lain. */}
               <TabsContent value="kinerja" className="space-y-5">
                 {renderTabHeader("kinerja")}
                 {adminMode && adminHandlers ? (
@@ -2968,34 +2933,11 @@ export function ProyekFormDialog({
                       Belum ada kriteria kinerja untuk kategori ini.
                     </p>
                   ) : (
-                    kinerjaItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-start gap-2.5 rounded-lg border px-3 py-2.5"
-                      >
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 mt-0.5 accent-primary shrink-0"
-                          checked={!!formValuesMap[item.key]?.value}
-                          onChange={(e) =>
-                            setFormValue(item.key, { value: e.target.checked })
-                          }
-                        />
-                        <div className="flex-1 space-y-1.5">
-                          <p className="text-xs leading-snug">{item.label}</p>
-                          {!!formValuesMap[item.key]?.value && (
-                            <Input
-                              className="h-8 text-xs"
-                              placeholder="Catatan/justifikasi (opsional)"
-                              value={formValuesMap[item.key]?.note ?? ""}
-                              onChange={(e) =>
-                                setFormValue(item.key, { note: e.target.value })
-                              }
-                            />
-                          )}
-                        </div>
-                      </div>
-                    ))
+                    // Tampilan umum (sama dgn kanvas admin): centang + kolom
+                    // tambahan yang diatur admin, bobot lewat skor tab.
+                    <div className="-ml-12">
+                      {renderTemplatedTab("kinerja", {}, TAB_GRID_CLASS.kinerja!)}
+                    </div>
                   )}
                 </div>
                 )}

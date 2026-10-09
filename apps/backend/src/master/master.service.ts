@@ -208,6 +208,8 @@ export class MasterService {
         label: dto.label,
         isActive: dto.isActive,
         order: dto.order,
+        conditionItemId: dto.conditionItemId,
+        conditionValue: dto.conditionValue,
       },
     });
   }
@@ -276,6 +278,7 @@ export class MasterService {
         width: dto.width,
         optionSource: dto.optionSource,
         optionParentKey: dto.optionParentKey,
+        rasio: dto.rasio,
         subLabels: dto.subLabels,
       },
     });
@@ -297,6 +300,7 @@ export class MasterService {
         width: dto.width,
         optionSource: dto.optionSource,
         optionParentKey: dto.optionParentKey,
+        rasio: dto.rasio,
         subLabels: dto.subLabels,
       },
     });
@@ -395,6 +399,8 @@ export class MasterService {
                   label: s.label,
                   order: s.order,
                   isActive: s.isActive,
+                  conditionItemId: s.conditionItemId,
+                  conditionValue: s.conditionValue,
                   items: {
                     create: s.items.map((i) => ({
                       key: i.key,
@@ -411,6 +417,7 @@ export class MasterService {
                       width: i.width,
                       optionSource: i.optionSource,
                       optionParentKey: i.optionParentKey,
+                      rasio: i.rasio ?? undefined,
                       subLabels: i.subLabels ?? undefined,
                       options: {
                         create: i.options.map((o) => ({

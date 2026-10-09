@@ -26,25 +26,13 @@ import {
   kondisiTerpenuhi,
   rincianSkor,
   RincianTab,
+  RingkasPaket,
+  RasioConfig,
+  ringkasPaket,
+  hitungRasio,
 } from './form-skor';
 import { LINTAS_KEGIATAN, roleEfektif } from '../auth/role';
 import { PreviewSkorDto, FormValueDto } from './dto/preview-skor.dto';
-
-interface ValuasiRatios {
-  danaPerOutput?: number | null;
-  danaPerOutcome?: number | null;
-  outputPerOutcome?: number | null;
-}
-
-/** Ringkasan dana/output/outcome satu paket — dipakai untuk rasio Valuasi
- * (lihat hitungRasioValuasi). Diisi dari sumber yang beda-beda tergantung
- * konteks: dto.paket[0] saat create, paket tersimpan saat update, atau
- * body request saat preview. */
-interface PaketRingkas {
-  totalDana: number;
-  outputTarget: number;
-  outcomeTarget: number;
-}
 
 /** Lengkapi array alokasi nested-create dengan pasangan status (Rencana<->
  * Realisasi) bernilai 0 untuk tahun yang belum punya pasangannya — meniru
@@ -162,14 +150,6 @@ const FIXED_ITEM_KEYS = new Set([
   'taggingDinamis',
 ]);
 
-/** FormItem.key rasio Valuasi -> field ValuasiRatios yang jadi nilai
- * pembandingnya (lihat FormItem.thresholdValue & form-skor.ts). */
-const RATIO_ITEM_KEYS: Record<string, keyof ValuasiRatios> = {
-  rasioAnggaranOutput: 'danaPerOutput',
-  rasioAnggaranOutcome: 'danaPerOutcome',
-  rasioOutputOutcome: 'outputPerOutcome',
-};
-
 const scoringTabInclude = Prisma.validator<Prisma.FormTabInclude>()({
   sections: {
     where: { isActive: true },
@@ -222,7 +202,9 @@ export class ProyekService {
     tx: Prisma.TransactionClient,
     input: any,
     roIdPaketPertama: string | undefined,
-    paketSekarang?: PaketRingkas,
+    // Total semua paket (alokasi RENCANA) utk field RASIO — lihat
+    // ringkasPaket() di form-skor.ts.
+    paketSekarang?: RingkasPaket,
     formValues?: FormValueDto[],
     // Proyek yang SUDAH ada (edit, atau recalc setelah upload) — dipakai
     // buat cek field UPLOAD ("terisi" = ada DokumenPendukung, bukan dari
@@ -258,7 +240,6 @@ export class ProyekService {
       include: scoringTabInclude,
     });
 
-    const valuasi = this.hitungRasioValuasi(paketSekarang);
     const genericValues = new Map(
       (formValues ?? []).map((f) => [f.key, f.value]),
     );
@@ -288,15 +269,26 @@ export class ProyekService {
       }
     }
 
+    // Nilai field RASIO (per key) dihitung dari total paket & rumus admin.
+    const nilaiRasio = new Map<string, number | null>();
+    const ringkas = paketSekarang;
+    for (const i of allItems)
+      if (i.fieldType === 'RASIO' && ringkas)
+        nilaiRasio.set(i.key, hitungRasio(i.rasio as RasioConfig | null, ringkas));
+
     const lookup: ItemValueLookup = (key) => {
       // Kolom tetap Proyek (field bawaan) — termasuk field teks seperti
       // sumberUsulanLainnya yang bisa diberi skor "jika terisi".
       if (FIXED_ITEM_KEYS.has(key) || (input && key in input))
         return input[key];
-      if (key in RATIO_ITEM_KEYS) return valuasi[RATIO_ITEM_KEYS[key]];
+      if (nilaiRasio.has(key)) return nilaiRasio.get(key);
       if (uploadedKeys.has(key)) return true;
       return genericValues.get(key);
     };
+    // Bagian bersyarat (mis. "Khusus kategori …") tampil & dihitung hanya
+    // kalau field pemicunya bernilai salah satu dari conditionValue.
+    const bagianTampil = (s: { conditionItemId: string | null; conditionValue: string | null }) =>
+      !s.conditionItemId || kondisiTerpenuhi(s.conditionValue, lookup(s.conditionItemId));
     const tabs: ScoringTabDef[] = formTabs
       .sort((a, b) => a.order - b.order)
       .map((t) => ({
@@ -304,6 +296,7 @@ export class ProyekService {
       label: t.label,
       bobot: t.bobot,
       items: t.sections
+        .filter(bagianTampil)
         .flatMap((s) => s.items)
         .filter(
           (i) =>
@@ -318,6 +311,7 @@ export class ProyekService {
           conditionItemId: i.conditionItemId,
           conditionValue: i.conditionValue,
           thresholdValue: i.thresholdValue,
+          operator: (i.rasio as RasioConfig | null)?.operator,
           options: i.options.map((o) => ({
             value: o.value,
             score: o.score,
@@ -335,42 +329,24 @@ export class ProyekService {
       toFormValueRows(
         allItems,
         formValues?.filter(
-          (f) => !FIXED_ITEM_KEYS.has(f.key) && !(f.key in RATIO_ITEM_KEYS),
+          (f) => !FIXED_ITEM_KEYS.has(f.key) && !nilaiRasio.has(f.key),
         ),
       );
 
     return { skorEvaluasi, formValueCreates, rincian };
   }
 
-  /** Rasio dana/output/outcome paket ini — dipakai item Valuasi yang
-   * membandingkan rasio ke ambang batas admin (FormItem.thresholdValue,
-   * kolom "Standar (S)" di sheet). `paketSekarang` diterima langsung dari
-   * pemanggil (bukan di-query lewat roId) — paket yang baru dibuat/preview
-   * belum tentu ada di DB. */
-  private hitungRasioValuasi(paketSekarang?: PaketRingkas): ValuasiRatios {
-    if (!paketSekarang) return {};
-    const { totalDana, outputTarget, outcomeTarget } = paketSekarang;
-    return {
-      danaPerOutput: outputTarget > 0 ? totalDana / outputTarget : null,
-      danaPerOutcome: outcomeTarget > 0 ? totalDana / outcomeTarget : null,
-      outputPerOutcome:
-        outcomeTarget > 0 ? outputTarget / outcomeTarget : null,
-    };
-  }
-
   /** Preview skor evaluasi tanpa menyimpan apa pun — dipakai form Proyek
    * (create maupun edit) supaya tab Evaluasi ter-update live. */
   async previewEvaluasi(dto: PreviewSkorDto) {
-    const paketSekarang: PaketRingkas | undefined =
-      dto.totalDana != null ||
-      dto.outputTarget != null ||
-      dto.outcomeTarget != null
-        ? {
-            totalDana: dto.totalDana ?? 0,
-            outputTarget: dto.outputTarget ?? 0,
-            outcomeTarget: dto.outcomeTarget ?? 0,
-          }
-        : undefined;
+    // Total semua paket dari form (sudah dijumlah frontend).
+    const paketSekarang: RingkasPaket = {
+      A: dto.totalDana ?? 0,
+      B: dto.outputTarget ?? 0,
+      C: dto.outcomeTarget ?? 0,
+      satuanB: dto.outputUnits ?? [],
+      satuanC: dto.outcomeUnits ?? [],
+    };
 
     const { skorEvaluasi, rincian } = await this.hitungEvaluasi(
       this.prisma,
@@ -404,19 +380,16 @@ export class ProyekService {
       const proyekPart = kodeProyek.slice(2);
 
       const paket0 = dto.paket?.[0];
-      const alokasi0 = paket0?.alokasi?.[0];
-      const paketSekarang: PaketRingkas | undefined = alokasi0
-        ? {
-            totalDana:
-              (alokasi0.rm ?? 0) +
-              (alokasi0.rmp ?? 0) +
-              (alokasi0.pln ?? 0) +
-              (alokasi0.sbsn ?? 0) +
-              (alokasi0.kpbu ?? 0),
-            outputTarget: alokasi0.outputTarget ?? 0,
-            outcomeTarget: alokasi0.outcomeTarget ?? 0,
-          }
-        : undefined;
+      // Total SEMUA paket & tahun (alokasi RENCANA) — rasio Valuasi.
+      const paketSekarang = ringkasPaket(
+        (dto.paket ?? []).flatMap((p) =>
+          (p.alokasi ?? []).map((a) => ({
+            ...a,
+            total:
+              (a.rm ?? 0) + (a.rmp ?? 0) + (a.pln ?? 0) + (a.sbsn ?? 0) + (a.kpbu ?? 0),
+          })),
+        ),
+      );
       const { skorEvaluasi, formValueCreates } = await this.hitungEvaluasi(
         tx,
         dto,
@@ -654,10 +627,16 @@ export class ProyekService {
       include: {
         paket: {
           orderBy: { createdAt: Prisma.SortOrder.asc },
-          take: 1,
           include: {
             alokasi: {
-              select: { total: true, outputTarget: true, outcomeTarget: true },
+              select: {
+                status: true,
+                total: true,
+                outputTarget: true,
+                outputUnit: true,
+                outcomeTarget: true,
+                outcomeUnit: true,
+              },
             },
           },
         },
@@ -671,19 +650,8 @@ export class ProyekService {
       throw new ForbiddenException('Bukan proyek milik anda');
 
     const paket0 = proyek.paket?.[0];
-    const paketSekarang: PaketRingkas | undefined = paket0
-      ? {
-          totalDana: paket0.alokasi.reduce((s, a) => s + Number(a.total), 0),
-          outputTarget: paket0.alokasi.reduce(
-            (s, a) => s + Number(a.outputTarget ?? 0),
-            0,
-          ),
-          outcomeTarget: paket0.alokasi.reduce(
-            (s, a) => s + Number(a.outcomeTarget ?? 0),
-            0,
-          ),
-        }
-      : undefined;
+    // Total SEMUA paket & tahun (alokasi RENCANA) — rasio Valuasi.
+    const paketSekarang = ringkasPaket(proyek.paket.flatMap((p) => p.alokasi));
 
     // Skor evaluasi dihitung ulang tiap kali proyek disimpan dari struktur
     // Form Proyek (Master Data) — lihat hitungEvaluasi/form-skor.ts.
@@ -812,10 +780,16 @@ export class ProyekService {
       include: {
         paket: {
           orderBy: { createdAt: Prisma.SortOrder.asc },
-          take: 1,
           include: {
             alokasi: {
-              select: { total: true, outputTarget: true, outcomeTarget: true },
+              select: {
+                status: true,
+                total: true,
+                outputTarget: true,
+                outputUnit: true,
+                outcomeTarget: true,
+                outcomeUnit: true,
+              },
             },
           },
         },
@@ -825,19 +799,8 @@ export class ProyekService {
     if (!proyek) return;
 
     const paket0 = proyek.paket?.[0];
-    const paketSekarang: PaketRingkas | undefined = paket0
-      ? {
-          totalDana: paket0.alokasi.reduce((s, a) => s + Number(a.total), 0),
-          outputTarget: paket0.alokasi.reduce(
-            (s, a) => s + Number(a.outputTarget ?? 0),
-            0,
-          ),
-          outcomeTarget: paket0.alokasi.reduce(
-            (s, a) => s + Number(a.outcomeTarget ?? 0),
-            0,
-          ),
-        }
-      : undefined;
+    // Total SEMUA paket & tahun (alokasi RENCANA) — rasio Valuasi.
+    const paketSekarang = ringkasPaket(proyek.paket.flatMap((p) => p.alokasi));
 
     const formValues: FormValueDto[] = proyek.formValues.map((fv) => ({
       key: fv.item.key,

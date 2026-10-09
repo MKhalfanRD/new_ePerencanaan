@@ -3,6 +3,12 @@
 import { useEffect } from "react";
 import { Paperclip, Upload } from "lucide-react";
 import { OPTION_SOURCES } from "@/lib/option-sources";
+import {
+  SUMBER_RASIO,
+  teksRasio,
+  type RasioConfig,
+  type RingkasPaket,
+} from "@/lib/form-score";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -63,6 +69,8 @@ export interface FieldControlItem {
   // Sumber pilihan dari tabel master (lihat lib/option-sources.tsx) — kalau
   // ada, pilihan diambil dari `sourceRows`, bukan item.options.
   optionSource?: string | null;
+  // Field RASIO (lihat lib/form-score.ts teksRasio).
+  rasio?: RasioConfig | null;
 }
 export type FieldControlValue = {
   // string[] = checkbox multi-pilih dari master.
@@ -80,6 +88,7 @@ export function FieldControl({
   onUpload,
   onRemoveUpload,
   sourceRows,
+  ringkasPaket,
 }: {
   item: FieldControlItem;
   mode: "preview" | "fill";
@@ -95,6 +104,8 @@ export function FieldControl({
   onUpload?: (files: File[]) => void;
   onRemoveUpload?: () => void;
   sourceRows?: { value: string; label: string }[];
+  // Total semua paket (A/B/C) — dipakai field RASIO.
+  ringkasPaket?: RingkasPaket;
 }) {
   const preview = mode === "preview";
 
@@ -119,14 +130,40 @@ export function FieldControl({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowsKey, nilaiKey, preview]);
 
-  // Item "otomatis" (mis. rasio Valuasi dihitung server dari alokasi paket)
-  // — bukan kontrol form sama sekali, di kedua mode.
-  if (item.thresholdValue != null) {
+  // Rasio Valuasi — dihitung otomatis dari total semua paket, user tidak
+  // mengetik apa pun. Kanvas admin (preview) menampilkan rumusnya.
+  if (item.fieldType === "RASIO" || item.thresholdValue != null) {
+    const kosong = { A: 0, B: 0, C: 0, satuanB: [], satuanC: [] };
+    const info = teksRasio(item.rasio, item.thresholdValue, ringkasPaket ?? kosong);
+    const sumber = (h?: string) =>
+      h ? `${h} · ${SUMBER_RASIO[h]?.split(" (")[0] ?? h}` : "?";
     return (
-      <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
-        Dihitung otomatis dari alokasi paket — terpenuhi kalau nilai hasil
-        hitung lebih kecil dari{" "}
-        <strong className="text-foreground">{item.thresholdValue}</strong>.
+      <div className="space-y-2">
+        <FieldLabel item={item} />
+        <div className="space-y-1 rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs">
+          {preview || !ringkasPaket ? (
+            <p className="text-muted-foreground">
+              Dihitung otomatis: {sumber(item.rasio?.pembilang)} :{" "}
+              {sumber(item.rasio?.penyebut)}
+            </p>
+          ) : info.teks ? (
+            <p className="text-sm font-medium text-foreground">{info.teks}</p>
+          ) : (
+            <p className="text-muted-foreground">{info.pesan}</p>
+          )}
+          <p className="text-[11px] text-muted-foreground">
+            {!preview && ringkasPaket && info.teks && (
+              <span
+                className={
+                  info.terpenuhi ? "font-semibold text-emerald-700" : "font-semibold text-destructive"
+                }
+              >
+                {info.terpenuhi ? "✓ Terpenuhi" : "✗ Belum terpenuhi"} ·{" "}
+              </span>
+            )}
+            Terpenuhi kalau hasil {info.syarat}
+          </p>
+        </div>
       </div>
     );
   }

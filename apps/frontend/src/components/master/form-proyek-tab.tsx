@@ -19,6 +19,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
+  SelectGroup,
+  SelectLabel,
   SelectContent,
   SelectItem,
   SelectTrigger,
@@ -69,7 +71,14 @@ import {
 } from "@/lib/option-sources";
 import { SOURCE_EDITORS } from "@/lib/option-source-editors";
 import { nilaiKondisi } from "@/lib/form-condition";
-import { fmtSkor, maksTab } from "@/lib/form-score";
+import {
+  fmtSkor,
+  maksTab,
+  OPERATOR_RASIO,
+  SATUAN_RP,
+  SIMBOL_OPERATOR,
+  SUMBER_RASIO,
+} from "@/lib/form-score";
 
 const MANUAL = "__MANUAL__";
 // Field paket bawaan yang pilihannya bertingkat dari Nomenklatur (bukan
@@ -115,6 +124,7 @@ const FIELD_TYPE_LABEL: Record<string, string> = {
   CHECKBOX: "Centang",
   FIELDBOX: "Teks Panjang",
   UPLOAD: "Upload File",
+  RASIO: "Rasio",
 };
 const FIELD_TYPE_OPTIONS = Object.keys(FIELD_TYPE_LABEL) as Array<
   keyof typeof FIELD_TYPE_LABEL
@@ -314,6 +324,12 @@ export function FormProyekTab({
         fieldType: newItemType,
         optionSource: pilihan ? newItemSource : null,
         optionParentKey: pilihan ? indukTunggal(newItemSource) : null,
+        ...(newItemType === "RASIO"
+          ? {
+              rasio: { pembilang: "A", penyebut: "B", operator: "<", satuan: "juta" },
+              thresholdValue: 0,
+            }
+          : {}),
         required: newItemRequired,
         // Kolom tambahan: muncul hanya saat pilihan induknya dipilih.
         conditionItemId: parent?.item.key,
@@ -444,7 +460,16 @@ export function FormProyekTab({
     maksTab(
       tab.sections
         .filter((sec) => sec.isActive !== false)
-        .flatMap((sec) => sec.items)
+        .flatMap((sec) => {
+          const keys = new Set(sec.items.map((i) => i.key));
+          // Bagian bersyarat: field akarnya ikut syarat bagian, jadi set
+          // kategori alternatif tidak dijumlah dua kali.
+          return sec.items.map((i) =>
+            sec.conditionItemId && (!i.conditionItemId || !keys.has(i.conditionItemId))
+              ? { ...i, conditionItemId: sec.conditionItemId, conditionValue: sec.conditionValue }
+              : i,
+          );
+        })
         .map((i) => {
           if (!ubah || i.id !== ubah.itemId) return i;
           if (ubah.value == null) return { ...i, score: ubah.score };
@@ -461,6 +486,8 @@ export function FormProyekTab({
     );
   // Bobot yang sedang DIKETIK (belum disimpan) — progress & info di panel
   // ikut berubah tiap ketukan. bad = bukan angka >= 0.
+  // Panel Atur bagian: mode "Hanya kalau…" dibuka sebelum field pemicunya dipilih.
+  const [syaratTerbuka, setSyaratTerbuka] = useState<string | null>(null);
   const [draftBobot, setDraftBobot] = useState<
     (UbahBobot & { score: number; label: string; bad?: boolean }) | null
   >(null);
@@ -484,6 +511,7 @@ export function FormProyekTab({
     const merah =
       dariSini && (draftBobot!.bad || lewatBatas(cek.tab, draftBobot!));
     return (
+      <span className="flex shrink-0 items-center gap-1">
       <Input
         type="text"
         inputMode="decimal"
@@ -507,6 +535,8 @@ export function FormProyekTab({
           onSave(v);
         }}
       />
+      <span className="text-[11px] text-muted-foreground">%</span>
+      </span>
     );
   };
 
@@ -1042,6 +1072,143 @@ export function FormProyekTab({
             onChange={(v) => patchSection(section.id, { isActive: v })}
           />
         </div>
+        {(() => {
+          // Kapan bagian muncul: selalu, atau hanya kalau field pemicu
+          // (field berpilihan aktif di tab mana pun, di luar bagian ini)
+          // bernilai salah satu pilihan yang dicentang.
+          const keysBagian = new Set(section.items.map((i) => i.key));
+          const calonPerTab = templateTabs
+            .map((t) => ({
+              tab: t,
+              items: t.sections
+                .filter((sec) => sec.isActive !== false)
+                .flatMap((sec) => sec.items)
+                .filter(
+                  (i) =>
+                    i.isActive !== false &&
+                    !keysBagian.has(i.key) &&
+                    (i.fieldType === "DROPDOWN" || i.fieldType === "CHECKBOX") &&
+                    pilihanItem(i).length > 0,
+                ),
+            }))
+            .filter((g) => g.items.length);
+          const pemicu = calonPerTab
+            .flatMap((g) => g.items)
+            .find((i) => i.key === section.conditionItemId);
+          const dipilih = nilaiKondisi(section.conditionValue);
+          const bersyarat = !!section.conditionItemId || syaratTerbuka === section.id;
+          const labelNilai = pemicu
+            ? pilihanItem(pemicu)
+                .filter((o) => dipilih.includes(o.value))
+                .map((o) => o.label)
+            : [];
+          const pilihan = (aktif: boolean, judul: string, onClick: () => void) => (
+            <button
+              type="button"
+              onClick={onClick}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-xs",
+                aktif ? "border-primary bg-primary/5 font-semibold text-primary" : "bg-white hover:bg-muted/40",
+              )}
+            >
+              <span
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0 rounded-full border",
+                  aktif ? "border-[4px] border-primary" : "border-muted-foreground/40",
+                )}
+              />
+              {judul}
+            </button>
+          );
+          return (
+            <div className="space-y-3 border-t pt-4">
+              <div className="space-y-0.5">
+                <p className="text-sm font-bold">Kapan bagian ini muncul?</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Misalnya hanya untuk kategori proyek tertentu.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                {pilihan(!bersyarat, "Selalu muncul", () => {
+                  setSyaratTerbuka(null);
+                  if (section.conditionItemId)
+                    patchSection(section.id, { conditionItemId: null, conditionValue: null });
+                })}
+                {pilihan(bersyarat, "Hanya kalau isian tertentu dipilih", () =>
+                  setSyaratTerbuka(section.id),
+                )}
+              </div>
+              {bersyarat && (
+                <div className="space-y-3 rounded-md bg-muted/40 p-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">1. Isian yang dicek</Label>
+                    <Select
+                      value={section.conditionItemId ?? ""}
+                      onValueChange={(v) =>
+                        patchSection(section.id, { conditionItemId: v, conditionValue: null })
+                      }
+                    >
+                      <SelectTrigger className="h-8 bg-white text-xs">
+                        <SelectValue placeholder="Pilih isian…" />
+                      </SelectTrigger>
+                      <SelectContent className="min-w-[320px]">
+                        {calonPerTab.map(({ tab: t, items }) => (
+                          <SelectGroup key={t.id}>
+                            <SelectLabel className="text-[11px]">Tab {t.label}</SelectLabel>
+                            {items.map((i) => (
+                              <SelectItem key={i.id} value={i.key}>
+                                {i.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {pemicu && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">
+                        2. Muncul kalau &quot;{pemicu.label}&quot; dipilih:
+                      </Label>
+                      {pilihanItem(pemicu).map((o) => (
+                        <label key={o.value} className="flex items-center gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-primary"
+                            checked={dipilih.includes(o.value)}
+                            onChange={(e) => {
+                              const next = e.target.checked
+                                ? [...dipilih, o.value]
+                                : dipilih.filter((x) => x !== o.value);
+                              patchSection(section.id, {
+                                conditionValue: next.length ? JSON.stringify(next) : null,
+                              });
+                            }}
+                          />
+                          {o.label}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <p
+                    className={cn(
+                      "rounded-md px-2.5 py-2 text-[11px]",
+                      labelNilai.length
+                        ? "bg-primary/10 text-primary"
+                        : "bg-amber-50 text-amber-800",
+                    )}
+                  >
+                    {!pemicu
+                      ? "Pilih isian yang dicek dulu."
+                      : labelNilai.length
+                        ? `Bagian ini hanya muncul kalau "${pemicu.label}" = ${labelNilai.join(" atau ")}.`
+                        : "Centang minimal satu pilihan — tanpa itu bagian ini tidak pernah muncul."}
+                  </p>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         {tombolUrutan(
           idx > 0 ? () => pindahUrutan(tab.sections, section.id, -1, "form-section") : null,
           idx < tab.sections.length - 1
@@ -1059,6 +1226,17 @@ export function FormProyekTab({
         </Button>
       </div>
     );
+  };
+
+  // Teks syarat bagian utk kanvas: "Kategori Proyek = Pembangunan jaringan".
+  const syaratBagian = (section: FormTabNode["sections"][number]) => {
+    const pemicu = templateTabs
+      .flatMap((t) => t.sections.flatMap((s) => s.items))
+      .find((i) => i.key === section.conditionItemId);
+    const nilai = nilaiKondisi(section.conditionValue).map(
+      (v) => (pemicu ? pilihanItem(pemicu).find((o) => o.value === v)?.label : null) ?? v,
+    );
+    return `${pemicu?.label ?? section.conditionItemId} = ${nilai.join(" atau ") || "(belum dipilih)"}`;
   };
 
   const labelTipe = (item: FormItemNode) =>
@@ -1121,6 +1299,12 @@ export function FormProyekTab({
     const indukList = calonInduk(item.optionSource ?? null);
     const butuhInduk = !!sumberDef?.parent && sumberDef.parent !== "kegiatan";
     const anak = kolomTambahanDari(section, item);
+    // Centang tunggal (ya/tidak, tanpa daftar pilihan) — mis. kriteria
+    // Kinerja, FKB/FKW/MPA: bobot di field itu sendiri & kolom tambahannya
+    // muncul saat dicentang (conditionValue "true").
+    const centangTunggal =
+      item.fieldType === "CHECKBOX" && !item.optionSource && item.options.length === 0;
+    const kolomCentang = anak.filter((c) => nilaiKondisi(c.conditionValue).includes("true"));
 
     return (
       <div className="space-y-5">
@@ -1173,7 +1357,7 @@ export function FormProyekTab({
             <Label className="text-xs">Tipe</Label>
             <Select
               value={item.fieldType}
-              disabled={isBaku}
+              disabled={isBaku || item.fieldType === "RASIO"}
               onValueChange={(v) =>
                 patchItem(item.id, {
                   fieldType: v,
@@ -1186,7 +1370,9 @@ export function FormProyekTab({
               </SelectTrigger>
               <SelectContent>
                 {FIELD_TYPE_OPTIONS.filter(
-                  (ft) => tab.key !== "pemaketan" || ft !== "UPLOAD",
+                  (ft) =>
+                    (tab.key !== "pemaketan" || ft !== "UPLOAD") &&
+                    (ft !== "RASIO" || item.fieldType === "RASIO"),
                 ).map((ft) => (
                   <SelectItem key={ft} value={ft}>
                     {FIELD_TYPE_LABEL[ft]}
@@ -1272,7 +1458,7 @@ export function FormProyekTab({
         {/* Skor field tanpa pilihan */}
         {berskor &&
           !induk &&
-          !punyaPilihan &&
+          (!punyaPilihan || centangTunggal) &&
           !wajibTetap &&
           item.thresholdValue == null && (
             <div className="flex items-center justify-between gap-3">
@@ -1286,34 +1472,129 @@ export function FormProyekTab({
               )}
             </div>
           )}
-        {item.thresholdValue != null && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <Label className="text-sm font-normal">Bobot kalau terpenuhi</Label>
-              {scoreInput(
-                item.score,
-                (v) => {
-                  if (v !== item.score) patchItem(item.id, { score: v });
-                },
-                { tab, itemId: item.id, label: item.label },
-              )}
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <Label className="text-sm font-normal">Ambang batas (standar)</Label>
-              <Input
-                key={`${k}-threshold`}
-                type="number"
-                step="0.01"
-                className="h-7 w-20 text-[11px]"
-                defaultValue={item.thresholdValue ?? ""}
-                onBlur={(e) => {
-                  const v = e.target.value ? Number(e.target.value) : null;
-                  if (v !== item.thresholdValue) patchItem(item.id, { thresholdValue: v });
-                }}
-              />
-            </div>
+        {centangTunggal && !induk && (
+          <div className="space-y-2 border-t pt-4">
+            <p className="text-sm font-bold">Kolom tambahan saat dicentang</p>
+            {kolomCentang.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => pilihField(c.id)}
+                className="block w-full rounded-md bg-primary/10 px-2.5 py-1.5 text-left text-xs text-primary hover:bg-primary/15"
+              >
+                ↳ {c.label} · {FIELD_TYPE_LABEL[c.fieldType] ?? c.fieldType}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                bukaTambahField(section.id, tab.key, { item, value: "true", label: item.label })
+              }
+              className="text-xs font-semibold text-primary hover:underline"
+            >
+              + Kolom tambahan
+            </button>
           </div>
         )}
+
+        {item.thresholdValue != null && (() => {
+          // Rasio: rumus dari dropdown (huruf diatur sistem), simbol syarat
+          // dropdown, standar + satuan, bobot %. Lihat lib/form-score.ts.
+          const cfg = item.rasio ?? {};
+          const ubah = (patch: Record<string, string>) =>
+            patchItem(item.id, { rasio: { ...cfg, ...patch } });
+          const pakaiRupiah = cfg.pembilang === "A" || cfg.penyebut === "A";
+          const pilihSumber = (nilai: string | undefined, kunci: "pembilang" | "penyebut") => (
+            <Select value={nilai ?? ""} onValueChange={(v) => ubah({ [kunci]: v })}>
+              <SelectTrigger className="h-8 min-w-0 flex-1 bg-white text-xs">
+                <SelectValue placeholder="Pilih" />
+              </SelectTrigger>
+              <SelectContent className="min-w-[240px]">
+                {Object.entries(SUMBER_RASIO).map(([h, ket]) => (
+                  <SelectItem key={h} value={h}>
+                    <span className="font-mono font-semibold">{h}</span> · {ket}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          );
+          return (
+            <div className="space-y-3 border-t pt-4">
+              <p className="text-sm font-bold">Rumus rasio</p>
+              <p className="text-[11px] text-muted-foreground">
+                Dihitung otomatis dari total semua paket proyek. User tidak mengisi apa pun.
+              </p>
+              <div className="flex items-center gap-2">
+                {pilihSumber(cfg.pembilang, "pembilang")}
+                <span className="text-sm font-semibold">:</span>
+                {pilihSumber(cfg.penyebut, "penyebut")}
+              </div>
+              {cfg.pembilang && cfg.pembilang === cfg.penyebut && (
+                <p className="text-[11px] text-amber-700">Pembilang dan penyebut sama — hasilnya selalu 1.</p>
+              )}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Terpenuhi kalau hasil</Label>
+                <div className="flex items-center gap-2">
+                  <Select value={cfg.operator ?? "<"} onValueChange={(v) => ubah({ operator: v })}>
+                    <SelectTrigger className="h-8 w-16 shrink-0 bg-white font-mono text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {OPERATOR_RASIO.map((op) => (
+                        <SelectItem key={op} value={op} className="font-mono">
+                          {SIMBOL_OPERATOR[op]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    key={`${k}-threshold`}
+                    type="text"
+                    inputMode="decimal"
+                    aria-label="Standar"
+                    className="h-8 w-24 text-right text-xs"
+                    defaultValue={item.thresholdValue != null ? fmtSkor(item.thresholdValue) : ""}
+                    onBlur={(e) => {
+                      const t = e.target.value.trim().replace(",", ".");
+                      const v = t ? Number(t) : 0;
+                      if (Number.isNaN(v)) return;
+                      if (v !== item.thresholdValue) patchItem(item.id, { thresholdValue: v });
+                    }}
+                  />
+                  {pakaiRupiah && (
+                    <Select value={cfg.satuan ?? "juta"} onValueChange={(v) => ubah({ satuan: v })}>
+                      <SelectTrigger className="h-8 min-w-0 flex-1 bg-white text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(SATUAN_RP).map(([v, sat]) => (
+                          <SelectItem key={v} value={v}>
+                            {sat.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                {pakaiRupiah && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Satuan standar untuk angka anggaran (A).
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <Label className="text-sm font-normal">Bobot kalau terpenuhi</Label>
+                {scoreInput(
+                  item.score,
+                  (v) => {
+                    if (v !== item.score) patchItem(item.id, { score: v });
+                  },
+                  { tab, itemId: item.id, label: item.label },
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {NOMENKLATUR_SOURCE[item.key] && (
           <div className="space-y-3 border-t pt-4">
@@ -1634,7 +1915,14 @@ export function FormProyekTab({
                 : "border-[#d0d7de] hover:border-primary/60",
             )}
           >
-            {nilaiKondisi(c.conditionValue).length > 0 ? (
+            {item.fieldType === "CHECKBOX" &&
+            !item.optionSource &&
+            item.options.length === 0 &&
+            nilaiKondisi(c.conditionValue).includes("true") ? (
+              <p className="mb-1.5 text-[11px] font-semibold text-primary">
+                ↳ Muncul jika dicentang
+              </p>
+            ) : nilaiKondisi(c.conditionValue).length > 0 ? (
               <p className="mb-1.5 text-[11px] font-semibold text-primary">
                 ↳ Muncul jika &quot;
                 {nilaiKondisi(c.conditionValue)
@@ -1697,6 +1985,11 @@ export function FormProyekTab({
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-sm font-bold">{section.label}</span>
+                  {section.conditionItemId && (
+                    <Badge variant="outline" className="shrink-0 text-[10px] font-normal text-primary">
+                      Muncul kalau {syaratBagian(section)}
+                    </Badge>
+                  )}
                   {section.isActive === false && (
                     <Badge variant="outline" className="text-[10px] text-muted-foreground">
                       Disembunyikan
@@ -1952,7 +2245,10 @@ export function FormProyekTab({
               <Label>Tipe</Label>
               <div className="flex flex-wrap gap-2">
                 {FIELD_TYPE_OPTIONS.filter(
-                  (ft) => fieldDialog?.tabKey !== "pemaketan" || ft !== "UPLOAD",
+                  (ft) =>
+                    (fieldDialog?.tabKey !== "pemaketan" || ft !== "UPLOAD") &&
+                    (ft !== "RASIO" ||
+                      (fieldDialog?.tabKey !== "pemaketan" && !fieldDialog?.parent)),
                 ).map((ft) => (
                   <button
                     key={ft}

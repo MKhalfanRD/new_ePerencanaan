@@ -133,6 +133,20 @@ export class PreviewSkorDto {
   @IsNumber()
   outcomeTarget?: number;
 
+  // Satuan volume RO/IRO semua paket (unik) — >1 satuan = rasio tidak
+  // dihitung karena volumenya tidak bisa dijumlah.
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  outputUnits?: string[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  outcomeUnits?: string[];
+
   @ApiPropertyOptional({ type: [FormValueDto] })
   @IsOptional()
   @IsArray()

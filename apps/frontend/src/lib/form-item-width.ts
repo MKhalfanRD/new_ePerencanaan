@@ -58,18 +58,15 @@ export const TAB_ICONS: Record<TabKey, LucideIcon> = {
 // isi FormTab.description di master.
 export const TAB_DEFAULT_DESCRIPTIONS: Record<TabKey, string> = {
   identitas: "Informasi dasar mengenai proyek dan unit pelaksana",
-  dasar:
-    "Sumber usulan dan justifikasi proyek — dipakai skor evaluasi tab Dasar Pelaksanaan/Kesiapan Teknis",
+  dasar: "Sumber usulan dan justifikasi proyek",
   lokasi: "Provinsi, kabupaten/kota, dan titik lokasi proyek di peta",
-  kesiapan:
-    "Kesiapan dokumen teknis — dipakai skor evaluasi tab Dasar Pelaksanaan/Kesiapan Teknis",
+  kesiapan: "Kesiapan dokumen teknis proyek",
   tematik: "RPJMN, RENSTRA, RENJA, PKPN, dan tagging lainnya",
   pemaketan: "Paket pekerjaan proyek ini",
   valuasi: "Kategori proyek menentukan kriteria valuasi & kinerja yang berlaku",
   kinerja: "Centang kriteria kinerja yang terpenuhi proyek ini",
   dokumen: "Dokumen pendukung dan catatan pembina/SSPSDA",
-  evaluasi:
-    "Skor dihitung otomatis dari isian tab Dasar Pelaksanaan, Kesiapan Teknis, Tematik, Valuasi, dan Kinerja",
+  evaluasi: "Skor dihitung otomatis dari isian tab yang dinilai",
 };
 
 export const WIDTH_LABEL: Record<string, string> = {

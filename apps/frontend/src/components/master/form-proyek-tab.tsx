@@ -105,8 +105,6 @@ const ENUM_ITEM_KEYS = new Set([
 const TAB_NOTES: Partial<Record<TabKey, string>> = {
   pemaketan:
     "Field di sini diisi per paket (form Buat Proyek & dialog Tambah/Edit Paket). Nama Paket, RO, Jenis & Masa Pelaksanaan selalu tampil. Blok alokasi tahun berjalan selalu tampil di bawah field paket. Field upload tidak tersedia untuk paket.",
-  evaluasi:
-    "Tab ini menampilkan hasil hitung skor otomatis dari tab Dasar Pelaksanaan, Kriteria Teknis, Tagging, Valuasi, dan Kinerja — tidak ada yang perlu diatur di sini.",
 };
 
 const FIELD_TYPE_LABEL: Record<string, string> = {
@@ -408,7 +406,7 @@ export function FormProyekTab({
 
   const renderAdminNote: ProyekFormAdminHandlers["note"] = (tabKey) => (
     <p className="text-xs text-muted-foreground italic px-1 border-l-2 border-slate-300 py-1">
-      {TAB_NOTES[tabKey] ?? "Tidak ada pengaturan tambahan untuk bagian ini."}
+      {catatanTab(tabKey) ?? "Tidak ada pengaturan tambahan untuk bagian ini."}
     </p>
   );
 
@@ -627,26 +625,56 @@ export function FormProyekTab({
     );
   };
 
-  // Progress bobot tab: terpakai / bobot tab, termasuk bobot yang sedang
-  // diketik (draftBobot). Info di bawahnya ikut berubah tiap ketukan.
-  const progressBobot = (tab: FormTabNode, ringkas = false) => {
+  // Catatan tab di kanvas/panel. Evaluasi menyebut tab yang SEDANG dinilai
+  // dengan nama tab dari admin (bukan daftar & nama tetap di kode).
+  const catatanTab = (tk: string) => {
+    if (tk !== "evaluasi") return TAB_NOTES[tk as TabKey];
+    const nama = templateTabs
+      .filter((t) => t.isActive !== false && t.bobot != null)
+      .map((t) => t.label);
+    if (!nama.length) return "Belum ada tab yang dinilai — nyalakan \"Tab ini dinilai\" di tab yang ingin dihitung.";
+    const daftar =
+      nama.length > 1 ? `${nama.slice(0, -1).join(", ")}, dan ${nama.at(-1)}` : nama[0];
+    return `Tab ini menampilkan hasil hitung skor otomatis dari tab ${daftar} — tidak ada yang perlu diatur di sini.`;
+  };
+
+  // Strip bobot tab yang MENEMPEL di atas panel kanan (sticky) — terpakai /
+  // bobot tab, termasuk bobot yang sedang diketik (draftBobot). Merah +
+  // angka lebihnya kalau lewat batas. `total` = ikut tampilkan jumlah bobot
+  // semua tab yang dinilai (panel Atur tab).
+  const stripBobot = (tab: FormTabNode, total = false) => {
     if (tab.bobot == null) return null;
     const batas = tab.bobot * 100;
     const draft = draftBobot && !draftBobot.bad ? draftBobot : undefined;
     const pakai = bobotTerpakai(tab, draft);
     const lebih = pakai > batas + 0.005;
     const salahKetik = !!draftBobot?.bad;
+    const merah = lebih || salahKetik;
+    const semua = templateTabs
+      .filter((t) => t.isActive !== false && t.bobot != null)
+      .reduce((n, t) => n + t.bobot! * 100, 0);
+    const selisih = semua - 100;
     return (
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-sm">
-          <span className={ringkas ? "text-xs text-muted-foreground" : "font-normal"}>
-            Bobot terpakai
+      <div
+        className={cn(
+          "sticky top-0 z-10 -mx-5 space-y-1.5 border-b px-5 py-3 xl:-top-5",
+          merah ? "border-red-200 bg-red-50" : "bg-white",
+        )}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className={cn("text-sm font-semibold", merah && "text-destructive")}>
+            Bobot {tab.label}
           </span>
-          <span className={cn("font-semibold tabular-nums", lebih && "text-destructive", ringkas && "text-xs")}>
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold tabular-nums",
+              lebih ? "bg-destructive text-white" : "bg-primary/10 text-primary",
+            )}
+          >
             {fmtSkor(pakai)} / {fmtSkor(batas)}
           </span>
         </div>
-        <div className="h-2 overflow-hidden rounded-full bg-muted">
+        <div className={cn("h-2 overflow-hidden rounded-full", merah ? "bg-white" : "bg-muted")}>
           <div
             className={cn("h-full rounded-full transition-[width]", lebih ? "bg-destructive" : "bg-primary")}
             style={{ width: `${batas > 0 ? Math.min(100, (pakai / batas) * 100) : 0}%` }}
@@ -654,7 +682,7 @@ export function FormProyekTab({
         </div>
         <p
           aria-live="polite"
-          className={cn("text-[11px]", lebih || salahKetik ? "text-destructive" : "text-muted-foreground")}
+          className={cn("text-[11px]", merah ? "font-semibold text-destructive" : "text-muted-foreground")}
         >
           {salahKetik
             ? "Bobot harus angka 0 atau lebih"
@@ -662,6 +690,28 @@ export function FormProyekTab({
               ? `${draft && lewatBatas(tab, draft) ? `${draft.label} melebihi` : "Melebihi"} ${fmtSkor(pakai - batas)} bobot`
               : `Sisa ${fmtSkor(batas - pakai)} bobot`}
         </p>
+        {total && (
+          <div className="space-y-0.5 border-t pt-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Total bobot semua tab</span>
+              <span
+                className={cn(
+                  "font-semibold tabular-nums",
+                  Math.abs(selisih) > 0.005 && "text-destructive",
+                )}
+              >
+                {fmtSkor(semua)} / 100
+              </span>
+            </div>
+            {Math.abs(selisih) > 0.005 && (
+              <p className="text-[11px] text-destructive">
+                {selisih > 0
+                  ? `Lebih ${fmtSkor(selisih)} dari 100. Kurangi bobot tab lain.`
+                  : `Kurang ${fmtSkor(-selisih)} dari 100.`}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -841,6 +891,7 @@ export function FormProyekTab({
             Klik field di kiri untuk mengatur field-nya.
           </p>
         </div>
+        {stripBobot(tab, true)}
         <div className="space-y-1.5">
           <Label htmlFor="panel-nama-tab" className="text-xs">Nama tab</Label>
           <Input
@@ -870,6 +921,28 @@ export function FormProyekTab({
             }}
           />
         </div>
+        {/* Evaluasi = hasil penilaian, tidak bisa dinilai. Pemaketan menunggu
+            aturan nilai per paket (lihat memori tab-tanpa-bobot). */}
+        {tab.key !== "evaluasi" && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-3">
+              <Label className="text-sm font-normal">Tab ini dinilai</Label>
+              <Switch
+                checked={tab.bobot != null}
+                disabled={tab.key === "pemaketan"}
+                onChange={(v) => patchTab(tab.id, { bobot: v ? 0 : null })}
+                label="Masukkan/keluarkan tab ini dari skor evaluasi"
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {tab.key === "pemaketan"
+                ? "Bisa dinyalakan setelah aturan penilaian paket ditentukan."
+                : tab.bobot == null
+                  ? "Tidak masuk skor evaluasi. Bobot field yang sudah diisi tetap tersimpan."
+                  : "Masuk skor evaluasi sesuai bobot di bawah."}
+            </p>
+          </div>
+        )}
         {tab.bobot != null && (
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="panel-bobot-tab" className="text-sm font-normal">
@@ -894,7 +967,6 @@ export function FormProyekTab({
             </div>
           </div>
         )}
-        {progressBobot(tab)}
         <div className="flex items-center justify-between gap-3">
           <Label className="text-sm font-normal">Tampil di form</Label>
           <Switch
@@ -903,9 +975,9 @@ export function FormProyekTab({
             label="Tampilkan/sembunyikan tab ini"
           />
         </div>
-        {TAB_NOTES[tk] && (
+        {catatanTab(tk) && (
           <p className="rounded-md bg-muted/60 p-2.5 text-xs text-muted-foreground">
-            {TAB_NOTES[tk]}
+            {catatanTab(tk)}
           </p>
         )}
         {tab.key !== "evaluasi" && (
@@ -1079,6 +1151,7 @@ export function FormProyekTab({
           </Button>
           </div>
         </div>
+        {stripBobot(tab)}
 
         {/* Dasar */}
         <div className="space-y-3">
@@ -1195,8 +1268,6 @@ export function FormProyekTab({
             </Button>
           </div>
         )}
-
-        {berskor && progressBobot(tab, true)}
 
         {/* Skor field tanpa pilihan */}
         {berskor &&

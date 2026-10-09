@@ -113,6 +113,7 @@ export const OPTION_SOURCES: Record<string, OptionSourceDef> = {
     rowsBy: (d, roId) =>
       d
         .filter((k) => k.roId === roId)
+        .sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }))
         .map((k) => ({ value: k.id, label: `${k.code} ${k.name}` })),
   },
   indikatorRo: {

@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
-import { Plus, Trash2, Copy, Loader2, Settings2, X } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Copy,
+  Loader2,
+  Settings2,
+  X,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +63,8 @@ import {
   SUB_LABEL_DEFAULTS,
   sourceRowsFor,
   sumberField,
+  SOURCE_OF_BAKU,
+  type SourceRow,
   useSourceData,
 } from "@/lib/option-sources";
 import { SOURCE_EDITORS } from "@/lib/option-source-editors";
@@ -498,6 +509,121 @@ export function FormProyekTab({
           onSave(v);
         }}
       />
+    );
+  };
+
+  // Daftar pilihan sumber bertingkat (RO, Komponen, Satuan RO, ...) di
+  // panel — hanya dilihat, seperti daftar Balai. RO ikut kegiatan terpilih;
+  // sumber lain dikelompokkan per baris induknya (bisa dibuka/tutup).
+  const [grupTerbuka, setGrupTerbuka] = useState<Set<string>>(new Set());
+  const NAMA_SUMBER: Record<string, string> = {
+    ro: "RO",
+    komponen: "Komponen",
+    indikatorRo: "Indikator RO",
+    satuanRo: "Satuan",
+    satuanKomponen: "Satuan",
+    satuanIro: "Satuan",
+  };
+  const barisSumber = (src: string, induk?: string): SourceRow[] => {
+    const def = OPTION_SOURCES[src];
+    const data = sourceData[src] ?? [];
+    if (!def?.rowsBy) return [];
+    if (def.parent === "kegiatan") return def.rowsBy(data, kegiatanId);
+    return induk ? def.rowsBy(data, induk) : [];
+  };
+  const barisInduk = (src: string): SourceRow[] => {
+    const parent = OPTION_SOURCES[src]?.parent;
+    if (!parent || parent === "kegiatan") return [];
+    const atas = OPTION_SOURCES[parent]?.parent;
+    return atas === "kegiatan"
+      ? barisSumber(parent)
+      : barisInduk(parent).flatMap((r) => barisSumber(parent, r.value));
+  };
+  const kotakBaris = (label: string) => {
+    // Label RO: "7691 · CBG · 003  Nama" -> kode di atas, nama di bawah.
+    const [kode, ...nama] = label.split("  ");
+    return nama.length ? (
+      <>
+        <span className="block font-mono text-[11px] text-muted-foreground">{kode}</span>
+        <span className="block">{nama.join("  ")}</span>
+      </>
+    ) : (
+      label
+    );
+  };
+  const renderDaftarSumber = (src: string | undefined) => {
+    const def = src ? OPTION_SOURCES[src] : undefined;
+    if (!src || !def?.rowsBy) return null;
+    if (def.parent === "kegiatan") {
+      const baris = barisSumber(src);
+      return (
+        <div className="space-y-1.5">
+          <p className="text-xs text-muted-foreground">{baris.length} pilihan</p>
+          <div className="max-h-96 space-y-1.5 overflow-y-auto">
+            {baris.map((r) => (
+              <div key={r.value} className="rounded-md border px-2.5 py-1.5 text-xs">
+                {kotakBaris(r.label)}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    const induk = barisInduk(src).map((r) => ({ ...r, anak: barisSumber(src, r.value) }));
+    const namaInduk = NAMA_SUMBER[def.parent!] ?? def.parent;
+    const terisi = induk.filter((r) => r.anak.length).length;
+    return (
+      <div className="space-y-1.5">
+        <p className="text-xs text-muted-foreground">
+          {NAMA_SUMBER[src] ?? def.label} per {namaInduk} · {terisi} dari {induk.length}{" "}
+          {namaInduk} sudah terisi
+        </p>
+        <div className="max-h-96 space-y-1.5 overflow-y-auto">
+          {induk.map((r) => {
+            const k = `${src}:${r.value}`;
+            const buka = grupTerbuka.has(k);
+            return (
+              <div key={r.value} className="rounded-md border text-xs">
+                <button
+                  type="button"
+                  aria-expanded={buka}
+                  disabled={!r.anak.length}
+                  onClick={() =>
+                    setGrupTerbuka((prev) => {
+                      const next = new Set(prev);
+                      next.has(k) ? next.delete(k) : next.add(k);
+                      return next;
+                    })
+                  }
+                  className="flex w-full items-start gap-1.5 px-2.5 py-1.5 text-left disabled:cursor-default"
+                >
+                  {buka ? (
+                    <ChevronDown size={13} className="mt-0.5 shrink-0" />
+                  ) : (
+                    <ChevronRight size={13} className="mt-0.5 shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="min-w-0 flex-1">{kotakBaris(r.label)}</span>
+                  <span
+                    className={cn(
+                      "shrink-0 text-[11px]",
+                      r.anak.length ? "text-muted-foreground" : "text-amber-700",
+                    )}
+                  >
+                    {r.anak.length || "belum ada"}
+                  </span>
+                </button>
+                {buka && (
+                  <ul className="space-y-1 border-t px-2.5 py-1.5 pl-7 text-muted-foreground">
+                    {r.anak.map((a) => (
+                      <li key={a.value}>{a.label}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     );
   };
 
@@ -1145,6 +1271,7 @@ export function FormProyekTab({
                 Kelola data
               </Button>
             </div>
+            {renderDaftarSumber(SOURCE_OF_BAKU[item.key])}
           </div>
         )}
 
@@ -1228,6 +1355,7 @@ export function FormProyekTab({
                 )}
               </div>
             )}
+            {renderDaftarSumber(item.optionSource ?? undefined)}
 
             {rows.length > 0 && (
               <div className="space-y-2">

@@ -19,8 +19,6 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
-  SelectGroup,
-  SelectLabel,
   SelectContent,
   SelectItem,
   SelectTrigger,
@@ -486,8 +484,6 @@ export function FormProyekTab({
     );
   // Bobot yang sedang DIKETIK (belum disimpan) — progress & info di panel
   // ikut berubah tiap ketukan. bad = bukan angka >= 0.
-  // Panel Atur bagian: mode "Hanya kalau…" dibuka sebelum field pemicunya dipilih.
-  const [syaratTerbuka, setSyaratTerbuka] = useState<string | null>(null);
   const [draftBobot, setDraftBobot] = useState<
     (UbahBobot & { score: number; label: string; bad?: boolean }) | null
   >(null);
@@ -619,7 +615,8 @@ export function FormProyekTab({
                   onClick={() =>
                     setGrupTerbuka((prev) => {
                       const next = new Set(prev);
-                      next.has(k) ? next.delete(k) : next.add(k);
+                      if (next.has(k)) next.delete(k);
+                      else next.add(k);
                       return next;
                     })
                   }
@@ -1072,143 +1069,54 @@ export function FormProyekTab({
             onChange={(v) => patchSection(section.id, { isActive: v })}
           />
         </div>
-        {(() => {
-          // Kapan bagian muncul: selalu, atau hanya kalau field pemicu
-          // (field berpilihan aktif di tab mana pun, di luar bagian ini)
-          // bernilai salah satu pilihan yang dicentang.
-          const keysBagian = new Set(section.items.map((i) => i.key));
-          const calonPerTab = templateTabs
-            .map((t) => ({
-              tab: t,
-              items: t.sections
-                .filter((sec) => sec.isActive !== false)
-                .flatMap((sec) => sec.items)
-                .filter(
-                  (i) =>
-                    i.isActive !== false &&
-                    !keysBagian.has(i.key) &&
-                    (i.fieldType === "DROPDOWN" || i.fieldType === "CHECKBOX") &&
-                    pilihanItem(i).length > 0,
-                ),
-            }))
-            .filter((g) => g.items.length);
-          const pemicu = calonPerTab
-            .flatMap((g) => g.items)
-            .find((i) => i.key === section.conditionItemId);
-          const dipilih = nilaiKondisi(section.conditionValue);
-          const bersyarat = !!section.conditionItemId || syaratTerbuka === section.id;
-          const labelNilai = pemicu
-            ? pilihanItem(pemicu)
-                .filter((o) => dipilih.includes(o.value))
-                .map((o) => o.label)
-            : [];
-          const pilihan = (aktif: boolean, judul: string, onClick: () => void) => (
-            <button
-              type="button"
-              onClick={onClick}
-              className={cn(
-                "flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-xs",
-                aktif ? "border-primary bg-primary/5 font-semibold text-primary" : "bg-white hover:bg-muted/40",
-              )}
-            >
-              <span
-                className={cn(
-                  "h-3.5 w-3.5 shrink-0 rounded-full border",
-                  aktif ? "border-[4px] border-primary" : "border-muted-foreground/40",
-                )}
-              />
-              {judul}
-            </button>
-          );
-          return (
-            <div className="space-y-3 border-t pt-4">
-              <div className="space-y-0.5">
-                <p className="text-sm font-bold">Kapan bagian ini muncul?</p>
-                <p className="text-[11px] text-muted-foreground">
-                  Misalnya hanya untuk kategori proyek tertentu.
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                {pilihan(!bersyarat, "Selalu muncul", () => {
-                  setSyaratTerbuka(null);
-                  if (section.conditionItemId)
-                    patchSection(section.id, { conditionItemId: null, conditionValue: null });
-                })}
-                {pilihan(bersyarat, "Hanya kalau isian tertentu dipilih", () =>
-                  setSyaratTerbuka(section.id),
-                )}
-              </div>
-              {bersyarat && (
-                <div className="space-y-3 rounded-md bg-muted/40 p-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">1. Isian yang dicek</Label>
-                    <Select
-                      value={section.conditionItemId ?? ""}
-                      onValueChange={(v) =>
-                        patchSection(section.id, { conditionItemId: v, conditionValue: null })
-                      }
-                    >
-                      <SelectTrigger className="h-8 bg-white text-xs">
-                        <SelectValue placeholder="Pilih isian…" />
-                      </SelectTrigger>
-                      <SelectContent className="min-w-[320px]">
-                        {calonPerTab.map(({ tab: t, items }) => (
-                          <SelectGroup key={t.id}>
-                            <SelectLabel className="text-[11px]">Tab {t.label}</SelectLabel>
-                            {items.map((i) => (
-                              <SelectItem key={i.id} value={i.key}>
-                                {i.label}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {pemicu && (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">
-                        2. Muncul kalau &quot;{pemicu.label}&quot; dipilih:
-                      </Label>
-                      {pilihanItem(pemicu).map((o) => (
-                        <label key={o.value} className="flex items-center gap-2 text-xs">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 accent-primary"
-                            checked={dipilih.includes(o.value)}
-                            onChange={(e) => {
-                              const next = e.target.checked
-                                ? [...dipilih, o.value]
-                                : dipilih.filter((x) => x !== o.value);
-                              patchSection(section.id, {
-                                conditionValue: next.length ? JSON.stringify(next) : null,
-                              });
-                            }}
-                          />
-                          {o.label}
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                  <p
-                    className={cn(
-                      "rounded-md px-2.5 py-2 text-[11px]",
-                      labelNilai.length
-                        ? "bg-primary/10 text-primary"
-                        : "bg-amber-50 text-amber-800",
-                    )}
-                  >
-                    {!pemicu
-                      ? "Pilih isian yang dicek dulu."
-                      : labelNilai.length
-                        ? `Bagian ini hanya muncul kalau "${pemicu.label}" = ${labelNilai.join(" atau ")}.`
-                        : "Centang minimal satu pilihan — tanpa itu bagian ini tidak pernah muncul."}
+        {(tab.key === "valuasi" || tab.key === "kinerja") &&
+          (() => {
+            // Bagian Valuasi/Kinerja bisa khusus kategori proyek tertentu.
+            // Pilihan kategori = pilihan field Kategori Proyek (diatur admin).
+            const kategori = templateTabs
+              .flatMap((t) => t.sections.flatMap((sec) => sec.items))
+              .find((i) => i.key === "kategoriProyek");
+            const dipilih =
+              section.conditionItemId === "kategoriProyek"
+                ? nilaiKondisi(section.conditionValue)
+                : [];
+            return (
+              <div className="space-y-2 border-t pt-4">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-bold">Berlaku untuk kategori proyek</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Tidak dicentang = bagian selalu muncul. Daftar kategori diatur di
+                    field Kategori Proyek (tab Valuasi).
                   </p>
                 </div>
-              )}
-            </div>
-          );
-        })()}
+                {!kategori ? (
+                  <p className="text-[11px] text-amber-700">
+                    Belum ada field Kategori Proyek di tab Valuasi.
+                  </p>
+                ) : (
+                  pilihanItem(kategori).map((o) => (
+                    <label key={o.value} className="flex items-center gap-2 text-xs">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-primary"
+                        checked={dipilih.includes(o.value)}
+                        onChange={(e) => {
+                          const next = e.target.checked
+                            ? [...dipilih, o.value]
+                            : dipilih.filter((x) => x !== o.value);
+                          patchSection(section.id, {
+                            conditionItemId: next.length ? "kategoriProyek" : null,
+                            conditionValue: next.length ? JSON.stringify(next) : null,
+                          });
+                        }}
+                      />
+                      {o.label}
+                    </label>
+                  ))
+                )}
+              </div>
+            );
+          })()}
         {tombolUrutan(
           idx > 0 ? () => pindahUrutan(tab.sections, section.id, -1, "form-section") : null,
           idx < tab.sections.length - 1
@@ -1236,7 +1144,7 @@ export function FormProyekTab({
     const nilai = nilaiKondisi(section.conditionValue).map(
       (v) => (pemicu ? pilihanItem(pemicu).find((o) => o.value === v)?.label : null) ?? v,
     );
-    return `${pemicu?.label ?? section.conditionItemId} = ${nilai.join(" atau ") || "(belum dipilih)"}`;
+    return nilai.join(" / ") || "(belum dipilih)";
   };
 
   const labelTipe = (item: FormItemNode) =>
@@ -1987,7 +1895,7 @@ export function FormProyekTab({
                   <span className="truncate text-sm font-bold">{section.label}</span>
                   {section.conditionItemId && (
                     <Badge variant="outline" className="shrink-0 text-[10px] font-normal text-primary">
-                      Muncul kalau {syaratBagian(section)}
+                      Khusus {syaratBagian(section)}
                     </Badge>
                   )}
                   {section.isActive === false && (
@@ -2247,8 +2155,10 @@ export function FormProyekTab({
                 {FIELD_TYPE_OPTIONS.filter(
                   (ft) =>
                     (fieldDialog?.tabKey !== "pemaketan" || ft !== "UPLOAD") &&
+                    // Rasio dihitung dari total paket (Pemaketan) — hanya di
+                    // tab Valuasi, bukan kolom tambahan.
                     (ft !== "RASIO" ||
-                      (fieldDialog?.tabKey !== "pemaketan" && !fieldDialog?.parent)),
+                      (fieldDialog?.tabKey === "valuasi" && !fieldDialog?.parent)),
                 ).map((ft) => (
                   <button
                     key={ft}

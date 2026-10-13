@@ -7,6 +7,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BASE_ROLES } from '../auth/role';
 
 import { nilaiKondisi } from '../proyek/form-skor';
+import {
+  KEY_PER_PAKET,
+  KEY_PROYEK_PEMAKETAN,
+  pastikanPemaketan,
+} from './pemaketan-baku';
 
 @Injectable()
 export class MasterService {
@@ -53,7 +58,10 @@ export class MasterService {
 
   // ========== READ ==========
   getBalai() {
-    return this.prisma.balai.findMany({ orderBy: { name: 'asc' } });
+    return this.prisma.balai.findMany({
+      include: { kegiatan: { select: { id: true, code: true, name: true } } },
+      orderBy: { name: 'asc' },
+    });
   }
   getPeriodes() {
     return this.prisma.periode.findMany({ orderBy: { startYear: 'desc' } });
@@ -84,7 +92,6 @@ export class MasterService {
         indikatorRO: true,
         kro: { include: { kegiatan: { include: { program: true } } } },
         satuan: true,
-        provinsi: true,
       },
       orderBy: { name: 'asc' },
     });
@@ -150,6 +157,13 @@ export class MasterService {
         include: this.formTemplateInclude,
       });
     }
+    // Field inti Pemaketan format baru (template lama/salinan) — lihat
+    // pemaketan-baku.ts. Sekali buat, pemanggilan berikutnya langsung lewat.
+    if (await this.prisma.$transaction((tx) => pastikanPemaketan(tx, template!.id)))
+      template = await this.prisma.formTemplate.findUniqueOrThrow({
+        where: { kegiatanId },
+        include: this.formTemplateInclude,
+      });
     if (!activeOnly) return template;
 
     return {
@@ -198,6 +212,7 @@ export class MasterService {
         key: dto.key,
         label: dto.label,
         order: dto.order ?? (terakhir._max.order ?? -1) + 1,
+        perPaket: dto.perPaket ?? false,
       },
     });
   }
@@ -210,10 +225,19 @@ export class MasterService {
         order: dto.order,
         conditionItemId: dto.conditionItemId,
         conditionValue: dto.conditionValue,
+        perPaket: dto.perPaket,
       },
     });
   }
   async deleteFormSection(id: string) {
+    const inti = await this.prisma.formItem.findFirst({
+      where: { sectionId: id, key: { in: [...KEY_PER_PAKET, ...KEY_PROYEK_PEMAKETAN] } },
+      select: { label: true },
+    });
+    if (inti)
+      throw new BadRequestException(
+        `Bagian ini berisi field inti "${inti.label}" — pindahkan dulu field intinya ke bagian lain`,
+      );
     await this.prisma.formSection.delete({ where: { id } });
     return { message: 'Section dihapus' };
   }
@@ -283,7 +307,38 @@ export class MasterService {
       },
     });
   }
-  updateFormItem(id: string, dto: any) {
+  /** Pindah field ke bagian lain (tab yang sama) beserta kolom
+   * tambahannya; masuk di urutan paling bawah bagian tujuan. */
+  private async pindahBagian(id: string, sectionId: string) {
+    const item = await this.prisma.formItem.findUniqueOrThrow({
+      where: { id },
+      include: { section: true },
+    });
+    if (item.sectionId === sectionId) return;
+    const tujuan = await this.prisma.formSection.findUniqueOrThrow({ where: { id: sectionId } });
+    if (tujuan.tabId !== item.section.tabId)
+      throw new BadRequestException('Field hanya bisa dipindah ke bagian di tab yang sama');
+    if (KEY_PER_PAKET.has(item.key) && !tujuan.perPaket)
+      throw new BadRequestException('Field inti paket hanya bisa dipindah ke bagian "per paket"');
+    if (KEY_PROYEK_PEMAKETAN.has(item.key) && tujuan.perPaket)
+      throw new BadRequestException('Field ini diisi sekali per proyek, tidak bisa ke bagian "per paket"');
+    const terakhir = await this.prisma.formItem.aggregate({
+      where: { sectionId },
+      _max: { order: true },
+    });
+    const ids = [id, ...(await this.kolomTambahan(id))];
+    await this.prisma.$transaction(
+      ids.map((itemId, i) =>
+        this.prisma.formItem.update({
+          where: { id: itemId },
+          data: { sectionId, order: (terakhir._max.order ?? -1) + 1 + i },
+        }),
+      ),
+    );
+  }
+
+  async updateFormItem(id: string, dto: any) {
+    if (dto.sectionId) await this.pindahBagian(id, dto.sectionId);
     return this.prisma.formItem.update({
       where: { id },
       data: {
@@ -306,6 +361,9 @@ export class MasterService {
     });
   }
   async deleteFormItem(id: string) {
+    const item = await this.prisma.formItem.findUniqueOrThrow({ where: { id } });
+    if (KEY_PER_PAKET.has(item.key) || KEY_PROYEK_PEMAKETAN.has(item.key))
+      throw new BadRequestException('Field inti Pemaketan tidak bisa dihapus (bisa disembunyikan)');
     const ids = [id, ...(await this.kolomTambahan(id))];
     await this.prisma.formItem.deleteMany({ where: { id: { in: ids } } });
     return { message: 'Item dihapus', deleted: ids.length };
@@ -401,6 +459,7 @@ export class MasterService {
                   isActive: s.isActive,
                   conditionItemId: s.conditionItemId,
                   conditionValue: s.conditionValue,
+                  perPaket: s.perPaket,
                   items: {
                     create: s.items.map((i) => ({
                       key: i.key,
@@ -591,11 +650,18 @@ export class MasterService {
   }
 
   // ========== BALAI ==========
+  // kegiatanId '' dari form = tanpa kegiatan.
+  private dataBalai(dto: any) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { kegiatan, ...data } = dto;
+    if ('kegiatanId' in data) data.kegiatanId = data.kegiatanId || null;
+    return data;
+  }
   createBalai(dto: any) {
-    return this.prisma.balai.create({ data: dto });
+    return this.prisma.balai.create({ data: this.dataBalai(dto) });
   }
   updateBalai(id: number, dto: any) {
-    return this.prisma.balai.update({ where: { id }, data: dto });
+    return this.prisma.balai.update({ where: { id }, data: this.dataBalai(dto) });
   }
   async deleteBalai(id: number) {
     await this.prisma.balai.delete({ where: { id } });
@@ -669,33 +735,144 @@ export class MasterService {
   }
 
   // ========== RO ==========
-  /** provinceIds dikirim terpisah dari field RO biasa — di-replace-all ke RoProvinsi. */
-  private async syncRoProvinsi(roId: string, provinceIds?: string[]) {
-    if (!provinceIds) return;
-    await this.prisma.roProvinsi.deleteMany({ where: { roId } });
-    if (provinceIds.length === 0) return;
-    const provinces = await this.prisma.wilayahProvince.findMany({
-      where: { id: { in: provinceIds } },
-    });
-    await this.prisma.roProvinsi.createMany({
-      data: provinces.map((p) => ({
-        roId,
-        provinceId: p.id,
-        provinceName: p.name,
-      })),
+  // provinceIds dari klien lama diabaikan — provinsi bukan lagi bagian RO
+  // (Lokasi RO dipilih per paket dari master Provinsi).
+  createRO(dto: any) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { provinceIds, ...data } = dto;
+    return this.prisma.rO.create({ data });
+  }
+  updateRO(id: string, dto: any) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { provinceIds, ...data } = dto;
+    return this.prisma.rO.update({ where: { id }, data });
+  }
+
+  // ========== KATEGORI PROYEK (per kegiatan) ==========
+  getKategoriProyek(kegiatanId?: string) {
+    return this.prisma.kategoriProyek.findMany({
+      where: kegiatanId ? { kegiatanId } : undefined,
+      include: { kegiatan: { select: { id: true, code: true, name: true } } },
+      orderBy: [{ kegiatanId: 'asc' }, { order: 'asc' }, { name: 'asc' }],
     });
   }
-  async createRO(dto: any) {
-    const { provinceIds, ...data } = dto;
-    const ro = await this.prisma.rO.create({ data });
-    await this.syncRoProvinsi(ro.id, provinceIds);
-    return ro;
+  private async cekKategori(kegiatanId: string, nama: unknown, kecuali?: string) {
+    const name = typeof nama === 'string' ? nama.trim() : '';
+    if (!kegiatanId) throw new BadRequestException('Kegiatan wajib dipilih');
+    if (!name) throw new BadRequestException('Nama kategori wajib diisi');
+    const sama = await this.prisma.kategoriProyek.findFirst({
+      where: {
+        kegiatanId,
+        name: { equals: name, mode: 'insensitive' },
+        NOT: kecuali ? { id: kecuali } : undefined,
+      },
+    });
+    if (sama) throw new BadRequestException(`Kategori "${name}" sudah ada di kegiatan ini`);
+    return name;
   }
-  async updateRO(id: string, dto: any) {
-    const { provinceIds, ...data } = dto;
-    const ro = await this.prisma.rO.update({ where: { id }, data });
-    await this.syncRoProvinsi(id, provinceIds);
-    return ro;
+  async createKategoriProyek(dto: { kegiatanId?: string; name?: string }) {
+    const kegiatanId = dto.kegiatanId ?? '';
+    const name = await this.cekKategori(kegiatanId, dto.name);
+    // Kode dibuat sekali dari nama & tidak berubah saat nama diganti.
+    const dasar =
+      name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 50) || 'kategori';
+    let kode = dasar;
+    for (let n = 2; await this.prisma.kategoriProyek.findFirst({ where: { kegiatanId, kode } }); n++)
+      kode = `${dasar}_${n}`;
+    const terakhir = await this.prisma.kategoriProyek.aggregate({
+      where: { kegiatanId },
+      _max: { order: true },
+    });
+    return this.prisma.kategoriProyek.create({
+      data: { kegiatanId, kode, name, order: (terakhir._max.order ?? -1) + 1 },
+    });
+  }
+  async updateKategoriProyek(id: string, dto: { name?: string }) {
+    const lama = await this.prisma.kategoriProyek.findUniqueOrThrow({ where: { id } });
+    const name = await this.cekKategori(lama.kegiatanId, dto.name, id);
+    return this.prisma.kategoriProyek.update({ where: { id }, data: { name } });
+  }
+  async deleteKategoriProyek(id: string) {
+    const k = await this.prisma.kategoriProyek.findUniqueOrThrow({ where: { id } });
+    const dipakai = await this.prisma.proyekFormValue.count({
+      where: { valueText: k.kode, item: { key: 'kategoriProyek' } },
+    });
+    if (dipakai > 0)
+      throw new BadRequestException(
+        `Kategori ini sudah dipakai ${dipakai} proyek, jadi tidak bisa dihapus.`,
+      );
+    await this.prisma.kategoriProyek.delete({ where: { id } });
+    return { message: 'Kategori berhasil dihapus' };
+  }
+
+  // ========== SATKER (di bawah Balai) ==========
+  getSatker(balaiId?: number) {
+    return this.prisma.satker.findMany({
+      where: balaiId ? { balaiId } : undefined,
+      include: { balai: { select: { id: true, name: true } } },
+      orderBy: [{ balai: { name: 'asc' } }, { name: 'asc' }],
+    });
+  }
+  private async dataSatker(dto: { balaiId?: unknown; name?: unknown }, kecuali?: string) {
+    const name = typeof dto.name === 'string' ? dto.name.trim() : '';
+    const balaiId = Number(dto.balaiId);
+    if (!balaiId) throw new BadRequestException('Balai wajib dipilih');
+    if (!name) throw new BadRequestException('Nama satker wajib diisi');
+    const sama = await this.prisma.satker.findFirst({
+      where: {
+        balaiId,
+        name: { equals: name, mode: 'insensitive' },
+        NOT: kecuali ? { id: kecuali } : undefined,
+      },
+    });
+    if (sama) throw new BadRequestException(`Satker "${name}" sudah ada di balai ini`);
+    return { balaiId, name };
+  }
+  async createSatker(dto: { balaiId?: unknown; name?: unknown }) {
+    return this.prisma.satker.create({ data: await this.dataSatker(dto) });
+  }
+  async updateSatker(id: string, dto: { balaiId?: unknown; name?: unknown }) {
+    return this.prisma.satker.update({ where: { id }, data: await this.dataSatker(dto, id) });
+  }
+  async deleteSatker(id: string) {
+    await this.prisma.satker.delete({ where: { id } });
+    return { message: 'Satker berhasil dihapus' };
+  }
+
+  // ========== PROVINSI (tabel wilayah_provinces) ==========
+  getProvinsi() {
+    return this.prisma.wilayahProvince.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+  private async namaProvinsiUnik(name: unknown, kecuali?: string) {
+    const nama = typeof name === 'string' ? name.trim() : '';
+    if (!nama) throw new BadRequestException('Nama provinsi wajib diisi');
+    const sama = await this.prisma.wilayahProvince.findFirst({
+      where: { name: { equals: nama, mode: 'insensitive' }, NOT: kecuali ? { id: kecuali } : undefined },
+    });
+    if (sama) throw new BadRequestException(`Provinsi "${nama}" sudah ada`);
+    return nama;
+  }
+  async createProvinsi(dto: { name?: string }) {
+    const name = await this.namaProvinsiUnik(dto.name);
+    // Kode BPS tidak diketik admin — provinsi tambahan diberi kode internal.
+    const id = `P${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
+    return this.prisma.wilayahProvince.create({ data: { id, name }, select: { id: true, name: true } });
+  }
+  async updateProvinsi(id: string, dto: { name?: string }) {
+    const name = await this.namaProvinsiUnik(dto.name, id);
+    return this.prisma.wilayahProvince.update({ where: { id }, data: { name }, select: { id: true, name: true } });
+  }
+  async deleteProvinsi(id: string) {
+    const kab = await this.prisma.wilayahRegency.count({ where: { provinceId: id } });
+    if (kab > 0)
+      throw new BadRequestException(
+        `Provinsi ini masih punya ${kab} kabupaten/kota di data wilayah, jadi tidak bisa dihapus.`,
+      );
+    await this.prisma.wilayahProvince.delete({ where: { id } });
+    return { message: 'Provinsi berhasil dihapus' };
   }
   async deleteRO(id: string) {
     await this.prisma.rO.delete({ where: { id } });
@@ -712,8 +889,13 @@ export class MasterService {
   }
 
   // ========== KOMPONEN ==========
+  private cekJenisKomponen(dto: any) {
+    if (dto.jenis !== undefined && !['UTAMA', 'PENDUKUNG'].includes(dto.jenis))
+      throw new BadRequestException('Jenis komponen harus UTAMA atau PENDUKUNG');
+    return dto;
+  }
   createKomponen(dto: any) {
-    return this.prisma.komponen.create({ data: dto });
+    return this.prisma.komponen.create({ data: this.cekJenisKomponen(dto) });
   }
   /** satuanIds dikirim terpisah — di-replace-all ke IndikatorRoSatuan. */
   private async syncIndikatorRoSatuan(
@@ -746,7 +928,7 @@ export class MasterService {
     return { message: 'Indikator RO berhasil dihapus' };
   }
   updateKomponen(id: string, dto: any) {
-    return this.prisma.komponen.update({ where: { id }, data: dto });
+    return this.prisma.komponen.update({ where: { id }, data: this.cekJenisKomponen(dto) });
   }
   async deleteKomponen(id: string) {
     await this.prisma.komponen.delete({ where: { id } });

@@ -47,7 +47,7 @@ export class ProyekController {
   @Roles('SATKER', 'ADMINISTRATOR')
   @Post()
   create(@Body() dto: CreateProyekDto, @CurrentUser() user: any) {
-    return this.proyekService.create(dto, user.userId, user.role);
+    return this.proyekService.create(dto, user);
   }
 
   @ApiOperation({

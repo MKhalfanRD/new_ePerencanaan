@@ -29,7 +29,11 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsNumber()
-  balaiId?: number;
+  balaiId?: number | null;
+
+  @IsOptional()
+  @IsString()
+  satkerId?: string | null;
 
   @IsOptional()
   @IsString()

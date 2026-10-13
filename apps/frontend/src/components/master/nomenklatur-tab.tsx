@@ -18,15 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { SatuanCombobox, loadSatuan } from "@/components/master/satuan-combobox";
-import { wilayahApi, WilayahItem } from "@/lib/wilayah-api";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -80,9 +72,9 @@ const FIELDS: Record<Level, string[]> = {
   Program: ["code", "name"],
   Kegiatan: ["code", "name"],
   KRO: ["code", "name"],
-  RO: ["code", "name", "satuanId", "provinceIds"],
+  RO: ["code", "name", "satuanId"],
   IRO: ["nama", "satuanIds"],
-  Komponen: ["code", "name", "satuanId"],
+  Komponen: ["code", "name", "satuanId", "jenis"],
   Tahun: ["label", "startYear", "endYear", "isActive"],
 };
 
@@ -134,19 +126,17 @@ export function NomenklaturTab() {
   } = useForm<any>();
   const watchSatuanId = watch("satuanId");
   const watchSatuanIds: string[] = watch("satuanIds") || [];
-  const watchProvinceIds: string[] = watch("provinceIds") || [];
   const [satuanOptions, setSatuanOptions] = useState<
     { id: string; name: string }[]
   >([]);
-  const [provinceOptions, setProvinceOptions] = useState<WilayahItem[]>([]);
 
   useEffect(() => {
     loadSatuan().then(setSatuanOptions);
-    wilayahApi.getProvinces().then(setProvinceOptions);
   }, []);
 
+  // Spinner cuma saat muat pertama — muat ulang setelah simpan tidak
+  // mengganti seluruh halaman (posisi & cabang yang terbuka tetap).
   const fetchAll = async () => {
-    setLoading(true);
     try {
       const [p, k, kro, ro, iro, komp, per] = await Promise.all([
         api.get("/master/programs"),
@@ -345,14 +335,13 @@ export function NomenklaturTab() {
 
   const bukaTambah = (level: Level, parentId?: string) => {
     setForm({ level, parentId });
-    reset({ satuanIds: [], provinceIds: [] });
+    reset({ satuanIds: [], jenis: level === "Komponen" ? "UTAMA" : undefined });
   };
   const bukaEdit = (level: Level, data: any) => {
     setForm({ level, data });
     reset({
       ...data,
       satuanIds: (data.satuanList ?? []).map((s: any) => s.satuanId),
-      provinceIds: (data.provinsi ?? []).map((p: any) => p.provinceId),
     });
   };
 
@@ -700,17 +689,6 @@ export function NomenklaturTab() {
                                                       {ro.satuan.name}
                                                     </Badge>
                                                   )}
-                                                  {(ro.provinsi ?? []).length > 0 && (
-                                                    <Badge
-                                                      variant="outline"
-                                                      className="shrink-0 text-[9px]"
-                                                      title={ro.provinsi
-                                                        .map((p: any) => p.provinceName)
-                                                        .join(", ")}
-                                                    >
-                                                      {ro.provinsi.length} provinsi
-                                                    </Badge>
-                                                  )}
                                                   <Aksi level="RO" item={ro} />
                                                 </div>
 
@@ -769,6 +747,15 @@ export function NomenklaturTab() {
                                                         {k.code}
                                                       </span>{" "}
                                                       {k.name}
+                                                      <span
+                                                        className={
+                                                          k.jenis === "PENDUKUNG"
+                                                            ? "rounded border border-slate-300 bg-white px-1 text-[9px] text-slate-500"
+                                                            : "rounded bg-emerald-600 px-1 text-[9px] text-white"
+                                                        }
+                                                      >
+                                                        {k.jenis === "PENDUKUNG" ? "pendukung" : "utama"}
+                                                      </span>
                                                       <button
                                                         onClick={() =>
                                                           bukaEdit("Komponen", k)
@@ -1006,59 +993,30 @@ export function NomenklaturTab() {
                     />
                   </div>
                 )}
-                {form?.level === "RO" && (
+                {form?.level === "Komponen" && (
                   <div className="space-y-2">
-                    <Label>Provinsi</Label>
-                    <p className="text-xs text-muted-foreground">
-                      1 RO bisa mencakup banyak provinsi.
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {watchProvinceIds.map((id) => {
-                        const p = provinceOptions.find((o) => o.id === id);
-                        return (
-                          <Badge
-                            key={id}
-                            variant="secondary"
-                            className="gap-1 pr-1"
-                          >
-                            {p?.name ?? id}
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setValue(
-                                  "provinceIds",
-                                  watchProvinceIds.filter((x) => x !== id),
-                                )
-                              }
-                              className="hover:text-destructive"
-                            >
-                              <X size={10} />
-                            </button>
-                          </Badge>
-                        );
-                      })}
+                    <Label>Jenis komponen</Label>
+                    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Jenis komponen">
+                      {[
+                        ["UTAMA", "Utama"],
+                        ["PENDUKUNG", "Pendukung"],
+                      ].map(([v, l]) => (
+                        <button
+                          key={v}
+                          type="button"
+                          role="radio"
+                          aria-checked={(watch("jenis") ?? "UTAMA") === v}
+                          onClick={() => setValue("jenis", v)}
+                          className={
+                            (watch("jenis") ?? "UTAMA") === v
+                              ? "h-10 rounded-md border-2 border-primary bg-primary/5 text-sm font-semibold text-primary"
+                              : "h-10 rounded-md border bg-white text-sm text-muted-foreground hover:bg-muted/40"
+                          }
+                        >
+                          {l}
+                        </button>
+                      ))}
                     </div>
-                    <Select
-                      value=""
-                      onValueChange={(id) => {
-                        if (!watchProvinceIds.includes(id)) {
-                          setValue("provinceIds", [...watchProvinceIds, id]);
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue placeholder="Tambah provinsi..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {provinceOptions
-                          .filter((p) => !watchProvinceIds.includes(p.id))
-                          .map((p) => (
-                            <SelectItem key={p.id} value={p.id}>
-                              {p.name}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
                   </div>
                 )}
               </>

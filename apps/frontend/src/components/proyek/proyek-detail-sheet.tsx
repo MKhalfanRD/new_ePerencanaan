@@ -53,20 +53,23 @@ import {
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
 import { punyaRole } from "@/lib/role";
-import { Proyek, Paket, Alokasi } from "@/types";
+import { Proyek, Paket } from "@/types";
 import {
   exportProyekDetailToExcel,
   exportProyekDetailToPDF,
 } from "@/lib/export-utils";
 import { RiwayatPerubahan } from "@/components/activity-log/riwayat-panel";
-import { AlokasiFormDialog } from "./alokasi-form-dialog";
-import { AlokasiExpandPanel } from "./alokasi-expand-panel";
-import { PaketFormDialog } from "./paket-form-dialog";
+import { PaketDialog } from "./paket-dialog";
 import {
-  statusConfig,
-  alokasiStatusConfig,
-  nilaiRealisasi,
-} from "@/components/shared/status-config";
+  paketDariServer,
+  paketKePayload,
+  paketSections,
+  ringkasPaketServer,
+  SUMBER_DANA,
+  type PaketIsian,
+} from "./paket-template";
+import type { FormTabNode } from "./proyek-form-dialog";
+import { statusConfig } from "@/components/shared/status-config";
 
 import { formatRupiah, formatRupiahShort } from "@/lib/format-rupiah";
 
@@ -136,16 +139,6 @@ export function ProyekDetailSheet({
   const [deletePaketId, setDeletePaketId] = useState<string | null>(null);
   const [deletingPaket, setDeletingPaket] = useState(false);
 
-  const [showAlokasiForm, setShowAlokasiForm] = useState(false);
-  const [activePaketId, setActivePaketId] = useState<string | null>(null);
-  const [editAlokasi, setEditAlokasi] = useState<Alokasi | null>(null);
-  const [deleteAlokasiId, setDeleteAlokasiId] = useState<string | null>(null);
-  const [deletingAlokasi, setDeletingAlokasi] = useState(false);
-  // Baris alokasi yang sedang expand — pengganti `detailAlokasiId` +
-  // AlokasiDetailDialog (modal ke-2) lama. Bisa lebih dari satu terbuka.
-  const [expandedAlokasi, setExpandedAlokasi] = useState<Set<string>>(
-    new Set(),
-  );
   // Paket yang sedang expand menampilkan daftar Alokasi per tahunnya.
   const [expandedPaket, setExpandedPaket] = useState<Set<string>>(new Set());
 
@@ -158,18 +151,46 @@ export function ProyekDetailSheet({
     });
   };
 
-  const toggleAlokasi = (id: string) => {
-    setExpandedAlokasi((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   const canEdit = punyaRole(user, "SATKER", "ADMINISTRATOR");
 
-  const canManagePaket = canEdit;
+  // Akun Satker: cuma kalau proyek mengizinkan, dan cuma paket satkernya.
+  const akunSatker = user?.balaiId ? user?.satkerId : null;
+  const canManagePaket = canEdit && (!akunSatker || proyek.satkerBolehUbahPaket !== false);
+  const bisaUbahPaket = (pk: Paket) =>
+    canManagePaket && (!akunSatker || pk.satkerId === akunSatker);
+
+  // Template tab Pemaketan (bagian per paket) — kegiatan paket pertama,
+  // atau kegiatan balai kalau belum ada paket.
+  const kegiatanPaket =
+    proyek.paket?.[0]?.ro?.kro?.kegiatan?.id ?? proyek.balai?.kegiatanId ?? null;
+  const [templateTabs, setTemplateTabs] = useState<FormTabNode[] | undefined>();
+  useEffect(() => {
+    if (!open || !kegiatanPaket) return setTemplateTabs(undefined);
+    api
+      .get(`/master/form-template/${kegiatanPaket}?activeOnly=true`)
+      .then((r) => setTemplateTabs(r.data.tabs))
+      .catch(() => setTemplateTabs(undefined));
+  }, [open, kegiatanPaket]);
+  const [namaProvinsi, setNamaProvinsi] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!open) return;
+    api
+      .get("/master/provinsi")
+      .then((r) =>
+        setNamaProvinsi(
+          Object.fromEntries(r.data.map((x: { id: string; name: string }) => [x.id, x.name])),
+        ),
+      )
+      .catch(() => {});
+  }, [open]);
+  const simpanPaket = async (isian: PaketIsian) => {
+    const body = paketKePayload(isian);
+    if (isian.id) await api.patch(`/paket/${isian.id}`, body);
+    else await api.post("/paket", { ...body, proyekId: proyek.id });
+    toast.success(isian.id ? "Paket diperbarui" : "Paket ditambahkan");
+    setShowPaketForm(false);
+    onRefresh();
+  };
 
   const handleApprove = async () => {
     setApproving(true);
@@ -216,20 +237,6 @@ export function ProyekDetailSheet({
     }
   };
 
-  const handleDeleteAlokasi = async () => {
-    if (!deleteAlokasiId) return;
-    setDeletingAlokasi(true);
-    try {
-      await api.delete(`/alokasi/${deleteAlokasiId}`);
-      toast.success("Alokasi berhasil dihapus");
-      setDeleteAlokasiId(null);
-      onRefresh();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Gagal menghapus alokasi");
-    } finally {
-      setDeletingAlokasi(false);
-    }
-  };
 
   const cfg = statusConfig[proyek.status];
   // Backend selalu balikin array, tapi dijaga di sini juga — dipakai berulang di bawah.
@@ -520,13 +527,9 @@ export function ProyekDetailSheet({
               <div className="space-y-3">
                 {paket.map((pk) => {
                   const isPaketExpanded = expandedPaket.has(pk.id);
-                  const alokasiByTahun = pk.alokasi.reduce<
-                    Record<number, typeof pk.alokasi>
-                  >((acc, a) => {
-                    if (!acc[a.tahun]) acc[a.tahun] = [];
-                    acc[a.tahun].push(a);
-                    return acc;
-                  }, {});
+                  const rencanaPaket = pk.alokasi
+                    .filter((a) => a.status === "RENCANA")
+                    .sort((a, b) => a.tahun - b.tahun);
                   // Total paket = akumulasi RENCANA saja. Dulu menjumlah
                   // semua alokasi, jadi Rencana + Realisasi tahun yang sama
                   // ikut ditambah dua kali (rencana 9 jt + realisasi 1 jt
@@ -564,19 +567,21 @@ export function ProyekDetailSheet({
                             {pk.ro.kro.kegiatan.code} · {pk.ro.name}
                           </p>
                         </div>
-                        <Badge
-                          variant="outline"
-                          className="shrink-0 text-[10px]"
-                        >
-                          {pk.jenis === "FISIK" ? "Fisik" : "Non-Fisik"}
-                        </Badge>
+                        {pk.satker && (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 max-w-40 truncate text-[10px]"
+                          >
+                            {pk.satker.name}
+                          </Badge>
+                        )}
                         <span
                           className="text-xs font-bold shrink-0 w-28 text-right"
                           title={formatRupiah(totalPaket)}
                         >
                           {formatRupiahShort(totalPaket)}
                         </span>
-                        {canManagePaket && (
+                        {bisaUbahPaket(pk) && (
                           <div
                             className="flex items-center gap-0.5 shrink-0"
                             onClick={(e) => e.stopPropagation()}
@@ -619,204 +624,81 @@ export function ProyekDetailSheet({
                       </div>
 
                       {isPaketExpanded && (
-                        <div className="p-3.5 space-y-3">
-                          {canManagePaket && (
-                            <div className="flex justify-end">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setActivePaketId(pk.id);
-                                  setEditAlokasi(null);
-                                  setShowAlokasiForm(true);
-                                }}
-                              >
-                                <Plus size={13} className="mr-1.5" /> Alokasi
-                              </Button>
-                            </div>
-                          )}
-
-                          {Object.keys(alokasiByTahun).length === 0 ? (
-                            <div className="rounded-lg border-2 border-dashed p-6 text-center text-muted-foreground text-xs">
-                              Belum ada alokasi anggaran untuk paket ini
+                        <div className="p-3.5 space-y-3 text-xs">
+                          <dl className="grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-y-1.5 [&>dd]:mb-1.5 sm:[&>dd]:mb-0">
+                            <dt className="text-muted-foreground">Satker</dt>
+                            <dd>{pk.satker?.name ?? "—"}</dd>
+                            <dt className="text-muted-foreground">KRO / RO</dt>
+                            <dd>
+                              {pk.ro.kro.code}.{pk.ro.code} — {pk.ro.name}
+                            </dd>
+                            <dt className="text-muted-foreground">Komponen</dt>
+                            <dd>
+                              {pk.komponen
+                                ? `${pk.komponen.code} — ${pk.komponen.name} · ${pk.komponen.jenis === "PENDUKUNG" ? "pendukung" : "utama"}`
+                                : "—"}
+                            </dd>
+                            <dt className="text-muted-foreground">Lokasi RO</dt>
+                            <dd>
+                              {(pk.lokasiRo ?? []).map((id) => namaProvinsi[id] ?? id).join(", ") || "—"}
+                            </dd>
+                            <dt className="text-muted-foreground">Volume RO</dt>
+                            <dd>
+                              {pk.volumeRo != null
+                                ? `${Number(pk.volumeRo).toLocaleString("id-ID")} ${pk.ro.satuan?.name ?? ""}`
+                                : "—"}
+                            </dd>
+                            <dt className="text-muted-foreground">Indikator RO</dt>
+                            <dd>
+                              {(pk.indikatorRo ?? [])
+                                .map(
+                                  (i) =>
+                                    `${i.indikatorRo?.nama ?? "—"}${i.volume != null ? ` · ${Number(i.volume).toLocaleString("id-ID")} ${i.satuan ?? ""}` : ""}`,
+                                )
+                                .join("; ") || "—"}
+                            </dd>
+                            <dt className="text-muted-foreground">Tahun</dt>
+                            <dd>
+                              {pk.tahunMulai
+                                ? pk.tahunMulai === pk.tahunSelesai
+                                  ? pk.tahunMulai
+                                  : `${pk.tahunMulai}–${pk.tahunSelesai}`
+                                : "—"}
+                            </dd>
+                            <dt className="text-muted-foreground">Lokasi paket</dt>
+                            <dd>
+                              {pk.lokasiSamaProyek !== false
+                                ? "Sama dengan lokasi proyek"
+                                : [pk.villageName, pk.districtName, pk.cityName, pk.provinceName]
+                                      .filter(Boolean)
+                                      .join(", ") ||
+                                  (pk.tipeKoordinat === "TITIK"
+                                  ? `Titik ${pk.latitude?.toFixed(5)}, ${pk.longitude?.toFixed(5)}`
+                                  : `${pk.tipeKoordinat === "GARIS" ? "Garis" : "Poligon"} · ${pk.coordinates?.length ?? 0} titik`)}
+                            </dd>
+                          </dl>
+                          {rencanaPaket.length === 0 ? (
+                            <div className="rounded-lg border-2 border-dashed p-4 text-center text-muted-foreground">
+                              Belum ada alokasi anggaran
                             </div>
                           ) : (
-                            <div className="space-y-3 rounded-lg border overflow-hidden">
-                              {Object.entries(alokasiByTahun)
-                                .sort(([a], [b]) => Number(a) - Number(b))
-                                .map(([tahun, alokasi]) => {
-                                  const yearRencana = alokasi
-                                    .filter((a) => a.status === "RENCANA")
-                                    .reduce((s, a) => s + Number(a.total), 0);
-                                  const yearRealisasi = alokasi
-                                    .filter((a) => a.status === "REALISASI")
-                                    .reduce((s, a) => s + Number(a.total), 0);
-                                  const nilai = nilaiRealisasi(
-                                    yearRealisasi,
-                                    yearRencana,
-                                  );
-                                  return (
-                                    <div
-                                      key={tahun}
-                                      className="border-b last:border-b-0"
-                                    >
-                                      <div className="flex items-center gap-3 px-3.5 py-2.5 bg-muted/40 border-b">
-                                        <span className="text-xs font-bold w-14 shrink-0">
-                                          {tahun}
-                                        </span>
-                                        <div className="flex items-center gap-4 text-xs flex-1 flex-wrap">
-                                          <span className="text-muted-foreground">
-                                            Rencana{" "}
-                                            <b
-                                              className="text-foreground font-semibold"
-                                              title={formatRupiah(yearRencana)}
-                                            >
-                                              {formatRupiahShort(yearRencana)}
-                                            </b>
-                                          </span>
-                                          <span className="text-muted-foreground">
-                                            Realisasi{" "}
-                                            <b
-                                              className={`font-semibold ${nilai.className}`}
-                                              title={
-                                                yearRealisasi > 0
-                                                  ? formatRupiah(yearRealisasi)
-                                                  : undefined
-                                              }
-                                            >
-                                              {yearRealisasi > 0
-                                                ? formatRupiahShort(
-                                                    yearRealisasi,
-                                                  )
-                                                : "-"}
-                                            </b>
-                                            {nilai.checked && (
-                                              <span className="text-emerald-600">
-                                                {" "}
-                                                ✓
-                                              </span>
-                                            )}
-                                            {nilai.over && (
-                                              <span className="text-red-600">
-                                                {" "}
-                                                melebihi rencana
-                                              </span>
-                                            )}
-                                          </span>
-                                        </div>
-                                      </div>
-                                      <div className="divide-y divide-border">
-                                        {alokasi.map((a) => {
-                                          const isExpanded =
-                                            expandedAlokasi.has(a.id);
-                                          const ac =
-                                            alokasiStatusConfig[a.status];
-                                          return (
-                                            <div key={a.id}>
-                                              <div
-                                                role="button"
-                                                tabIndex={0}
-                                                onClick={() =>
-                                                  toggleAlokasi(a.id)
-                                                }
-                                                onKeyDown={(e) => {
-                                                  if (
-                                                    e.key === "Enter" ||
-                                                    e.key === " "
-                                                  ) {
-                                                    e.preventDefault();
-                                                    toggleAlokasi(a.id);
-                                                  }
-                                                }}
-                                                className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-accent/30 transition-colors outline-none focus-visible:bg-accent/40"
-                                              >
-                                                <ChevronDown
-                                                  size={14}
-                                                  className={`shrink-0 text-muted-foreground transition-transform ${isExpanded ? "" : "-rotate-90"}`}
-                                                />
-                                                <div className="min-w-0 flex-1">
-                                                  <p className="text-xs font-semibold truncate">
-                                                    {ac.label}
-                                                  </p>
-                                                </div>
-                                                <span className="text-xs text-muted-foreground shrink-0 w-16 text-right">
-                                                  {a.lokasi.length} lokasi
-                                                </span>
-                                                <span
-                                                  className="text-xs font-bold shrink-0 w-28 text-right"
-                                                  title={formatRupiah(
-                                                    Number(a.total),
-                                                  )}
-                                                >
-                                                  {formatRupiahShort(
-                                                    Number(a.total),
-                                                  )}
-                                                </span>
-                                                {canManagePaket && (
-                                                  <div
-                                                    className="flex items-center gap-0.5 shrink-0"
-                                                    onClick={(e) =>
-                                                      e.stopPropagation()
-                                                    }
-                                                  >
-                                                    <TooltipProvider
-                                                      delayDuration={300}
-                                                    >
-                                                      <Tooltip>
-                                                        <TooltipTrigger asChild>
-                                                          <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                                            onClick={() =>
-                                                              setDeleteAlokasiId(
-                                                                a.id,
-                                                              )
-                                                            }
-                                                          >
-                                                            <Trash2 size={11} />
-                                                          </Button>
-                                                        </TooltipTrigger>
-                                                        <TooltipContent>
-                                                          Hapus Alokasi
-                                                        </TooltipContent>
-                                                      </Tooltip>
-                                                    </TooltipProvider>
-                                                  </div>
-                                                )}
-                                              </div>
-
-                                              {isExpanded && (
-                                                <AlokasiExpandPanel
-                                                  alokasiId={a.id}
-                                                  // Panel punya fetch sendiri
-                                                  // (`/alokasi/:id`) yang dulu
-                                                  // cuma jalan sekali saat
-                                                  // baris di-expand — setelah
-                                                  // Edit Alokasi, grid RM/RMP/
-                                                  // ... di dalamnya masih
-                                                  // menampilkan nilai lama.
-                                                  version={a.updatedAt}
-                                                  onRefreshParent={onRefresh}
-                                                  projectName={
-                                                    proyek.projectName
-                                                  }
-                                                  onNavigateToList={onClose}
-                                                  onSubDrawerOpenChange={() => {}}
-                                                  onEdit={() => {
-                                                    setActivePaketId(pk.id);
-                                                    setEditAlokasi(a);
-                                                    setShowAlokasiForm(true);
-                                                  }}
-                                                />
-                                              )}
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
+                            <div className="overflow-hidden rounded-lg border">
+                              {rencanaPaket.map((a) => (
+                                <div
+                                  key={a.id}
+                                  className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b px-3 py-2 last:border-b-0"
+                                >
+                                  <span className="w-12 font-semibold">{a.tahun}</span>
+                                  <span className="order-last w-full text-muted-foreground sm:order-none sm:w-auto sm:flex-1">
+                                    {SUMBER_DANA.filter((k) => Number(a[k]) > 0)
+                                      .map((k) => `${k.toUpperCase()} ${formatRupiahShort(Number(a[k]))}`)
+                                      .join(" · ") || "—"}
+                                  </span>
+                                  <span className="ml-auto font-semibold" title={formatRupiah(Number(a.total))}>
+                                    {formatRupiahShort(Number(a.total))}
+                                  </span>
+                                </div>
+                              ))}
                             </div>
                           )}
                         </div>
@@ -833,39 +715,29 @@ export function ProyekDetailSheet({
       </SheetContent>
 
       {/* Form Tambah/Edit Paket — Sheet lapis-2 */}
-      <PaketFormDialog
+      <PaketDialog
         open={showPaketForm}
         onClose={() => setShowPaketForm(false)}
-        onSuccess={() => {
-          setShowPaketForm(false);
-          onRefresh();
+        onSave={simpanPaket}
+        sections={paketSections(templateTabs)}
+        value={editPaket ? paketDariServer(editPaket) : null}
+        kegiatanId={kegiatanPaket}
+        balaiId={proyek.balai?.id}
+        satkerTerkunci={akunSatker}
+        tahunMin={proyek.periode?.startYear}
+        tahunMax={proyek.periode?.endYear}
+        saldo={{
+          anggaran: proyek.saldoAnggaran == null ? null : Number(proyek.saldoAnggaran),
+          volumeRo: proyek.saldoVolumeRo == null ? null : Number(proyek.saldoVolumeRo),
+          volumeIro: proyek.saldoVolumeIro == null ? null : Number(proyek.saldoVolumeIro),
         }}
-        proyekId={proyek.id}
-        editData={editPaket}
-        projectName={proyek.projectName}
-        onNavigateToList={onClose}
+        paketLain={paket.filter((x) => x.id !== editPaket?.id).map(ringkasPaketServer)}
+        breadcrumb={[
+          { label: "Daftar Proyek", onClick: onClose },
+          { label: proyek.projectName || "Proyek", onClick: () => setShowPaketForm(false) },
+          { label: editPaket ? "Edit paket" : "Tambah paket" },
+        ]}
       />
-
-      {/* Form Tambah/Edit Alokasi — Sheet lapis-2 */}
-      {activePaketId && (
-        <AlokasiFormDialog
-          open={showAlokasiForm}
-          onClose={() => setShowAlokasiForm(false)}
-          onSuccess={() => {
-            setShowAlokasiForm(false);
-            onRefresh();
-          }}
-          paketId={activePaketId}
-          roSatuan={paket.find((p) => p.id === activePaketId)?.ro?.satuan?.name}
-          indikatorSatuanOptions={(
-            paket.find((p) => p.id === activePaketId)?.indikatorRo
-              ?.satuanList ?? []
-          ).map((s: any) => ({ id: s.satuan.id, name: s.satuan.name }))}
-          editData={editAlokasi}
-          projectName={proyek.projectName}
-          onNavigateToList={onClose}
-        />
-      )}
 
       {/* Delete Paket Confirm */}
       <AlertDialog
@@ -892,30 +764,6 @@ export function ProyekDetailSheet({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete Alokasi Confirm — tetap AlertDialog kecil terpusat */}
-      <AlertDialog
-        open={!!deleteAlokasiId}
-        onOpenChange={() => setDeleteAlokasiId(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Hapus Alokasi?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Alokasi yang dihapus tidak dapat dikembalikan.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteAlokasi}
-              disabled={deletingAlokasi}
-              className="bg-destructive hover:bg-destructive/90"
-            >
-              {deletingAlokasi ? "Menghapus..." : "Hapus"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </Sheet>
   );
 }

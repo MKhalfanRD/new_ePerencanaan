@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreatePaketDto } from './dto/create-paket.dto';
@@ -12,16 +13,32 @@ import {
   generateKodePaket,
 } from '../common/kode-generator';
 import { paketFormValueRows } from '../common/form-value-rows';
+import { paketRingkasDb } from '../proyek/form-skor';
+import {
+  cekAksesPaket,
+  cekIsianPaket,
+  cekSaldo,
+  kolomPaket,
+  relasiPaketBaru,
+  ringkasIsian,
+  satkerPaket,
+  simpanRelasiPaket,
+} from './paket-data';
 
-const paketDetailInclude = {
+export const paketDetailInclude = {
   proyek: { select: { id: true, projectName: true, status: true } },
   ro: {
     include: {
       kro: { include: { kegiatan: { include: { program: true } } } },
+      satuan: true,
     },
   },
   komponen: true,
-  indikatorRo: true,
+  satker: { select: { id: true, name: true } },
+  indikatorRo: {
+    include: { indikatorRo: { include: { satuanList: { include: { satuan: true } } } } },
+    orderBy: { order: 'asc' as const },
+  },
   formValues: { include: { item: true, option: true } },
   alokasi: {
     include: { lokasi: true },
@@ -30,6 +47,12 @@ const paketDetailInclude = {
   // PKPN/ISP/ISK/Tematik sengaja tidak di-include — pindah ke Proyek (lihat
   // schema.prisma & CreateProyekDto).
 };
+
+const ringkasInclude = {
+  komponen: { select: { jenis: true } },
+  indikatorRo: { select: { volume: true } },
+  alokasi: { select: { status: true, total: true } },
+} satisfies Prisma.PaketInclude;
 
 @Injectable()
 export class PaketService {
@@ -46,7 +69,21 @@ export class PaketService {
     await this.redis.delByPrefix('proyek:list:');
   }
 
-  async create(dto: CreatePaketDto, userRole?: string) {
+  /** Saldo proyek vs paket lain + paket yang sedang disimpan. */
+  private async cekSaldoProyek(
+    tx: Prisma.TransactionClient,
+    proyek: { id: string; saldoAnggaran: unknown; saldoVolumeRo: unknown; saldoVolumeIro: unknown },
+    dto: CreatePaketDto | UpdatePaketDto,
+    kecualiPaketId?: string,
+  ) {
+    const lain = await tx.paket.findMany({
+      where: { proyekId: proyek.id, deletedAt: null, id: kecualiPaketId ? { not: kecualiPaketId } : undefined },
+      include: ringkasInclude,
+    });
+    cekSaldo(proyek, [...lain.map(paketRingkasDb), await ringkasIsian(tx, dto as CreatePaketDto)]);
+  }
+
+  async create(dto: CreatePaketDto, user?: any) {
     const proyek = await this.prisma.proyek.findUnique({
       where: { id: dto.proyekId },
       include: { balai: { select: { isActive: true } } },
@@ -54,13 +91,17 @@ export class PaketService {
     if (!proyek) throw new NotFoundException('Proyek tidak ditemukan');
     // ADMINISTRATOR tidak terkena batasan — flag ini cuma membatasi SATKER
     // balai yang dinonaktifkan admin.
-    if (!proyek.balai?.isActive && userRole !== 'ADMINISTRATOR') {
+    if (!proyek.balai?.isActive && user?.role !== 'ADMINISTRATOR') {
       throw new ForbiddenException(
         'Balai ini sedang dinonaktifkan oleh admin, tidak bisa membuat paket baru',
       );
     }
+    cekAksesPaket(user, proyek);
+    cekIsianPaket(dto);
 
     const result = await this.prisma.$transaction(async (tx) => {
+      dto.satkerId = await satkerPaket(tx, user, proyek.balaiId, dto.satkerId);
+      await this.cekSaldoProyek(tx, proyek, dto);
       // Kode Proyek seharusnya sudah ada dari saat proyek dibuat — fallback
       // generate di sini cuma jaga-jaga untuk data lama sebelum fitur ini ada.
       const kodeProyek =
@@ -80,13 +121,8 @@ export class PaketService {
         data: {
           proyekId: dto.proyekId,
           kodePaket,
-          name: dto.name,
-          roId: dto.roId,
-          komponenId: dto.komponenId,
-          jenis: dto.jenis as any,
-          masaPelaksanaan: dto.masaPelaksanaan as any,
-          dokLingStatus: dto.dokLingStatus,
-          indikatorRoId: dto.indikatorRoId,
+          ...kolomPaket(dto),
+          ...relasiPaketBaru(dto),
           formValues: formValues.length ? { create: formValues } : undefined,
         },
         include: paketDetailInclude,
@@ -106,37 +142,65 @@ export class PaketService {
     return paket;
   }
 
-  async update(id: string, dto: UpdatePaketDto) {
-    const paket = await this.prisma.paket.findUnique({ where: { id } });
-    if (!paket) throw new NotFoundException('Paket tidak ditemukan');
+  private async paketDanProyek(id: string) {
+    const paket = await this.prisma.paket.findUnique({
+      where: { id },
+      include: { proyek: true },
+    });
+    if (!paket || paket.deletedAt) throw new NotFoundException('Paket tidak ditemukan');
+    return paket;
+  }
+
+  async update(id: string, dto: UpdatePaketDto, user?: any) {
+    const paket = await this.paketDanProyek(id);
+    cekAksesPaket(user, paket.proyek, paket.satkerId);
+    // PATCH sebagian: kolom yang tidak dikirim tetap nilai lama.
+    const lama = {
+      name: paket.name,
+      roId: paket.roId,
+      komponenId: paket.komponenId ?? undefined,
+      satkerId: paket.satkerId ?? undefined,
+      lokasiRo: paket.lokasiRo,
+      volumeRo: paket.volumeRo == null ? undefined : Number(paket.volumeRo),
+      tahunMulai: paket.tahunMulai ?? undefined,
+      tahunSelesai: paket.tahunSelesai ?? undefined,
+      lokasiSamaProyek: paket.lokasiSamaProyek,
+      tipeKoordinat: paket.tipeKoordinat ?? undefined,
+      latitude: paket.latitude ?? undefined,
+      longitude: paket.longitude ?? undefined,
+      coordinates: (paket.coordinates as number[][] | null) ?? undefined,
+      provinceId: paket.provinceId ?? undefined,
+      provinceName: paket.provinceName ?? undefined,
+      cityId: paket.cityId ?? undefined,
+      cityName: paket.cityName ?? undefined,
+      districtId: paket.districtId ?? undefined,
+      districtName: paket.districtName ?? undefined,
+      villageId: paket.villageId ?? undefined,
+      villageName: paket.villageName ?? undefined,
+    };
+    const isian = {
+      ...lama,
+      ...Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined)),
+    } as UpdatePaketDto & { name: string; roId: string };
+    cekIsianPaket(isian);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      isian.satkerId = await satkerPaket(tx, user, paket.proyek.balaiId, isian.satkerId);
+      if (dto.alokasi !== undefined || dto.volumeRo !== undefined || dto.indikatorRo !== undefined)
+        await this.cekSaldoProyek(tx, paket.proyek, isian, id);
+      await simpanRelasiPaket(tx, id, isian);
       // formValues tidak dikirim = jangan sentuh isian lama.
       const formValues =
         dto.formValues === undefined
           ? undefined
           : {
               deleteMany: {},
-              create: await paketFormValueRows(
-                tx,
-                dto.roId ?? paket.roId,
-                dto.formValues,
-              ),
+              create: await paketFormValueRows(tx, isian.roId, dto.formValues),
             };
       return tx.paket.update({
         where: { id },
-        data: {
-          formValues,
-          // kodePaket sengaja tidak diikutkan — dibuat sekali saat create,
-          // permanen, tidak bisa diubah lewat edit.
-          name: dto.name,
-          roId: dto.roId,
-          komponenId: dto.komponenId,
-          jenis: dto.jenis as any,
-          masaPelaksanaan: dto.masaPelaksanaan as any,
-          dokLingStatus: dto.dokLingStatus,
-          indikatorRoId: dto.indikatorRoId,
-        },
+        // kodePaket sengaja tidak diikutkan — dibuat sekali saat create.
+        data: { formValues, ...kolomPaket(isian) },
         include: paketDetailInclude,
       });
     });
@@ -145,9 +209,9 @@ export class PaketService {
     return updated;
   }
 
-  async remove(id: string) {
-    const paket = await this.prisma.paket.findUnique({ where: { id } });
-    if (!paket) throw new NotFoundException('Paket tidak ditemukan');
+  async remove(id: string, user?: any) {
+    const paket = await this.paketDanProyek(id);
+    cekAksesPaket(user, paket.proyek, paket.satkerId);
     // Soft delete, konsisten dengan Proyek.deletedAt
     await this.prisma.paket.update({
       where: { id },

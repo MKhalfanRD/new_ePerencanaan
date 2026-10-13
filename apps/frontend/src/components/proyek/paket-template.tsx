@@ -1,122 +1,219 @@
 "use client";
 
 import React from "react";
-import {
-  FieldControl,
-  type FieldControlValue,
-} from "@/components/master/field-control";
+import type { FieldControlValue } from "@/components/master/field-control";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
-import { rowsForItem, useSourceData } from "@/lib/option-sources";
+import type { PaketRingkas } from "@/lib/form-score";
+import type { Komponen, Paket, RO } from "@/types";
 import type { FormItemNode, FormTabNode } from "./proyek-form-dialog";
 
 /**
- * Field paket dari template tab "Pemaketan" — dipakai form Buat Proyek
- * (inline, banyak paket) & dialog Tambah/Edit Paket supaya keduanya ikut
- * pengaturan admin yang sama. Key `paket*` = kolom tabel Paket (renderer
- * khusus di masing-masing host); item lain = field custom, nilainya
- * dikirim sebagai `formValues` -> paket_form_value.
+ * Tab "Pemaketan" format baru. Bagian bertanda `perPaket` = kartu di dialog
+ * paket (diisi per paket), sisanya diisi sekali per proyek (saldo, kategori,
+ * izin satker, daftar paket). Key di bawah = field inti (renderer khusus,
+ * tidak bisa dihapus dari kanvas); field lain = custom -> paket_form_value.
  */
 
 export type PaketSection = FormTabNode["sections"][number];
 export type FormValuesMap = Record<string, FieldControlValue>;
 
-// Urutan & label default = isi seed (dipakai kalau template belum punya
-// field paket sama sekali).
-const PAKET_DEFAULT_ITEMS: [string, string, string][] = [
-  ["paketName", "Nama Paket", "TEXT"],
-  ["paketRo", "RO (Rincian Output)", "DROPDOWN"],
-  ["paketKomponen", "Komponen", "DROPDOWN"],
-  ["paketIndikatorRo", "Indikator RO (IRO)", "DROPDOWN"],
-  ["paketJenis", "Jenis Paket", "DROPDOWN"],
-  ["paketMasa", "Masa Pelaksanaan", "DROPDOWN"],
-  ["paketDokLing", "Dokumen Lingkungan (status)", "TEXT"],
-];
-export const PAKET_BAKU_KEYS = PAKET_DEFAULT_ITEMS.map(([k]) => k);
-// Item paket bawaan -> kolom form paket yang menyimpan nilainya.
-const PAKET_KOLOM: Record<string, string> = {
-  paketRo: "roId",
-  paketKomponen: "komponenId",
-  paketIndikatorRo: "indikatorRoId",
-};
-// Kolom NOT NULL di tabel Paket — selalu tampil & wajib walau admin
-// sembunyikan/hapus item-nya (jenis/masa cukup punya default).
-export const PAKET_ALWAYS_REQUIRED_KEYS = [
+export const PAKET_BAKU_KEYS = [
+  "paketSatker",
   "paketName",
   "paketRo",
-  "paketJenis",
-  "paketMasa",
+  "paketKomponen",
+  "paketLokasiRo",
+  "paketVolumeRo",
+  "paketIndikatorRo",
+  "paketTahun",
+  "paketAlokasi",
+  "paketLokasi",
 ];
-const PAKET_WIDE_KEYS = new Set(["paketName", "paketRo", "paketDokLing"]);
+export const PEMAKETAN_PROYEK_KEYS = [
+  "saldoAnggaran",
+  "saldoVolumeRo",
+  "saldoVolumeIro",
+  "satkerBolehUbahPaket",
+  "daftarPaket",
+];
+/** Field inti Pemaketan — tidak bisa dihapus (backend juga menolak). */
+export const PEMAKETAN_INTI_KEYS = new Set([
+  ...PAKET_BAKU_KEYS,
+  ...PEMAKETAN_PROYEK_KEYS,
+  "kategoriProyek",
+]);
+// Kolom NOT NULL / inti paket — selalu wajib.
+export const PAKET_ALWAYS_REQUIRED_KEYS = ["paketName", "paketRo", "paketTahun"];
 
-const defaultItem = ([key, label, fieldType]: [string, string, string]) => ({
-  id: `default-${key}`,
-  key,
-  label,
-  fieldType,
-  options: [],
-  required: key === "paketName" || key === "paketRo",
-});
+export const SUMBER_DANA = ["rm", "rmp", "pln", "sbsn", "kpbu"] as const;
+export type SumberDana = (typeof SUMBER_DANA)[number];
 
-/** Section tab Pemaketan yang aktif. Nama & RO dijamin ada (wajib DB). */
-export function paketSections(tabs: FormTabNode[] | undefined): PaketSection[] {
-  const sections = (tabs?.find((t) => t.key === "pemaketan")?.sections ?? [])
-    .filter((s) => s.isActive !== false)
-    .map((s) => ({
-      ...s,
-      items: s.items.filter((i) => i.isActive !== false),
-    }));
-  const keys = new Set(sections.flatMap((s) => s.items.map((i) => i.key)));
-  if (!sections.some((s) => s.items.length)) {
-    return [
-      {
-        id: "default-paket",
-        key: "data-paket",
-        label: "Data Paket",
-        items: PAKET_DEFAULT_ITEMS.map(defaultItem),
-      },
-    ];
-  }
-  const missing = PAKET_DEFAULT_ITEMS.filter(
-    ([k]) => (k === "paketName" || k === "paketRo") && !keys.has(k),
-  ).map(defaultItem);
-  if (missing.length) {
-    sections.unshift({
-      id: "default-paket-wajib",
-      key: "data-paket-wajib",
-      label: "",
-      items: missing,
-    });
-  }
-  return sections;
+export interface PaketIsian {
+  id?: string;
+  kodePaket?: string;
+  satkerId?: string;
+  name: string;
+  roId: string;
+  komponenId?: string;
+  lokasiRo: string[];
+  volumeRo?: number;
+  indikatorRo: { indikatorRoId: string; volume?: number; satuan?: string }[];
+  tahunMulai?: number;
+  tahunSelesai?: number;
+  alokasi: ({ tahun: number } & Partial<Record<SumberDana, number>>)[];
+  lokasiSamaProyek: boolean;
+  provinceId?: string;
+  provinceName?: string;
+  cityId?: string;
+  cityName?: string;
+  districtId?: string;
+  districtName?: string;
+  villageId?: string;
+  villageName?: string;
+  tipeKoordinat?: "TITIK" | "GARIS" | "POLIGON";
+  latitude?: number;
+  longitude?: number;
+  coordinates?: number[][];
+  formValues: FormValuesMap;
 }
 
-/** Lebar field baku paket: ikut pengaturan admin, default nama/RO/dokling penuh. */
-export function paketItemWide(item: FormItemNode) {
-  return item.width ? item.width === "FULL" : PAKET_WIDE_KEYS.has(item.key);
+export const paketKosong = (satkerId?: string | null): PaketIsian => ({
+  satkerId: satkerId ?? undefined,
+  name: "",
+  roId: "",
+  lokasiRo: [],
+  indikatorRo: [],
+  alokasi: [],
+  lokasiSamaProyek: true,
+  formValues: {},
+});
+
+const angka = (v: unknown) => (v == null || v === "" ? undefined : Number(v));
+
+/** Paket dari server -> isian form. */
+export function paketDariServer(p: Paket): PaketIsian {
+  return {
+    id: p.id,
+    kodePaket: p.kodePaket,
+    satkerId: p.satkerId ?? undefined,
+    name: p.name,
+    roId: p.roId,
+    komponenId: p.komponenId ?? undefined,
+    lokasiRo: p.lokasiRo ?? [],
+    volumeRo: angka(p.volumeRo),
+    indikatorRo: (p.indikatorRo ?? []).map((i) => ({
+      indikatorRoId: i.indikatorRoId,
+      volume: angka(i.volume),
+      satuan: i.satuan ?? undefined,
+    })),
+    tahunMulai: p.tahunMulai ?? undefined,
+    tahunSelesai: p.tahunSelesai ?? undefined,
+    alokasi: (p.alokasi ?? [])
+      .filter((a) => a.status === "RENCANA")
+      .map((a) => ({
+        tahun: a.tahun,
+        ...Object.fromEntries(SUMBER_DANA.map((k) => [k, Number(a[k] ?? 0)])),
+      })),
+    lokasiSamaProyek: p.lokasiSamaProyek ?? true,
+    provinceId: p.provinceId ?? undefined,
+    provinceName: p.provinceName ?? undefined,
+    cityId: p.cityId ?? undefined,
+    cityName: p.cityName ?? undefined,
+    districtId: p.districtId ?? undefined,
+    districtName: p.districtName ?? undefined,
+    villageId: p.villageId ?? undefined,
+    villageName: p.villageName ?? undefined,
+    tipeKoordinat: p.tipeKoordinat ?? undefined,
+    latitude: p.latitude ?? undefined,
+    longitude: p.longitude ?? undefined,
+    coordinates: p.coordinates ?? undefined,
+    formValues: fromFormValueRows(p.formValues),
+  };
+}
+
+export const totalAlokasi = (a: Partial<Record<SumberDana, number>>) =>
+  SUMBER_DANA.reduce((s, k) => s + (a[k] ?? 0), 0);
+
+/** Alokasi yang tahunnya di dalam rentang paket. */
+export const alokasiDalamRentang = (p: PaketIsian) =>
+  p.alokasi.filter(
+    (a) =>
+      (!p.tahunMulai || a.tahun >= p.tahunMulai) &&
+      (!p.tahunSelesai || a.tahun <= p.tahunSelesai),
+  );
+
+export const totalPaket = (p: PaketIsian) =>
+  alokasiDalamRentang(p).reduce((s, a) => s + totalAlokasi(a), 0);
+
+/** Isian -> body POST/PATCH /paket (dan `paket[]` Buat Proyek). */
+export function paketKePayload(p: PaketIsian) {
+  return {
+    name: p.name,
+    roId: p.roId,
+    komponenId: p.komponenId || undefined,
+    satkerId: p.satkerId || undefined,
+    lokasiRo: p.lokasiRo,
+    volumeRo: p.volumeRo,
+    indikatorRo: p.indikatorRo.filter((i) => i.indikatorRoId),
+    tahunMulai: p.tahunMulai,
+    tahunSelesai: p.tahunSelesai,
+    alokasi: alokasiDalamRentang(p),
+    lokasiSamaProyek: p.lokasiSamaProyek,
+    provinceId: p.provinceId,
+    provinceName: p.provinceName,
+    cityId: p.cityId,
+    cityName: p.cityName,
+    districtId: p.districtId,
+    districtName: p.districtName,
+    villageId: p.villageId,
+    villageName: p.villageName,
+    tipeKoordinat: p.lokasiSamaProyek ? undefined : (p.tipeKoordinat ?? "TITIK"),
+    latitude: p.latitude,
+    longitude: p.longitude,
+    coordinates: p.coordinates,
+    formValues: toFormValueList(p.formValues),
+  };
+}
+
+/** Ringkasan rasio/saldo 1 paket (sama aturan backend paketRingkasDb). */
+export function ringkasIsianPaket(
+  p: PaketIsian,
+  roList: RO[],
+  komponenList: Komponen[],
+): PaketRingkas {
+  const komponen = komponenList.find((k) => k.id === p.komponenId);
+  return {
+    total: totalPaket(p),
+    utama: (komponen?.jenis ?? "UTAMA") === "UTAMA",
+    volumeRo: p.volumeRo ?? 0,
+    satuanRo: roList.find((r) => r.id === p.roId)?.satuan?.name,
+    iro: p.indikatorRo.map((i) => ({ volume: i.volume ?? 0, satuan: i.satuan })),
+  };
+}
+
+/** Ringkasan paket dari server (include komponen & ro.satuan). */
+export function ringkasPaketServer(p: Paket): PaketRingkas {
+  return {
+    total: (p.alokasi ?? [])
+      .filter((a) => a.status === "RENCANA")
+      .reduce((s, a) => s + Number(a.total ?? 0), 0),
+    utama: (p.komponen?.jenis ?? "UTAMA") === "UTAMA",
+    volumeRo: Number(p.volumeRo ?? 0),
+    satuanRo: p.ro?.satuan?.name,
+    iro: (p.indikatorRo ?? []).map((i) => ({ volume: Number(i.volume ?? 0), satuan: i.satuan })),
+  };
+}
+
+/** Bagian Pemaketan yang diisi per paket (aktif). */
+export function paketSections(tabs: FormTabNode[] | undefined): PaketSection[] {
+  return (tabs?.find((t) => t.key === "pemaketan")?.sections ?? [])
+    .filter((s) => s.perPaket && s.isActive !== false)
+    .map((s) => ({ ...s, items: s.items.filter((i) => i.isActive !== false) }))
+    .filter((s) => s.items.length);
 }
 
 export function isRequiredPaketItem(item: FormItemNode) {
   return PAKET_ALWAYS_REQUIRED_KEYS.includes(item.key) || !!item.required;
-}
-
-/** Label item wajib pertama yang masih kosong, atau null. `bakuValue`
- * membaca kolom Paket utk key paket*. */
-export function findMissingPaketItem(
-  sections: PaketSection[],
-  bakuValue: (key: string) => unknown,
-  values: FormValuesMap,
-): string | null {
-  const kosong = (v: unknown) => v == null || v === "" || v === false;
-  for (const s of sections)
-    for (const item of s.items) {
-      if (!isRequiredPaketItem(item) || item.fieldType === "UPLOAD") continue;
-      const v = PAKET_BAKU_KEYS.includes(item.key)
-        ? bakuValue(item.key)
-        : values[item.key]?.value;
-      if (kosong(v)) return item.label;
-    }
-  return null;
 }
 
 /** formValuesMap -> body `formValues` (sama format dgn proyek). */
@@ -165,83 +262,52 @@ export function fromFormValueRows(
   return map;
 }
 
-export function PaketTemplateFields({
-  sections,
-  renderers,
-  values,
-  onChange,
-  kolomBaku,
-  kegiatanId,
-}: {
-  sections: PaketSection[];
-  renderers: Record<string, (item: FormItemNode) => React.ReactNode>;
-  values: FormValuesMap;
-  onChange: (key: string, patch: FieldControlValue) => void;
-  // Nilai kolom paket bawaan (roId/komponenId/indikatorRoId) — induk field
-  // ber-sumber bertingkat di paket yang sama.
-  kolomBaku: (kolom: string) => unknown;
-  kegiatanId?: string | null;
-}) {
-  const nilaiDiPaket = (key: string) =>
-    PAKET_KOLOM[key] ? kolomBaku(PAKET_KOLOM[key]) : values[key]?.value;
-  const sourceData = useSourceData(
-    sections.flatMap((s) =>
-      s.items
-        .filter((i) => !PAKET_BAKU_KEYS.includes(i.key))
-        .map((i) => i.optionSource),
-    ),
-  );
+/** Label field baku paket (asterisk ikut wajib/tidaknya). */
+export function PaketLabel({ item, htmlFor }: { item: FormItemNode; htmlFor?: string }) {
   return (
-    <div className="space-y-4">
-      {sections.map((section) => (
-        <div key={section.id} className="space-y-3">
-          {section.label && sections.length > 1 && (
-            <p className="text-xs font-semibold text-muted-foreground">
-              {section.label}
-            </p>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {section.items.map((item) =>
-              renderers[item.key] ? (
-                <div
-                  key={item.id}
-                  className={cn(
-                    "space-y-2",
-                    paketItemWide(item) && "sm:col-span-full",
-                  )}
-                >
-                  {renderers[item.key](item)}
-                </div>
-              ) : item.fieldType === "UPLOAD" ? null : (
-                <div
-                  key={item.id}
-                  className={cn(paketItemWide(item) && "sm:col-span-full")}
-                >
-                  <FieldControl
-                    mode="fill"
-                    item={item}
-                    value={values[item.key]}
-                    onChange={(patch) => onChange(item.key, patch)}
-                    sourceRows={rowsForItem(item, sourceData, nilaiDiPaket, kegiatanId)}
-                  />
-                </div>
-              ),
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
+    <Label className="text-xs" htmlFor={htmlFor}>
+      {item.label}
+      {isRequiredPaketItem(item) && <span className="text-destructive"> *</span>}
+    </Label>
   );
 }
 
-/** Label field baku paket (asterisk ikut wajib/tidaknya). */
-export function PaketLabel({ item }: { item: FormItemNode }) {
+// Contoh tampilan field inti di kanvas admin (kontrol aslinya butuh data
+// proyek/master, jadi cukup bentuknya).
+const CONTOH: Record<string, string[]> = {
+  paketSatker: ["Pilih satker"],
+  paketName: ["Nama paket"],
+  paketRo: ["KRO", "RO"],
+  paketKomponen: ["Komponen · utama/pendukung"],
+  paketLokasiRo: ["Pilih provinsi (bisa lebih dari satu)"],
+  paketVolumeRo: ["Volume", "Satuan RO"],
+  paketIndikatorRo: ["Indikator RO", "Volume", "Satuan"],
+  paketTahun: ["Tahun mulai", "Tahun selesai"],
+  paketAlokasi: ["Tahun", "RM / RMP / PLN / SBSN / KPBU", "Total"],
+  paketLokasi: ["Sama dengan lokasi proyek? Ya / Tidak (peta)"],
+  saldoAnggaran: ["Rp 0", "Dipakai … · sisa …"],
+  saldoVolumeRo: ["0", "Dipakai … · sisa …"],
+  saldoVolumeIro: ["0", "Dipakai … · sisa …"],
+  satkerBolehUbahPaket: ["Saklar ya / tidak"],
+  daftarPaket: ["Tabel paket: Satker · Nama paket · Tahun · Alokasi", "+ Tambah paket"],
+};
+const LEBAR = new Set(["paketAlokasi", "paketIndikatorRo", "paketLokasi", "daftarPaket", "paketRo"]);
+
+export function PemaketanBakuPreview({ item }: { item: FormItemNode }) {
+  const isi = CONTOH[item.key] ?? [item.label];
   return (
-    <Label className="text-xs">
-      {item.label}
-      {isRequiredPaketItem(item) && (
-        <span className="text-destructive"> *</span>
-      )}
-    </Label>
+    <div className={LEBAR.has(item.key) ? "col-span-full space-y-1.5" : "space-y-1.5"}>
+      <PaketLabel item={item} />
+      <div className="flex gap-2">
+        {isi.map((t) => (
+          <div
+            key={t}
+            className="flex h-9 min-w-0 flex-1 items-center truncate rounded-md border border-dashed bg-muted/40 px-3 text-xs text-muted-foreground"
+          >
+            {t}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

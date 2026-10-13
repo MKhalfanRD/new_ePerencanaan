@@ -107,6 +107,24 @@ export class MasterController {
     return this.masterService.getSumberUsulanProyek();
   }
 
+  @ApiOperation({ summary: 'Daftar Kategori Proyek (opsional per kegiatan)' })
+  @Get('kategori-proyek')
+  getKategoriProyek(@Query('kegiatanId') kegiatanId?: string) {
+    return this.masterService.getKategoriProyek(kegiatanId || undefined);
+  }
+
+  @ApiOperation({ summary: 'Daftar Satker (opsional disaring per balai)' })
+  @Get('satker')
+  getSatker(@Query('balaiId') balaiId?: string) {
+    return this.masterService.getSatker(balaiId ? Number(balaiId) : undefined);
+  }
+
+  @ApiOperation({ summary: 'Daftar Provinsi (master)' })
+  @Get('provinsi')
+  getProvinsi() {
+    return this.masterService.getProvinsi();
+  }
+
   @ApiOperation({ summary: 'Daftar Tagging Dinamis' })
   @Get('tagging-dinamis')
   getTaggingDinamis() {
@@ -537,6 +555,66 @@ export class MasterController {
   @Delete('sumber-usulan-proyek/:id')
   deleteSumberUsulanProyek(@Param('id') id: string) {
     return this.masterService.deleteSumberUsulanProyek(id);
+  }
+
+  // ========== CRUD KATEGORI PROYEK ==========
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('kategori-proyek')
+  createKategoriProyek(@Body() dto: { kegiatanId?: string; name?: string }) {
+    return this.masterService.createKategoriProyek(dto);
+  }
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Patch('kategori-proyek/:id')
+  updateKategoriProyek(@Param('id') id: string, @Body() dto: { name?: string }) {
+    return this.masterService.updateKategoriProyek(id, dto);
+  }
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Delete('kategori-proyek/:id')
+  deleteKategoriProyek(@Param('id') id: string) {
+    return this.masterService.deleteKategoriProyek(id);
+  }
+
+  // ========== CRUD SATKER ==========
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('satker')
+  createSatker(@Body() dto: { balaiId?: unknown; name?: unknown }) {
+    return this.masterService.createSatker(dto);
+  }
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Patch('satker/:id')
+  updateSatker(@Param('id') id: string, @Body() dto: { balaiId?: unknown; name?: unknown }) {
+    return this.masterService.updateSatker(id, dto);
+  }
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Delete('satker/:id')
+  deleteSatker(@Param('id') id: string) {
+    return this.masterService.deleteSatker(id);
+  }
+
+  // ========== CRUD PROVINSI ==========
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Post('provinsi')
+  createProvinsi(@Body() dto: { name?: string }) {
+    return this.masterService.createProvinsi(dto);
+  }
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Patch('provinsi/:id')
+  updateProvinsi(@Param('id') id: string, @Body() dto: { name?: string }) {
+    return this.masterService.updateProvinsi(id, dto);
+  }
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRATOR')
+  @Delete('provinsi/:id')
+  deleteProvinsi(@Param('id') id: string) {
+    return this.masterService.deleteProvinsi(id);
   }
 
   // ========== CRUD TAGGING DINAMIS ==========

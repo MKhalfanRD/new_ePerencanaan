@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useForm, useFieldArray, FieldErrors } from "react-hook-form";
+import { useForm, FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -38,14 +38,22 @@ import { kondisiTerpenuhi } from "@/lib/form-condition";
 import { fmtSkor, ringkasPaket, skorField } from "@/lib/form-score";
 import {
   PaketLabel,
-  PaketTemplateFields,
   PAKET_ALWAYS_REQUIRED_KEYS,
   PAKET_BAKU_KEYS,
-  findMissingPaketItem,
+  PEMAKETAN_PROYEK_KEYS,
+  PemaketanBakuPreview,
   fromFormValueRows,
+  paketDariServer,
+  paketKePayload,
   paketSections,
+  ringkasIsianPaket,
   toFormValueList,
+  totalPaket,
+  type PaketIsian,
 } from "./paket-template";
+import { AngkaInput, PaketDialog, statusSaldo, teksAngka } from "./paket-dialog";
+import { formatRupiah } from "@/lib/format-rupiah";
+import { useAuthStore } from "@/store/auth";
 import { cn } from "@/lib/utils";
 import {
   isItemWide,
@@ -68,6 +76,7 @@ import {
 } from "@/types";
 
 const toOptionalNumber = (v: string) => (v === "" ? undefined : Number(v));
+const angkaAtauNull = (v: unknown) => (v == null || v === "" ? null : Number(v));
 
 // Sentinel untuk opsi "tidak dipilih" pada Select opsional — Radix Select
 // tidak mengizinkan value="".
@@ -122,6 +131,8 @@ export interface FormTabNode {
     // Syarat tampil bagian (KEY field pemicu + JSON array nilai).
     conditionItemId?: string | null;
     conditionValue?: string | null;
+    // Tab Pemaketan: true = diisi per paket (kartu dialog paket).
+    perPaket?: boolean;
     items: FormItemNode[];
   }[];
 }
@@ -189,38 +200,14 @@ const schema = z.object({
   kebutuhanTanah: z.boolean(),
   kewenangan: z.enum(["PUSAT", "DAERAH"]),
 
-  // Tab 4: Pemaketan — hanya dipakai saat buat proyek baru; sesudahnya
-  // paket dikelola dari drawer detail (tambah/edit paket per-item).
-  paket: z.array(
-    z.object({
-      name: z.string().min(1, "Nama paket wajib diisi"),
-      roId: z.string().min(1, "RO wajib dipilih"),
-      komponenId: z.string().optional(),
-      jenis: z.enum(["FISIK", "NON_FISIK"]),
-      masaPelaksanaan: z.enum(["SINGLE_YEAR", "MULTI_YEAR"]),
-      dokLingStatus: z.string().optional(),
-      indikatorRoId: z.string().optional(),
-      tahun: z.number(),
-      status: z.enum(["RENCANA", "REALISASI"]),
-      rm: z.number(),
-      rmp: z.number(),
-      pln: z.number(),
-      sbsn: z.number(),
-      kpbu: z.number(),
-      outputTarget: z.number().optional(),
-      outputUnit: z.string().optional(),
-      outcomeTarget: z.number().optional(),
-      outcomeUnit: z.string().optional(),
-      catatan: z.string().optional(),
-      // Isian field custom tab Pemaketan (key FormItem -> nilai).
-      formValues: z
-        .record(
-          z.string(),
-          z.object({ value: z.any(), note: z.string().optional() }),
-        )
-        .optional(),
-    }),
-  ),
+  // Tab 4: Pemaketan — saldo & izin satker milik proyek. Daftar paket
+  // (PaketIsian) cuma dipakai saat buat proyek baru; proyek yang sudah ada
+  // menyimpan paket langsung lewat /paket.
+  saldoAnggaran: z.number().nullable().optional(),
+  saldoVolumeRo: z.number().nullable().optional(),
+  saldoVolumeIro: z.number().nullable().optional(),
+  satkerBolehUbahPaket: z.boolean(),
+  paket: z.array(z.custom<PaketIsian>()),
 
   // Tab 5: Tagging
   kegiatanPrioritasId: z.string().optional(),
@@ -326,6 +313,10 @@ const FIELD_TO_TAB: Record<string, (typeof TABS)[number]["value"]> = {
   kebutuhanTanah: "kriteria",
   kewenangan: "kriteria",
   paket: "pemaketan",
+  saldoAnggaran: "pemaketan",
+  saldoVolumeRo: "pemaketan",
+  saldoVolumeIro: "pemaketan",
+  satkerBolehUbahPaket: "pemaketan",
   kegiatanPrioritasId: "tagging",
   pkpnId: "tagging",
   indikatorSasaranProgramId: "tagging",
@@ -351,6 +342,7 @@ export const BAKU_ITEM_KEYS = new Set<string>([
   ...Object.keys(FIELD_TO_TAB),
   "dokumenPendukung",
   ...PAKET_BAKU_KEYS,
+  ...PEMAKETAN_PROYEK_KEYS,
 ]);
 
 // Subset BAKU_ITEM_KEYS yang kolomnya NOT NULL di tabel Proyek (lihat
@@ -411,6 +403,12 @@ export function ProyekFormDialog({
   );
   const [loadingMaster, setLoadingMaster] = useState(false);
   const isEdit = !!editData;
+  // Tingkat akun (lihat types User): Balai/Satker -> balai & kegiatan
+  // otomatis terkunci; Satker -> satker paket terkunci.
+  const user = useAuthStore((st) => st.user);
+  const akunBalaiId = user?.balaiId ?? null;
+  const akunSatkerId = akunBalaiId ? (user?.satkerId ?? null) : null;
+  const akunKegiatanId = akunBalaiId ? (user?.balaiKegiatanId ?? null) : null;
 
   const [balaiList, setBalaiList] = useState<Balai[]>([]);
   const [balaiSearch, setBalaiSearch] = useState("");
@@ -505,14 +503,11 @@ export function ProyekFormDialog({
       mpa: false,
       taggingDinamis: [],
       paket: [],
+      satkerBolehUbahPaket: true,
     },
   });
-
-  const {
-    fields: paketFields,
-    append: appendPaket,
-    remove: removePaket,
-  } = useFieldArray({ control, name: "paket" });
+  // Paket proyek yang sudah ada (edit) — disimpan langsung ke /paket.
+  const [paketServer, setPaketServer] = useState<PaketIsian[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -590,6 +585,10 @@ export function ProyekFormDialog({
         kebutuhanTanah: editData.kebutuhanTanah,
         kewenangan: editData.kewenangan,
         paket: [],
+        saldoAnggaran: angkaAtauNull(editData.saldoAnggaran),
+        saldoVolumeRo: angkaAtauNull(editData.saldoVolumeRo),
+        saldoVolumeIro: angkaAtauNull(editData.saldoVolumeIro),
+        satkerBolehUbahPaket: editData.satkerBolehUbahPaket ?? true,
         kegiatanPrioritasId: editData.kegiatanPrioritasId || "",
         pkpnId: editData.pkpnId || "",
         indikatorSasaranProgramId: editData.indikatorSasaranProgramId || "",
@@ -606,7 +605,10 @@ export function ProyekFormDialog({
         editData.kegiatanPrioritas?.programPrioritas.prioritasNasional.id ?? "",
       );
       setSelectedPpId(editData.kegiatanPrioritas?.programPrioritas.id ?? "");
-      setSelectedKegiatanId(editData.paket?.[0]?.ro?.kro?.kegiatan?.id ?? "");
+      setPaketServer((editData.paket ?? []).map(paketDariServer));
+      setSelectedKegiatanId(
+        editData.paket?.[0]?.ro?.kro?.kegiatan?.id ?? editData.balai.kegiatanId ?? "",
+      );
       setSelectedSpId(
         editData.indikatorSasaranProgram?.sasaranProgram.id ?? "",
       );
@@ -625,7 +627,8 @@ export function ProyekFormDialog({
     } else {
       setSelectedPnId("");
       setSelectedPpId("");
-      setSelectedKegiatanId("");
+      setSelectedKegiatanId(akunKegiatanId ?? "");
+      setPaketServer([]);
       setSelectedSpId("");
       setSelectedSkId("");
       setDokumenList([]);
@@ -645,6 +648,8 @@ export function ProyekFormDialog({
         mpa: false,
         taggingDinamis: [],
         paket: [],
+        satkerBolehUbahPaket: true,
+        ...(akunBalaiId ? { balaiId: akunBalaiId } : {}),
       });
     }
   }, [editData, open]);
@@ -879,8 +884,10 @@ export function ProyekFormDialog({
     value: (typeof TABS)[number]["value"],
     renderers: Record<string, (item: FormItemNode) => React.ReactNode>,
     gridClass: string,
+    // Saring bagian (mis. Pemaketan: cuma bagian sekali-per-proyek).
+    pakaiBagian: (s: FormTabNode["sections"][number]) => boolean = () => true,
   ) => {
-    const sections = templateSections(value);
+    const sections = templateSections(value).filter(pakaiBagian);
     const renderItem = (item: FormItemNode): React.ReactNode =>
       renderers[item.key] ? (
         renderers[item.key](item)
@@ -995,6 +1002,7 @@ export function ProyekFormDialog({
           value={watch("balaiId")?.toString()}
           onValueChange={(v) => setValue("balaiId", Number(v))}
           onOpenChange={(o) => o && setBalaiSearch("")}
+          disabled={!!akunBalaiId && !adminMode}
         >
           <SelectTrigger className="w-full h-10">
             <SelectValue placeholder="Pilih balai pelaksana" />
@@ -1838,221 +1846,232 @@ export function ProyekFormDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  const roOptionsFiltered = selectedKegiatanId
-    ? roList.filter((r) => r.kro.kegiatan.id === selectedKegiatanId)
-    : roList;
-
-  // ===== Tab Pemaketan — field paket ikut template (paket-template.tsx).
-  // Renderer field baku per paket ke-i; field custom lewat FieldControl,
-  // nilainya di paket.${i}.formValues. =====
+  // ===== Tab Pemaketan — bagian "per paket" jadi kartu di PaketDialog;
+  // bagian sekali-per-proyek (saldo, kategori, izin, daftar paket) dirender
+  // di tab ini. Buat proyek: paket di form (`paket`); edit: langsung /paket.
   const paketTemplateSections = paketSections(formTemplate?.tabs);
-
-  const setPaketFormValue = (
-    i: number,
-    key: string,
-    patch: FieldControlValue,
-  ) => {
-    const cur = watch(`paket.${i}.formValues`) ?? {};
-    setValue(`paket.${i}.formValues`, {
-      ...cur,
-      [key]: { ...cur[key], ...patch },
-    });
+  const daftarPaket: PaketIsian[] = isEdit ? paketServer : (watch("paket") ?? []);
+  const ringkasDaftar = daftarPaket.map((pk) => ringkasIsianPaket(pk, roList, komponenList));
+  const saldoForm = {
+    anggaran: watch("saldoAnggaran"),
+    volumeRo: watch("saldoVolumeRo"),
+    volumeIro: watch("saldoVolumeIro"),
   };
+  // Akun Satker cuma boleh ubah paket kalau diizinkan & paketnya sendiri.
+  const bolehUbahPaket = !akunSatkerId || watch("satkerBolehUbahPaket") !== false;
+  const bisaUbahPaketIni = (pk: PaketIsian) =>
+    bolehUbahPaket && (!akunSatkerId || pk.satkerId === akunSatkerId);
+  const [paketEdit, setPaketEdit] = useState<{ idx: number | null } | null>(null);
+  const [satkerNama, setSatkerNama] = useState<Record<string, string>>({});
+  const balaiForm = watch("balaiId");
+  useEffect(() => {
+    if (!open || !balaiForm) return;
+    api
+      .get(`/master/satker?balaiId=${balaiForm}`)
+      .then((r) =>
+        setSatkerNama(Object.fromEntries(r.data.map((x: { id: string; name: string }) => [x.id, x.name]))),
+      )
+      .catch(() => setSatkerNama({}));
+  }, [open, balaiForm]);
+  const periodeForm = periodeList.find((pr) => pr.id === watch("periodeId"));
 
-  const paketRenderers = (
-    i: number,
-  ): Record<string, (item: FormItemNode) => React.ReactNode> => {
-    const selectedRO = roList.find((r) => r.id === watch(`paket.${i}.roId`));
-    const komponenOptions = komponenList.filter(
-      (k) => k.roId === selectedRO?.id,
-    );
-    return {
-      paketName: (item) => (
-        <>
-          <PaketLabel item={item} />
-          <Input
-            className="h-9 text-xs"
-            placeholder="Contoh: Pembangunan Bendungan A Paket I"
-            {...register(`paket.${i}.name`)}
-          />
-        </>
-      ),
-      paketRo: (item) => (
-        <>
-          <PaketLabel item={item} />
-          <Select
-            value={watch(`paket.${i}.roId`)}
-            onValueChange={(v) => {
-              setValue(`paket.${i}.roId`, v);
-              const ro = roList.find((r) => r.id === v);
-              setValue(`paket.${i}.outputUnit`, ro?.satuan?.name || "");
-              setValue(`paket.${i}.outcomeUnit`, "");
-              setValue(`paket.${i}.komponenId`, "");
-              setValue(`paket.${i}.indikatorRoId`, "");
-            }}
-            onOpenChange={(o) => o && setRoSearch("")}
-          >
-            <SelectTrigger className="w-full h-9 text-xs">
-              <SelectValue placeholder="Pilih RO" />
-            </SelectTrigger>
-            <SelectContent>
-              {roOptionsFiltered.length > 20 && (
-                <SelectSearchBox
-                  value={roSearch}
-                  onChange={setRoSearch}
-                  placeholder="Cari RO..."
-                />
-              )}
-              {roOptionsFiltered
-                .filter(
-                  (r) =>
-                    !roSearch ||
-                    `${r.code} ${r.name}`
-                      .toLowerCase()
-                      .includes(roSearch.toLowerCase()),
-                )
-                .map((r) => (
-                  <SelectItem key={r.id} value={r.id}>
-                    <span className="font-medium">
-                      {r.kro.kegiatan.code} · {r.kro.code} · {r.code}
-                    </span>
-                    <span className="text-muted-foreground ml-2 text-xs">
-                      — {r.name}
-                    </span>
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        </>
-      ),
-      paketKomponen: (item) => (
-        <>
-          <PaketLabel item={item} />
-          <Select
-            value={watch(`paket.${i}.komponenId`) || NONE}
-            onValueChange={(v) =>
-              setValue(`paket.${i}.komponenId`, v === NONE ? "" : v)
-            }
-            disabled={!selectedRO}
-          >
-            <SelectTrigger className="h-9 text-xs">
-              <SelectValue placeholder="Opsional" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-              {komponenOptions.map((k) => (
-                <SelectItem key={k.id} value={k.id}>
-                  {k.code} — {k.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </>
-      ),
-      paketIndikatorRo: (item) => (
-        <>
-          <PaketLabel item={item} />
-          <Select
-            value={watch(`paket.${i}.indikatorRoId`) || NONE}
-            onValueChange={(v) => {
-              setValue(`paket.${i}.indikatorRoId`, v === NONE ? "" : v);
-              const ind = (selectedRO?.indikatorRO ?? []).find(
-                (x) => x.id === v,
-              );
-              setValue(
-                `paket.${i}.outcomeUnit`,
-                ind?.satuanList?.[0]?.satuan.name || "",
-              );
-            }}
-            disabled={!selectedRO}
-          >
-            <SelectTrigger className="h-9 text-xs">
-              <SelectValue placeholder="Opsional" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-              {(selectedRO?.indikatorRO ?? []).map((ind) => (
-                <SelectItem key={ind.id} value={ind.id}>
-                  {ind.nama}
-                  {(ind.satuanList?.length ?? 0) > 0 &&
-                    ` (${ind.satuanList!.map((s) => s.satuan.name).join(", ")})`}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </>
-      ),
-      paketJenis: (item) => (
-        <>
-          <PaketLabel item={item} />
-          <Select
-            value={watch(`paket.${i}.jenis`)}
-            onValueChange={(v) => setValue(`paket.${i}.jenis`, v as any)}
-          >
-            <SelectTrigger className="h-9 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="FISIK">Fisik</SelectItem>
-              <SelectItem value="NON_FISIK">Non-Fisik</SelectItem>
-            </SelectContent>
-          </Select>
-        </>
-      ),
-      paketMasa: (item) => (
-        <>
-          <PaketLabel item={item} />
-          <Select
-            value={watch(`paket.${i}.masaPelaksanaan`)}
-            onValueChange={(v) =>
-              setValue(`paket.${i}.masaPelaksanaan`, v as any)
-            }
-          >
-            <SelectTrigger className="h-9 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="SINGLE_YEAR">Single Year</SelectItem>
-              <SelectItem value="MULTI_YEAR">Multi Year</SelectItem>
-            </SelectContent>
-          </Select>
-        </>
-      ),
-      paketDokLing: (item) => (
-        <>
-          <PaketLabel item={item} />
-          <Input
-            className="h-9 text-xs"
-            placeholder="Contoh: Sesuai / Belum Ada"
-            {...register(`paket.${i}.dokLingStatus`)}
-          />
-        </>
-      ),
-    };
-  };
-
-  // Kolom Paket per key baku — dipakai cek "wajib diisi".
-  const PAKET_KOLOM: Record<string, string> = {
-    paketName: "name",
-    paketRo: "roId",
-    paketKomponen: "komponenId",
-    paketIndikatorRo: "indikatorRoId",
-    paketJenis: "jenis",
-    paketMasa: "masaPelaksanaan",
-    paketDokLing: "dokLingStatus",
-  };
-  const findMissingPaket = () => {
-    if (isEdit) return null;
-    const paketList = watch("paket") ?? [];
-    for (let i = 0; i < paketList.length; i++) {
-      const label = findMissingPaketItem(
-        paketTemplateSections,
-        (key) => (paketList[i] as Record<string, unknown>)[PAKET_KOLOM[key]],
-        paketList[i].formValues ?? {},
+  const simpanPaket = async (pk: PaketIsian) => {
+    const idx = paketEdit?.idx ?? null;
+    if (isEdit) {
+      const body = paketKePayload(pk);
+      const res = pk.id
+        ? await api.patch(`/paket/${pk.id}`, body)
+        : await api.post("/paket", { ...body, proyekId: editData!.id });
+      const baru = paketDariServer(res.data);
+      setPaketServer((cur) =>
+        idx == null ? [...cur, baru] : cur.map((x, i) => (i === idx ? baru : x)),
       );
-      if (label) return `${label}" di Paket #${i + 1}`;
+      toast.success(pk.id ? "Paket diperbarui" : "Paket ditambahkan");
+    } else {
+      const cur = watch("paket") ?? [];
+      setValue(
+        "paket",
+        idx == null ? [...cur, pk] : cur.map((x, i) => (i === idx ? pk : x)),
+        { shouldDirty: true },
+      );
     }
-    return null;
+    setPaketEdit(null);
+  };
+  const hapusPaket = async (idx: number) => {
+    const pk = daftarPaket[idx];
+    if (!window.confirm(`Hapus paket "${pk.name}"?`)) return;
+    if (isEdit) {
+      try {
+        await api.delete(`/paket/${pk.id}`);
+        setPaketServer((cur) => cur.filter((_, i) => i !== idx));
+        toast.success("Paket dihapus");
+      } catch (err: any) {
+        toast.error(err.response?.data?.message || "Gagal menghapus paket");
+      }
+    } else {
+      setValue(
+        "paket",
+        (watch("paket") ?? []).filter((_, i) => i !== idx),
+        { shouldDirty: true },
+      );
+    }
+  };
+
+  // Saldo: input angka + "Dipakai … · sisa …" (anggaran semua paket, volume
+  // paket berkomponen utama).
+  const saldoRenderer =
+    (field: "saldoAnggaran" | "saldoVolumeRo" | "saldoVolumeIro", rp: boolean, huruf: "A" | "B" | "C") =>
+    (item: FormItemNode) => {
+      const dipakai = ringkasPaket(ringkasDaftar)[huruf];
+      const batas = watch(field);
+      const pct = batas ? Math.min(100, (dipakai / batas) * 100) : 0;
+      const lebih = batas != null && dipakai > batas + 1e-9;
+      return (
+        <div key={item.id} className="space-y-1.5">
+          <Label htmlFor={`saldo-${field}`}>
+            {item.label}
+            {item.required && <span className="text-destructive"> *</span>}
+          </Label>
+          <div className="relative">
+            {rp && (
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                Rp
+              </span>
+            )}
+            <AngkaInput
+              id={`saldo-${field}`}
+              desimal={!rp}
+              className={cn("h-10", rp && "pl-9")}
+              placeholder="0"
+              disabled={previewMode}
+              value={batas}
+              onChange={(v) => setValue(field, v ?? null, { shouldDirty: true })}
+            />
+          </div>
+          {batas != null && (
+            <>
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn("h-full rounded-full", lebih ? "bg-destructive" : "bg-primary")}
+                  style={{ width: `${lebih ? 100 : pct}%` }}
+                />
+              </div>
+              <p className={cn("text-[11px]", lebih ? "text-destructive" : "text-muted-foreground")}>
+                Dipakai {teksAngka(dipakai, rp)} · {lebih ? "lebih" : "sisa"}{" "}
+                {teksAngka(Math.abs(batas - dipakai), rp)}
+              </p>
+            </>
+          )}
+        </div>
+      );
+    };
+
+  const pemaketanRenderers: Record<string, (item: FormItemNode) => React.ReactNode> = {
+    saldoAnggaran: saldoRenderer("saldoAnggaran", true, "A"),
+    saldoVolumeRo: saldoRenderer("saldoVolumeRo", false, "B"),
+    saldoVolumeIro: saldoRenderer("saldoVolumeIro", false, "C"),
+    satkerBolehUbahPaket: (item) => (
+      <label key={item.id} className="flex items-center gap-3 self-end rounded-lg border px-3 py-2.5 text-sm">
+        <input
+          type="checkbox"
+          className="h-4 w-4 accent-primary"
+          checked={watch("satkerBolehUbahPaket") !== false}
+          disabled={!!akunSatkerId || previewMode}
+          onChange={(e) => setValue("satkerBolehUbahPaket", e.target.checked, { shouldDirty: true })}
+        />
+        <span className="flex-1">{item.label}</span>
+      </label>
+    ),
+    daftarPaket: (item) => {
+      const total = daftarPaket.reduce((sum, pk) => sum + totalPaket(pk), 0);
+      return (
+        <div key={item.id} className="col-span-full space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">
+                {item.label}
+                {item.required && <span className="text-destructive"> *</span>}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {daftarPaket.length} paket · total {formatRupiah(total)}
+              </p>
+            </div>
+            {bolehUbahPaket && !previewMode && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!selectedKegiatanId}
+                onClick={() => setPaketEdit({ idx: null })}
+              >
+                <Plus size={14} className="mr-1.5" /> Tambah paket
+              </Button>
+            )}
+          </div>
+          {daftarPaket.length === 0 ? (
+            <div className="rounded-xl border-2 border-dashed p-6 text-center text-sm text-muted-foreground">
+              Belum ada paket.
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50 text-left text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Satker</th>
+                    <th className="px-3 py-2 font-medium">Nama paket</th>
+                    <th className="px-3 py-2 font-medium">Tahun</th>
+                    <th className="px-3 py-2 text-right font-medium">Alokasi</th>
+                    <th className="w-20 px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {daftarPaket.map((pk, i) => (
+                    <tr key={pk.id ?? i} className="border-t">
+                      <td className="px-3 py-2">{(pk.satkerId && satkerNama[pk.satkerId]) || "—"}</td>
+                      <td className="px-3 py-2 font-medium">{pk.name}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {pk.tahunMulai
+                          ? pk.tahunMulai === pk.tahunSelesai
+                            ? pk.tahunMulai
+                            : `${pk.tahunMulai}–${pk.tahunSelesai}`
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatRupiah(totalPaket(pk))}</td>
+                      <td className="px-2 py-1 text-right whitespace-nowrap">
+                        {bisaUbahPaketIni(pk) && !previewMode && (
+                          <>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              aria-label={`Edit paket ${pk.name}`}
+                              onClick={() => setPaketEdit({ idx: i })}
+                            >
+                              <Pencil size={13} />
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              aria-label={`Hapus paket ${pk.name}`}
+                              onClick={() => hapusPaket(i)}
+                            >
+                              <Trash2 size={13} />
+                            </Button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      );
+    },
   };
 
   const spOptionsFiltered = (() => {
@@ -2193,19 +2212,10 @@ export function ProyekFormDialog({
   };
 
   const watchedForPreview = watch();
-  const paket0Form = watchedForPreview.paket?.[0];
-  // A/B/C rasio Valuasi = total semua paket (alokasi RENCANA), sama dgn
-  // backend ringkasPaket().
-  const ringkasForm = ringkasPaket(
-    isEdit
-      ? (editData?.paket ?? []).flatMap((p) => p.alokasi ?? [])
-      : (watchedForPreview.paket ?? []).map((p) => ({
-          ...p,
-          total:
-            (p.rm ?? 0) + (p.rmp ?? 0) + (p.pln ?? 0) + (p.sbsn ?? 0) + (p.kpbu ?? 0),
-        })),
-  );
-  const roIdPreview = isEdit ? editData?.paket?.[0]?.roId : paket0Form?.roId;
+  // A/B/C rasio Valuasi: anggaran semua paket, volume paket utama — sama
+  // dgn backend ringkasPaket().
+  const ringkasForm = ringkasPaket(ringkasDaftar);
+  const roIdPreview = daftarPaket[0]?.roId;
   const previewKey = JSON.stringify({
     roIdPreview,
     formValuesMap,
@@ -2310,32 +2320,7 @@ export function ProyekFormDialog({
         const payload = {
           ...bersihkanFkKosong(rest),
           formValues: buildFormValues(),
-          paket: paket.map((p) => ({
-            name: p.name,
-            roId: p.roId,
-            komponenId: p.komponenId || undefined,
-            jenis: p.jenis,
-            masaPelaksanaan: p.masaPelaksanaan,
-            dokLingStatus: p.dokLingStatus || undefined,
-            indikatorRoId: p.indikatorRoId || undefined,
-            formValues: toFormValueList(p.formValues ?? {}),
-            alokasi: [
-              {
-                tahun: p.tahun,
-                status: p.status,
-                rm: p.rm,
-                rmp: p.rmp,
-                pln: p.pln,
-                sbsn: p.sbsn,
-                kpbu: p.kpbu,
-                outputTarget: p.outputTarget,
-                outputUnit: p.outputUnit,
-                outcomeTarget: p.outcomeTarget,
-                outcomeUnit: p.outcomeUnit,
-                catatan: p.catatan,
-              },
-            ],
-          })),
+          paket: paket.map(paketKePayload),
         };
         const res = await api.post("/proyek", payload);
         if (pendingFiles.length) {
@@ -2377,15 +2362,20 @@ export function ProyekFormDialog({
   const findMissingRequiredItem = () => {
     if (!formTemplate) return null;
     for (const tabNode of formTemplate.tabs) {
-      // Field paket dicek per paket (findMissingPaket), bukan di sini.
-      if (tabNode.isActive === false || tabNode.key === "pemaketan") continue;
+      if (tabNode.isActive === false) continue;
       const tabValue = TABS.find(
         (t) => TAB_KEY_MAP[t.value] === tabNode.key,
       )?.value;
       if (!tabValue) continue;
       for (const section of tabNode.sections) {
-        if (section.isActive === false) continue;
+        // Bagian per paket dicek di dialog paket.
+        if (section.isActive === false || section.perPaket) continue;
         for (const item of section.items) {
+          if (item.key === "daftarPaket") {
+            if (item.isActive !== false && item.required && !daftarPaket.length)
+              return { tabValue, label: item.label };
+            continue;
+          }
           if (
             item.isActive === false ||
             !isItemVisible(item) ||
@@ -2528,7 +2518,7 @@ export function ProyekFormDialog({
                       onValueChange={(v) =>
                         setSelectedKegiatanId(v === NONE ? "" : v)
                       }
-                      disabled={isEdit || previewMode}
+                      disabled={isEdit || previewMode || !!akunKegiatanId}
                     >
                       <SelectTrigger className="h-10 w-full min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:flex-1">
                         <SelectValue placeholder="Pilih kegiatan" />
@@ -2585,315 +2575,48 @@ export function ProyekFormDialog({
 
               {/* === TAB 4: PEMAKETAN === */}
               <TabsContent value="pemaketan" className="space-y-5">
+                {renderTabHeader("pemaketan")}
                 {adminMode && adminHandlers ? (
                   <>
-                    {renderTabHeader("pemaketan")}
                     {adminHandlers.note("pemaketan")}
                     {renderTemplatedTab(
                       "pemaketan",
                       Object.fromEntries(
-                        PAKET_BAKU_KEYS.map((k) => [
+                        [...PAKET_BAKU_KEYS, ...PEMAKETAN_PROYEK_KEYS].map((k) => [
                           k,
-                          (item: FormItemNode) => (
-                            <FieldControl
-                              key={item.id}
-                              mode="preview"
-                              item={{
-                                ...item,
-                                required:
-                                  PAKET_ALWAYS_REQUIRED_KEYS.includes(k) ||
-                                  item.required,
-                              }}
-                            />
-                          ),
+                          (item: FormItemNode) => <PemaketanBakuPreview key={item.id} item={item} />,
                         ]),
                       ),
                       "grid grid-cols-1 sm:grid-cols-2 gap-3",
                     )}
                   </>
-                ) : isEdit ? (
-                  <div className="pl-12 space-y-3">
-                    <SectionHeader
-                      icon={TAB_ICONS.pemaketan}
-                      title={tabHeader("pemaketan").title}
-                      description="Paket pekerjaan proyek ini"
-                    />
-                    {editData!.paket.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        Belum ada paket. Tambah paket lewat halaman detail
-                        proyek.
-                      </p>
-                    ) : (
-                      <div className="space-y-2">
-                        {editData!.paket.map((pk) => (
-                          <div
-                            key={pk.id}
-                            className="rounded-lg border px-4 py-3 text-sm flex items-center justify-between"
-                          >
-                            <div>
-                              <p className="font-medium">{pk.name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {pk.ro.kro.kegiatan.code} · {pk.ro.kro.code} ·{" "}
-                                {pk.ro.code} — {pk.jenis}
-                              </p>
-                            </div>
-                          </div>
-                        ))}
-                        <p className="text-xs text-muted-foreground">
-                          Tambah/edit/hapus paket individual lewat halaman
-                          detail proyek.
-                        </p>
-                      </div>
-                    )}
-                  </div>
                 ) : (
-                  <div className="space-y-5">
-                    <div className="flex items-center justify-between">
-                      <SectionHeader
-                        icon={TAB_ICONS.pemaketan}
-                        title={tabHeader("pemaketan").title}
-                        description="Tambah paket pekerjaan di bawah proyek ini beserta alokasi tahun berjalan"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() =>
-                          appendPaket({
-                            name: "",
-                            roId: "",
-                            jenis: "FISIK",
-                            masaPelaksanaan: "SINGLE_YEAR",
-                            tahun: new Date().getFullYear(),
-                            status: "RENCANA",
-                            rm: 0,
-                            rmp: 0,
-                            pln: 0,
-                            sbsn: 0,
-                            kpbu: 0,
-                          })
-                        }
-                      >
-                        <Plus size={15} className="mr-1.5" /> Tambah Paket
-                      </Button>
-                    </div>
-
-                    <div className="pl-12">
-                      {paketFields.length === 0 ? (
-                        <div className="rounded-xl border-2 border-dashed p-10 text-center text-muted-foreground text-sm">
-                          Belum ada paket ditambahkan.
-                          <br />
-                          <span className="text-xs">
-                            Klik &quot;Tambah Paket&quot; — bisa lebih dari
-                            satu.
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {paketFields.map((field, i) => {
-                            const selectedRO = roList.find(
-                              (r) => r.id === watch(`paket.${i}.roId`),
-                            );
-                            const selectedIndikatorSatuan =
-                              (selectedRO?.indikatorRO ?? []).find(
-                                (ind) =>
-                                  ind.id === watch(`paket.${i}.indikatorRoId`),
-                              )?.satuanList ?? [];
-                            return (
-                              <div
-                                key={field.id}
-                                className="rounded-xl border bg-card p-5 space-y-4"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                                    Paket #{i + 1}
-                                  </span>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 text-muted-foreground hover:text-destructive"
-                                    onClick={() => removePaket(i)}
-                                  >
-                                    <Trash2 size={13} className="mr-1.5" />{" "}
-                                    Hapus
-                                  </Button>
-                                </div>
-
-                                <PaketTemplateFields
-                                  sections={paketTemplateSections}
-                                  renderers={paketRenderers(i)}
-                                  values={watch(`paket.${i}.formValues`) ?? {}}
-                                  onChange={(key, patch) =>
-                                    setPaketFormValue(i, key, patch)
-                                  }
-                                  kolomBaku={(k) => watch(`paket.${i}.${k}` as any)}
-                                  kegiatanId={selectedKegiatanId}
-                                />
-
-                                {/* Alokasi tahun berjalan — tetap di luar
-                                    template (punya dialog alokasi sendiri
-                                    setelah proyek dibuat). */}
-                                <p className="text-xs font-semibold text-muted-foreground pt-1">
-                                  Alokasi Tahun Berjalan
-                                </p>
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div className="space-y-2">
-                                    <Label className="text-xs">Tahun</Label>
-                                    <Input
-                                      type="number"
-                                      className="h-9 text-xs"
-                                      {...register(`paket.${i}.tahun`, {
-                                        valueAsNumber: true,
-                                      })}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label className="text-xs">Status</Label>
-                                    <Select
-                                      value={watch(`paket.${i}.status`)}
-                                      onValueChange={(v) =>
-                                        setValue(`paket.${i}.status`, v as any)
-                                      }
-                                    >
-                                      <SelectTrigger className="h-9 text-xs">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="RENCANA">
-                                          Rencana
-                                        </SelectItem>
-                                        <SelectItem value="REALISASI">
-                                          Realisasi
-                                        </SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                  <Label className="text-xs">
-                                    Sumber Dana (Rp)
-                                  </Label>
-                                  <div className="grid grid-cols-5 gap-3">
-                                    {(
-                                      [
-                                        "rm",
-                                        "rmp",
-                                        "pln",
-                                        "sbsn",
-                                        "kpbu",
-                                      ] as const
-                                    ).map((f) => (
-                                      <div key={f} className="space-y-1.5">
-                                        <p className="text-xs text-center text-muted-foreground uppercase font-medium">
-                                          {f}
-                                        </p>
-                                        <Input
-                                          type="number"
-                                          className="text-xs text-center h-9 px-2"
-                                          placeholder="0"
-                                          {...register(`paket.${i}.${f}`, {
-                                            valueAsNumber: true,
-                                          })}
-                                        />
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div className="space-y-2">
-                                    <Label className="text-xs">Volume RO</Label>
-                                    <div className="flex gap-2">
-                                      <Input
-                                        type="number"
-                                        className="h-9 text-xs"
-                                        placeholder="0"
-                                        {...register(
-                                          `paket.${i}.outputTarget`,
-                                          {
-                                            setValueAs: toOptionalNumber,
-                                          },
-                                        )}
-                                      />
-                                      <Input
-                                        className={`h-9 text-xs w-24 shrink-0 ${
-                                          watch(`paket.${i}.outputUnit`)
-                                            ? "bg-muted"
-                                            : ""
-                                        }`}
-                                        placeholder="Satuan"
-                                        readOnly={
-                                          !!watch(`paket.${i}.outputUnit`)
-                                        }
-                                        {...register(`paket.${i}.outputUnit`)}
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label className="text-xs">
-                                      Indikator Outcome
-                                    </Label>
-                                    <div className="flex gap-2">
-                                      <Input
-                                        type="number"
-                                        className="h-9 text-xs"
-                                        placeholder="0"
-                                        {...register(
-                                          `paket.${i}.outcomeTarget`,
-                                          {
-                                            setValueAs: toOptionalNumber,
-                                          },
-                                        )}
-                                      />
-                                      {selectedIndikatorSatuan.length > 0 ? (
-                                        <Select
-                                          value={
-                                            watch(`paket.${i}.outcomeUnit`) ||
-                                            ""
-                                          }
-                                          onValueChange={(v) =>
-                                            setValue(
-                                              `paket.${i}.outcomeUnit`,
-                                              v,
-                                            )
-                                          }
-                                        >
-                                          <SelectTrigger className="h-9 text-xs w-24 shrink-0">
-                                            <SelectValue placeholder="Satuan" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {selectedIndikatorSatuan.map(
-                                              (s) => (
-                                                <SelectItem
-                                                  key={s.satuan.id}
-                                                  value={s.satuan.name}
-                                                >
-                                                  {s.satuan.name}
-                                                </SelectItem>
-                                              ),
-                                            )}
-                                          </SelectContent>
-                                        </Select>
-                                      ) : (
-                                        <Input
-                                          className="h-9 text-xs w-24 shrink-0"
-                                          placeholder="Satuan"
-                                          {...register(
-                                            `paket.${i}.outcomeUnit`,
-                                          )}
-                                        />
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  renderTemplatedTab(
+                    "pemaketan",
+                    pemaketanRenderers,
+                    "grid grid-cols-1 sm:grid-cols-2 gap-4",
+                    (sec) => !sec.perPaket,
+                  )
+                )}
+                {!adminMode && (
+                  <PaketDialog
+                    open={!!paketEdit}
+                    onClose={() => setPaketEdit(null)}
+                    onSave={simpanPaket}
+                    sections={paketTemplateSections}
+                    value={paketEdit?.idx != null ? daftarPaket[paketEdit.idx] : null}
+                    kegiatanId={selectedKegiatanId}
+                    balaiId={balaiForm}
+                    satkerTerkunci={akunSatkerId}
+                    tahunMin={periodeForm?.startYear}
+                    tahunMax={periodeForm?.endYear}
+                    saldo={saldoForm}
+                    paketLain={ringkasDaftar.filter((_, i) => i !== paketEdit?.idx)}
+                    breadcrumb={[
+                      { label: watch("projectName") || "Proyek baru", onClick: () => setPaketEdit(null) },
+                      { label: paketEdit?.idx != null ? "Edit paket" : "Tambah paket" },
+                    ]}
+                  />
                 )}
               </TabsContent>
 
@@ -2912,6 +2635,22 @@ export function ProyekFormDialog({
                   ambang batas Master Data (lihat form-skor.ts). */}
               <TabsContent value="valuasi" className="space-y-5">
                 {renderTabHeader("valuasi")}
+                {!adminMode &&
+                  (() => {
+                    // Kategori dipilih di tab Pemaketan — di sini cuma dibaca.
+                    const item = templateItemByKey.get("kategoriProyek");
+                    if (!item) return null;
+                    const label =
+                      rowsForItem(item, sourceData, itemValue, selectedKegiatanId)?.find(
+                        (r) => r.value === kategoriProyekValue,
+                      )?.label ?? kategoriProyekValue;
+                    return (
+                      <p className="pl-12 text-xs text-muted-foreground">
+                        {item.label}:{" "}
+                        <span className="font-semibold text-foreground">{label || "belum dipilih"}</span>
+                      </p>
+                    );
+                  })()}
                 {renderTemplatedTab("valuasi", {}, TAB_GRID_CLASS.valuasi!)}
               </TabsContent>
 
@@ -2926,7 +2665,7 @@ export function ProyekFormDialog({
                 <div className="pl-12 space-y-3">
                   {!kategoriProyekValue ? (
                     <div className="rounded-xl border-2 border-dashed p-6 text-center text-muted-foreground text-xs">
-                      Pilih Kategori Proyek di tab Valuasi dulu.
+                      Pilih Kategori Proyek di tab Pemaketan dulu.
                     </div>
                   ) : kinerjaItems.length === 0 ? (
                     <p className="text-xs text-muted-foreground">
@@ -3083,10 +2822,10 @@ export function ProyekFormDialog({
                     toast.error(`Lengkapi field wajib "${missing.label}"`);
                     return;
                   }
-                  const missingPaket = findMissingPaket();
-                  if (missingPaket) {
+                  const lebih = statusSaldo(saldoForm, ringkasDaftar).find((x) => x.lebih);
+                  if (lebih) {
                     setActiveTab("pemaketan");
-                    toast.error(`Lengkapi field wajib "${missingPaket}`);
+                    toast.error(`${lebih.nama} paket melebihi saldo`);
                     return;
                   }
                   handleSubmit(onSubmit, onInvalid)();

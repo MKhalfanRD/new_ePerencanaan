@@ -1,6 +1,7 @@
 "use client";
 
-import { Plus, Pencil, Trash2, Search, Upload, Download, Loader2 } from "lucide-react";
+import { ChevronRight, Plus, Pencil, Trash2, Search, Upload, Download, Loader2 } from "lucide-react";
+import React from "react";
 import { useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
@@ -57,6 +58,8 @@ interface Props<T extends { id: string | number }> {
    * cara upsert-nya (cocokkan by kode/id, panggil create atau update).
    */
   onImport?: (rows: Record<string, string>[]) => Promise<void>;
+  /** Isi baris saat dibuka (mis. daftar Satker di bawah Balai). */
+  renderExpanded?: (item: T) => React.ReactNode;
 }
 
 export function MasterTable<T extends { id: string | number }>({
@@ -72,7 +75,16 @@ export function MasterTable<T extends { id: string | number }>({
   searchKeys = [],
   exportable = false,
   onImport,
+  renderExpanded,
 }: Props<T>) {
+  const [terbuka, setTerbuka] = useState<Set<string | number>>(new Set());
+  const toggleBuka = (id: string | number) =>
+    setTerbuka((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [search, setSearch] = useState("");
   const [deleteId, setDeleteId] = useState<string | number | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -294,6 +306,7 @@ export function MasterTable<T extends { id: string | number }>({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/40">
+                    {renderExpanded && <th className="w-8" />}
                     {onBulkDelete && (
                       <th className="px-4 py-2.5 w-10">
                         <input
@@ -317,10 +330,26 @@ export function MasterTable<T extends { id: string | number }>({
                 </thead>
                 <tbody className="divide-y divide-border">
                   {filtered.map((item, i) => (
+                    <React.Fragment key={item.id}>
                     <tr
-                      key={item.id}
                       className="hover:bg-accent/30 transition-colors"
                     >
+                      {renderExpanded && (
+                        <td className="pl-3 py-3">
+                          <button
+                            type="button"
+                            aria-label={terbuka.has(item.id) ? "Tutup" : "Buka"}
+                            aria-expanded={terbuka.has(item.id)}
+                            onClick={() => toggleBuka(item.id)}
+                            className="rounded p-0.5 text-muted-foreground hover:bg-accent"
+                          >
+                            <ChevronRight
+                              size={15}
+                              className={terbuka.has(item.id) ? "rotate-90 transition-transform" : "transition-transform"}
+                            />
+                          </button>
+                        </td>
+                      )}
                       {onBulkDelete && (
                         <td className="px-4 py-3">
                           <input
@@ -376,6 +405,14 @@ export function MasterTable<T extends { id: string | number }>({
                         </TooltipProvider>
                       </td>
                     </tr>
+                    {renderExpanded && terbuka.has(item.id) && (
+                      <tr className="bg-muted/20">
+                        <td colSpan={columns.length + 2 + (onBulkDelete ? 1 : 0)} className="px-4 py-3 pl-12">
+                          {renderExpanded(item)}
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>

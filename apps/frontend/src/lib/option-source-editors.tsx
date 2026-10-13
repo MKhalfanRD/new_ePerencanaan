@@ -6,6 +6,7 @@ import { NomenklaturTab } from "@/components/master/nomenklatur-tab";
 import { WilayahSungaiTab } from "@/components/master/wilayah-sungai-tab";
 import { PnppkpTab } from "@/components/master/pnppkp-tab";
 import { SasaranTab } from "@/components/master/sasaran-tab";
+import { KategoriProyekTab } from "@/components/master/kategori-proyek-tab";
 import {
   FlatMasterTable,
   useFlatMaster,
@@ -33,5 +34,6 @@ export const SOURCE_EDITORS: Record<string, React.ComponentType> = {
   isk: SasaranTab,
   // RO / Komponen / Indikator RO & satuannya (lihat OPTION_SOURCES.editor).
   nomenklatur: NomenklaturTab,
+  kategoriProyek: KategoriProyekTab,
   satuan: NomenklaturTab,
 };

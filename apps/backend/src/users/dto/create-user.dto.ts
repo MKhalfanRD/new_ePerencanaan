@@ -27,5 +27,8 @@ export class CreateUserDto {
   phone?: string;
 
   @IsOptional()
-  balaiId?: number;
+  balaiId?: number | null;
+
+  @IsOptional()
+  satkerId?: string | null;
 }

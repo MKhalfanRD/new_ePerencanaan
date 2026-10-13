@@ -18,6 +18,7 @@ export class AuthService {
       },
       include: {
         role: true,
+        balai: { select: { kegiatanId: true } },
       },
     });
 
@@ -40,6 +41,10 @@ export class AuthService {
       kegiatanId: user.role?.kegiatanId ?? null,
       // Template izin role turunan — lihat src/auth/role.ts.
       baseRole: user.role?.baseRole ?? null,
+      // Tingkat akun: balai kosong = pusat; balai saja = Balai; + satker = Satker.
+      balaiId: user.balaiId ?? null,
+      satkerId: user.satkerId ?? null,
+      balaiKegiatanId: user.balai?.kegiatanId ?? null,
     };
 
     return {
@@ -52,6 +57,9 @@ export class AuthService {
         role: user.role?.code,
         kegiatanId: user.role?.kegiatanId ?? null,
         baseRole: user.role?.baseRole ?? null,
+        balaiId: user.balaiId ?? null,
+        satkerId: user.satkerId ?? null,
+        balaiKegiatanId: user.balai?.kegiatanId ?? null,
       },
     };
   }

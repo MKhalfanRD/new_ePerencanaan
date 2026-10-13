@@ -98,7 +98,9 @@ export function SatuanCombobox({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // modal: daftar tetap bisa di-scroll (touchpad/roda) saat combobox ada
+    // di dalam Dialog — tanpa ini scroll diblok kunci-scroll Dialog.
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
           type="button"

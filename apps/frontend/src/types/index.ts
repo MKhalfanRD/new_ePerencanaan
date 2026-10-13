@@ -9,6 +9,11 @@ export interface User {
   /** Template izin yang dipinjam role turunan (mis. OPERATOR_7691 -> SATKER).
    * Selalu cek lewat punyaRole() di lib/role.ts, bukan == kode role. */
   baseRole?: string | null;
+  /** Tingkat akun: balaiId kosong = pusat; balai saja = akun Balai;
+   * balai + satker = akun Satker. balaiKegiatanId = kegiatan balai. */
+  balaiId?: number | null;
+  satkerId?: string | null;
+  balaiKegiatanId?: string | null;
 }
 
 export interface KegiatanPrioritas {
@@ -59,6 +64,8 @@ export interface Balai {
   longitude?: number;
   /** Kalau false, SATKER balai ini tidak bisa membuat paket baru. */
   isActive: boolean;
+  /** Kegiatan yang ditangani balai (form proyek balai ini ikut kegiatan ini). */
+  kegiatanId?: string | null;
 }
 
 export interface Periode {
@@ -113,6 +120,8 @@ export interface Komponen {
   roId: string;
   satuanId?: string | null;
   satuan?: { id: string; name: string } | null;
+  /** UTAMA | PENDUKUNG — volume rasio & saldo cuma dari paket UTAMA. */
+  jenis?: "UTAMA" | "PENDUKUNG";
 }
 
 export interface Paket {
@@ -124,11 +133,36 @@ export interface Paket {
   ro: RO;
   komponenId?: string;
   komponen?: Komponen;
-  jenis: "FISIK" | "NON_FISIK";
-  masaPelaksanaan: "SINGLE_YEAR" | "MULTI_YEAR";
+  satkerId?: string | null;
+  satker?: { id: string; name: string } | null;
+  // Format lama — tidak diisi lagi dari form.
+  jenis?: "FISIK" | "NON_FISIK" | null;
+  masaPelaksanaan?: "SINGLE_YEAR" | "MULTI_YEAR" | null;
   dokLingStatus?: string;
-  indikatorRoId?: string;
-  indikatorRo?: IndikatorRO;
+  lokasiRo?: string[];
+  volumeRo?: string | null;
+  indikatorRo?: {
+    id: string;
+    indikatorRoId: string;
+    volume?: string | null;
+    satuan?: string | null;
+    indikatorRo?: IndikatorRO;
+  }[];
+  tahunMulai?: number | null;
+  tahunSelesai?: number | null;
+  lokasiSamaProyek?: boolean;
+  provinceId?: string | null;
+  provinceName?: string | null;
+  cityId?: string | null;
+  cityName?: string | null;
+  districtId?: string | null;
+  districtName?: string | null;
+  villageId?: string | null;
+  villageName?: string | null;
+  tipeKoordinat?: "TITIK" | "GARIS" | "POLIGON" | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  coordinates?: number[][] | null;
   // Untuk ranking prioritas antar paket — algoritma penilaian menyusul.
   score?: string;
   alokasi: Alokasi[];
@@ -196,6 +230,11 @@ export interface Proyek {
   projectName: string;
   kewenangan: "PUSAT" | "DAERAH";
   status: "DRAFT" | "APPROVED";
+  // Pemaketan: saldo (kosong = tanpa batas) & izin satker ubah paket.
+  saldoAnggaran?: string | null;
+  saldoVolumeRo?: string | null;
+  saldoVolumeIro?: string | null;
+  satkerBolehUbahPaket?: boolean;
   catatan?: string;
   balai: Balai;
   periode: Periode;

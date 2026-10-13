@@ -24,6 +24,9 @@ const userSelect = {
     select: { code: true, name: true },
   },
   balai: {
+    select: { id: true, name: true, kegiatanId: true },
+  },
+  satker: {
     select: { id: true, name: true },
   },
 };
@@ -50,6 +53,16 @@ export class UsersService {
     }
 
     return user;
+  }
+
+  /** Satker harus milik balai akun; tanpa balai = tanpa satker (akun pusat). */
+  private async unitAkun(balaiId: number | null | undefined, satkerId: string | null | undefined) {
+    if (!balaiId) return { balaiId: null, satkerId: null };
+    if (!satkerId) return { balaiId, satkerId: null };
+    const s = await this.prisma.satker.findUnique({ where: { id: satkerId } });
+    if (!s || s.balaiId !== balaiId)
+      throw new BadRequestException('Satker tidak termasuk balai yang dipilih');
+    return { balaiId, satkerId };
   }
 
   async create(dto: CreateUserDto) {
@@ -79,7 +92,7 @@ export class UsersService {
         email: dto.email,
         nip: dto.nip,
         phone: dto.phone,
-        balaiId: dto.balaiId,
+        ...(await this.unitAkun(dto.balaiId, dto.satkerId)),
         roleId: role.id,
       },
       select: userSelect,
@@ -98,7 +111,11 @@ export class UsersService {
       email: dto.email ?? user.email,
       nip: dto.nip ?? user.nip,
       phone: dto.phone ?? user.phone,
-      balaiId: dto.balaiId ?? user.balaiId,
+      // null dari form = dikosongkan (akun pusat / tanpa satker).
+      ...(await this.unitAkun(
+        dto.balaiId !== undefined ? dto.balaiId : user.balaiId,
+        dto.satkerId !== undefined ? dto.satkerId : user.satkerId,
+      )),
     };
 
     if (dto.roleCode) {

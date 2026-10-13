@@ -105,6 +105,10 @@ model User {
 
   balaiId Int?
   balai   Balai? @relation(fields: [balaiId], references: [id])
+  // Tingkat akun: balai kosong = pusat; balai saja = akun Balai;
+  // balai + satker = akun Satker.
+  satkerId String?
+  satker   Satker? @relation(fields: [satkerId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -136,13 +140,58 @@ model Balai {
   provinceId String? @db.VarChar(10)
   cityId     String? @db.VarChar(10)
 
+  // Kegiatan yang ditangani balai ini (1 balai = 1 kegiatan). Akun Balai &
+  // Satker-nya otomatis memakai form kegiatan ini.
+  kegiatanId String?   @db.VarChar(10)
+  kegiatan   Kegiatan? @relation(fields: [kegiatanId], references: [id])
+
   users  User[]
   proyek Proyek[]
+  satker Satker[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("balai")
+}
+
+/// Kategori proyek per kegiatan (mis. Pembangunan jaringan) — dipilih
+/// sekali per proyek; menentukan bagian Valuasi/Kinerja yang berlaku.
+/// `kode` = nilai yang disimpan proyek & dipakai syarat bagian, tetap
+/// walau nama diubah.
+model KategoriProyek {
+  id         String   @id @default(cuid())
+  kegiatanId String   @db.VarChar(10)
+  kegiatan   Kegiatan @relation(fields: [kegiatanId], references: [id], onDelete: Cascade)
+  kode       String   @db.VarChar(60)
+  name       String   @db.VarChar(150)
+  order      Int      @default(0) @db.SmallInt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([kegiatanId, kode])
+  @@index([kegiatanId])
+  @@map("kategori_proyek")
+}
+
+/// Satuan kerja di bawah Balai — dipilih per paket di tab Pemaketan
+/// (dropdown disaring sesuai Balai proyek di tab Identitas).
+model Satker {
+  id      String @id @default(cuid())
+  balaiId Int
+  balai   Balai  @relation(fields: [balaiId], references: [id], onDelete: Cascade)
+  name    String @db.VarChar(255)
+
+  users User[]
+  paket Paket[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([balaiId, name])
+  @@index([balaiId])
+  @@map("satker")
 }
 
 model Periode {
@@ -189,6 +238,8 @@ model Kegiatan {
   sasaranKegiatan SasaranKegiatan[]
   roles           Role[]
   formTemplate    FormTemplate?
+  kategoriProyek  KategoriProyek[]
+  balai           Balai[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -227,7 +278,6 @@ model RO {
   indikatorRO IndikatorRO[]
   paket       Paket[]
   komponen    Komponen[]
-  provinsi    RoProvinsi[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -235,17 +285,6 @@ model RO {
   @@map("ro")
 }
 
-/// Provinsi cakupan RO — 1 RO bisa mencakup banyak provinsi.
-model RoProvinsi {
-  id           String @id @default(cuid())
-  roId         String @db.VarChar(20)
-  ro           RO     @relation(fields: [roId], references: [id], onDelete: Cascade)
-  provinceId   String @db.VarChar(10)
-  provinceName String @db.VarChar(100)
-
-  @@unique([roId, provinceId])
-  @@map("ro_provinsi")
-}
 
 // =============================================
 // MASTER: Satuan (dropdown, dipakai RO/Komponen/Indikator RO)
@@ -276,6 +315,9 @@ model Komponen {
   name     String  @db.VarChar(255)
   satuanId String?
   satuan   Satuan? @relation(fields: [satuanId], references: [id])
+  // UTAMA | PENDUKUNG — volume RO/IRO rasio Valuasi & saldo volume hanya
+  // dihitung dari paket berkomponen UTAMA (anggaran tetap semua).
+  jenis    String  @default("UTAMA") @db.VarChar(10)
 
   paket Paket[]
 
@@ -293,7 +335,7 @@ model IndikatorRO {
   nama String @db.VarChar(255)
 
   satuanList IndikatorRoSatuan[]
-  paket      Paket[]
+  paket      PaketIndikatorRo[]
 
   @@map("indikator_ro")
 }
@@ -530,6 +572,9 @@ model FormSection {
   // membuat bagian ini tampil + dihitung (JSON array). null = selalu tampil.
   conditionItemId String? @db.VarChar(100)
   conditionValue  String?
+  // Tab Pemaketan: true = diisi sekali per paket (kartu di dialog paket),
+  // false = sekali per proyek.
+  perPaket Boolean @default(false)
 
   items FormItem[]
 
@@ -857,6 +902,14 @@ model Proyek {
   status  StatusProyek @default(DRAFT)
   catatan String?      @db.Text
 
+  // === PEMAKETAN === saldo diisi user; total paket tidak boleh melebihi.
+  // Anggaran = semua paket; volume = paket berkomponen UTAMA saja.
+  saldoAnggaran  Decimal? @db.Decimal(16, 0)
+  saldoVolumeRo  Decimal? @db.Decimal(14, 4)
+  saldoVolumeIro Decimal? @db.Decimal(14, 4)
+  // Akun Satker boleh menambah/mengubah paket proyek ini (diatur pusat/Balai).
+  satkerBolehUbahPaket Boolean @default(true)
+
   // Hasil evaluasi MCA — 0..1, dihitung ulang otomatis dari deteksi
   // tagging/kriteria teknis tiap kali proyek disimpan (jangan diisi manual
   // dari client, lihat src/proyek/evaluasi-deteksi.ts).
@@ -924,15 +977,40 @@ model Paket {
   komponenId String?
   komponen   Komponen? @relation(fields: [komponenId], references: [id])
 
-  jenis           JenisPaket
-  masaPelaksanaan MasaPelaksanaan
+  // Satker pelaksana (master Satker di bawah balai proyek).
+  satkerId String?
+  satker   Satker? @relation(fields: [satkerId], references: [id], onDelete: SetNull)
 
-  dokLingStatus String? @db.VarChar(50)
+  // Format lama — tidak diisi lagi dari form, disimpan utk data lama.
+  jenis           JenisPaket?
+  masaPelaksanaan MasaPelaksanaan?
+  dokLingStatus   String?          @db.VarChar(50)
 
-  // indikatorRoId tetap di sini (bukan pindah ke Proyek) — RO/indikatornya
-  // spesifik per paket, beda paket bisa beda RO.
-  indikatorRoId String?
-  indikatorRo   IndikatorRO? @relation(fields: [indikatorRoId], references: [id])
+  // Lokasi RO = id provinsi (master Provinsi), bisa lebih dari satu.
+  lokasiRo String[] @default([])
+  // Volume RO sekali per paket (satuan = satuan RO di master).
+  volumeRo Decimal? @db.Decimal(14, 4)
+  // Rentang tahun paket — alokasi RENCANA diisi per tahun di rentang ini.
+  tahunMulai   Int? @db.SmallInt
+  tahunSelesai Int? @db.SmallInt
+
+  // Lokasi paket: sama dengan lokasi proyek, atau titik/garis/poligon sendiri.
+  lokasiSamaProyek Boolean        @default(true)
+  // Wilayah lokasi sendiri (terisi otomatis dari titik peta, bisa diubah).
+  provinceId   String? @db.VarChar(10)
+  provinceName String? @db.VarChar(100)
+  cityId       String? @db.VarChar(10)
+  cityName     String? @db.VarChar(100)
+  districtId   String? @db.VarChar(10)
+  districtName String? @db.VarChar(100)
+  villageId    String? @db.VarChar(10)
+  villageName  String? @db.VarChar(100)
+  tipeKoordinat    TipeKoordinat?
+  latitude         Float?
+  longitude        Float?
+  coordinates      Json?
+
+  indikatorRo PaketIndikatorRo[]
 
   // Untuk ranking prioritas antar paket — algoritma penilaian menyusul,
   // sengaja nullable & tidak diisi lewat form dulu.
@@ -948,6 +1026,21 @@ model Paket {
   @@index([proyekId])
   @@index([roId])
   @@map("paket")
+}
+
+/// Indikator RO paket + volume (1 paket bisa banyak IRO).
+model PaketIndikatorRo {
+  id            String      @id @default(cuid())
+  paketId       String
+  paket         Paket       @relation(fields: [paketId], references: [id], onDelete: Cascade)
+  indikatorRoId String
+  indikatorRo   IndikatorRO @relation(fields: [indikatorRoId], references: [id])
+  volume        Decimal?    @db.Decimal(14, 4)
+  satuan        String?     @db.VarChar(50)
+  order         Int         @default(0) @db.SmallInt
+
+  @@index([paketId])
+  @@map("paket_indikator_ro")
 }
 
 // =============================================

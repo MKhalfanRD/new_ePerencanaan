@@ -75,7 +75,18 @@ export const WIDTH_LABEL: Record<string, string> = {
   FULL: "Penuh",
 };
 
+// Field inti Pemaketan yang isinya lebar (tabel/peta/baris ganda).
+const KEY_LEBAR = new Set([
+  "paketRo",
+  "paketLokasiRo",
+  "paketIndikatorRo",
+  "paketAlokasi",
+  "paketLokasi",
+  "daftarPaket",
+]);
+
 export interface WidthAwareItem {
+  key?: string;
   fieldType: string;
   thresholdValue?: number | null;
   width?: "HALF" | "FULL" | null;
@@ -86,5 +97,7 @@ export function isItemWide(item: WidthAwareItem): boolean {
     ? true
     : item.width === "HALF"
       ? false
-      : WIDE_FIELD_TYPES.has(item.fieldType) || item.thresholdValue != null;
+      : WIDE_FIELD_TYPES.has(item.fieldType) ||
+        item.thresholdValue != null ||
+        KEY_LEBAR.has(item.key ?? "");
 }

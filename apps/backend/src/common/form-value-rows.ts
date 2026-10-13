@@ -92,6 +92,7 @@ export async function paketFormValueRows(
   const items = await tx.formItem.findMany({
     where: {
       section: {
+        perPaket: true,
         tab: { key: 'pemaketan', template: { kegiatanId: ro.kro.kegiatanId } },
       },
     },

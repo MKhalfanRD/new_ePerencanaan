@@ -888,6 +888,9 @@ export class ImportService {
         resolveIskId(row.kdKegiatan, row.isk || ''),
       ]);
 
+      // Tagging/catatan milik Proyek (1 proyek = 1 set) — diambil dari baris
+      // pertama grup, lihat taggingProyek(). Volume & IRO sekali per paket.
+      const rencana = dto.status === 'RENCANA';
       return {
         kodePaket: row.kodePaket || undefined,
         name: row.namaPaket,
@@ -896,16 +899,31 @@ export class ImportService {
         jenis: row.jenisPaket as any,
         masaPelaksanaan: row.masaLaksana as any,
         dokLingStatus: row.dokLing,
-        catatanPembina: row.catatanPembina,
-        catatanSspsda: row.catatanSspsda,
-        pkpnId,
-        indikatorSasaranProgramId,
-        indikatorSasaranKegiatanId,
-        indikatorRoId,
-        tematikRenjaId,
-        fkb: row.fkb,
-        fkw: row.fkw,
-        mpa: row.mpa,
+        volumeRo: rencana ? row.volOutput : undefined,
+        tahunMulai: dto.tahun,
+        tahunSelesai: dto.tahun,
+        indikatorRo: indikatorRoId
+          ? {
+              create: [
+                {
+                  indikatorRoId,
+                  volume: rencana ? row.volOutcome : undefined,
+                  satuan: row.outcomeSatuan || undefined,
+                },
+              ],
+            }
+          : undefined,
+        tagging: {
+          catatanPembina: row.catatanPembina,
+          catatanSspsda: row.catatanSspsda,
+          pkpnId,
+          indikatorSasaranProgramId,
+          indikatorSasaranKegiatanId,
+          tematikRenjaId,
+          fkb: row.fkb,
+          fkw: row.fkw,
+          mpa: row.mpa,
+        },
         alokasi: {
           create: [
             {
@@ -957,16 +975,27 @@ export class ImportService {
 
     // KodePaket kosong di Excel -> generate dengan pola yang sama seperti
     // create manual (lihat src/common/kode-generator.ts).
-    const withKodePaket = <T extends { kodePaket?: string }>(
+    const withKodePaket = <T extends { kodePaket?: string; tagging: unknown }>(
       paket: T[],
       kodeProyek: string,
     ) =>
-      paket.map((p, idx) => ({
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      paket.map(({ tagging, ...p }, idx) => ({
         ...p,
         kodePaket:
           p.kodePaket ??
           `PA${kodeProyek.slice(2)}${String(idx + 1).padStart(4, '0')}`,
       }));
+    // Tagging proyek = isian paket pertama yang berhasil dibaca.
+    const tagging = new Map<ParsedPaketRow[], object>();
+    const bangunPaket = async (rows: ParsedPaketRow[]) => {
+      const hasil = (await Promise.all(rows.map(buildPaketData))).filter(
+        (p): p is NonNullable<typeof p> => p !== null,
+      );
+      tagging.set(rows, hasil[0]?.tagging ?? {});
+      return hasil;
+    };
+    const taggingProyek = (rows: ParsedPaketRow[]) => tagging.get(rows) ?? {};
 
     for (const [groupKey, groupRows] of groups) {
       const first = groupRows[0];
@@ -985,9 +1014,7 @@ export class ImportService {
           const kodeProyek =
             existing.kodeProyek ?? (await generateKodeProyek(this.prisma));
           const paketData = withKodePaket(
-            (await Promise.all(groupRows.map(buildPaketData))).filter(
-              (p): p is NonNullable<typeof p> => p !== null,
-            ),
+            await bangunPaket(groupRows),
             kodeProyek,
           );
           const sumberUsulanReplace = parseSumberUsulan(
@@ -1017,6 +1044,7 @@ export class ImportService {
               catatan: first.keterangan || undefined,
               sumberUsulanProyek: sumberUsulanReplace.value as any,
               sumberUsulanLainnya: sumberUsulanReplace.lainnya,
+              ...taggingProyek(groupRows),
               paket: { create: paketData as any },
             },
           });
@@ -1059,9 +1087,7 @@ export class ImportService {
         const kodeProyek =
           first.kodeProyek || (await generateKodeProyek(this.prisma));
         const paketData = withKodePaket(
-          (await Promise.all(groupRows.map(buildPaketData))).filter(
-            (p): p is NonNullable<typeof p> => p !== null,
-          ),
+          await bangunPaket(groupRows),
           kodeProyek,
         );
         const sumberUsulan = parseSumberUsulan(first.sumberUsulanProyekRaw);
@@ -1087,6 +1113,7 @@ export class ImportService {
             sumberUsulanLainnya: sumberUsulan.lainnya,
             status: 'DRAFT',
             createdById: userId,
+            ...taggingProyek(groupRows),
             paket: { create: paketData as any },
           },
         });

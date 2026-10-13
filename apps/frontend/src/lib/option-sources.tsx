@@ -92,6 +92,15 @@ export const OPTION_SOURCES: Record<string, OptionSourceDef> = {
     rows: (d) => d.flatMap((sk) => byIdName(sk.indikator ?? [])),
   },
   satuan: { label: "Satuan", endpoint: "/master/satuan", rows: byIdName },
+  // Kategori proyek per kegiatan — value = kode (tetap walau nama diubah).
+  kategoriProyek: {
+    label: "Kategori Proyek (ikut kegiatan)",
+    endpoint: "/master/kategori-proyek",
+    editor: "kategoriProyek",
+    parent: "kegiatan",
+    rowsBy: (d, kegiatanId) =>
+      d.filter((k) => k.kegiatanId === kegiatanId).map((k) => ({ value: k.kode, label: k.name })),
+  },
   ro: {
     label: "RO (ikut kegiatan proyek)",
     endpoint: "/master/ro",

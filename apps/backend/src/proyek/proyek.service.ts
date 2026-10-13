@@ -29,33 +29,35 @@ import {
   RingkasPaket,
   RasioConfig,
   ringkasPaket,
+  paketRingkasDb,
   hitungRasio,
 } from './form-skor';
 import { LINTAS_KEGIATAN, roleEfektif } from '../auth/role';
+import {
+  cekIsianPaket,
+  cekSaldo,
+  kolomPaket,
+  relasiPaketBaru,
+  ringkasIsian,
+  satkerPaket,
+} from '../paket/paket-data';
 import { PreviewSkorDto, FormValueDto } from './dto/preview-skor.dto';
 
-/** Lengkapi array alokasi nested-create dengan pasangan status (Rencana<->
- * Realisasi) bernilai 0 untuk tahun yang belum punya pasangannya — meniru
- * auto-pairing di AlokasiService.create() supaya tabel alokasi proyek baru
- * selalu lengkap Rencana+Realisasi sejak awal. */
-function withPairedAlokasi<T extends { tahun: number; status: string }>(
-  alokasi: T[],
-): T[] {
-  const result = [...alokasi];
-  for (const a of alokasi) {
-    const pairedStatus = a.status === 'RENCANA' ? 'REALISASI' : 'RENCANA';
-    const hasPair = alokasi.some(
-      (x) => x.tahun === a.tahun && x.status === pairedStatus,
-    );
-    if (!hasPair) {
-      result.push({
-        tahun: a.tahun,
-        status: pairedStatus,
-      } as T);
-    }
-  }
-  return result;
-}
+
+// Data paket utk rasio Valuasi & saldo (lihat paketRingkasDb).
+const paketRingkasInclude = {
+  komponen: { select: { jenis: true } },
+  ro: { select: { satuan: { select: { name: true } } } },
+  indikatorRo: { select: { volume: true, satuan: true } },
+  alokasi: { select: { status: true, total: true } },
+} satisfies Prisma.PaketInclude;
+
+/** Akun Balai/Satker: proyek selalu di balainya sendiri. */
+const balaiAkun = (user: any, balaiId?: number) =>
+  user?.balaiId && !LINTAS_KEGIATAN.includes(user.role) ? user.balaiId : balaiId;
+/** Saklar izin satker cuma boleh diubah akun pusat/Balai. */
+const izinSatker = (user: any, nilai?: boolean) =>
+  user?.satkerId && !LINTAS_KEGIATAN.includes(user.role) ? undefined : nilai;
 
 const proyekInclude = Prisma.validator<Prisma.ProyekInclude>()({
   balai: true,
@@ -78,8 +80,12 @@ const proyekInclude = Prisma.validator<Prisma.ProyekInclude>()({
         },
       },
       komponen: true,
+      satker: { select: { id: true, name: true } },
       indikatorRo: {
-        include: { satuanList: { include: { satuan: true } } },
+        include: {
+          indikatorRo: { include: { satuanList: { include: { satuan: true } } } },
+        },
+        orderBy: { order: Prisma.SortOrder.asc },
       },
       formValues: { include: { item: true, option: true } },
       alokasi: {
@@ -360,7 +366,11 @@ export class ProyekService {
     return { skorEvaluasi, rincian: rincian ?? [] };
   }
 
-  async create(dto: CreateProyekDto, userId: string, userRole?: string) {
+  async create(dto: CreateProyekDto, user: any) {
+    const userId: string = user?.userId;
+    const userRole: string | undefined = user?.role;
+    dto.balaiId = balaiAkun(user, dto.balaiId);
+    for (const p of dto.paket ?? []) cekIsianPaket(p);
     if (dto.paket?.length && userRole !== 'ADMINISTRATOR') {
       const balai = await this.prisma.balai.findUnique({
         where: { id: dto.balaiId },
@@ -380,16 +390,12 @@ export class ProyekService {
       const proyekPart = kodeProyek.slice(2);
 
       const paket0 = dto.paket?.[0];
-      // Total SEMUA paket & tahun (alokasi RENCANA) — rasio Valuasi.
-      const paketSekarang = ringkasPaket(
-        (dto.paket ?? []).flatMap((p) =>
-          (p.alokasi ?? []).map((a) => ({
-            ...a,
-            total:
-              (a.rm ?? 0) + (a.rmp ?? 0) + (a.pln ?? 0) + (a.sbsn ?? 0) + (a.kpbu ?? 0),
-          })),
-        ),
-      );
+      for (const p of dto.paket ?? [])
+        p.satkerId = await satkerPaket(tx, user, dto.balaiId, p.satkerId);
+      // Anggaran semua paket, volume paket UTAMA — rasio Valuasi & saldo.
+      const ringkasan = await Promise.all((dto.paket ?? []).map((p) => ringkasIsian(tx, p)));
+      cekSaldo(dto, ringkasan);
+      const paketSekarang = ringkasPaket(ringkasan);
       const { skorEvaluasi, formValueCreates } = await this.hitungEvaluasi(
         tx,
         dto,
@@ -442,49 +448,19 @@ export class ProyekService {
           catatanSspsda: dto.catatanSspsda,
           status: 'APPROVED',
           createdById: userId,
+          saldoAnggaran: dto.saldoAnggaran,
+          saldoVolumeRo: dto.saldoVolumeRo,
+          saldoVolumeIro: dto.saldoVolumeIro,
+          satkerBolehUbahPaket: izinSatker(user, dto.satkerBolehUbahPaket),
 
           paket: dto.paket
             ? {
                 create: dto.paket.map((p, idx) => ({
                   kodePaket: `PA${proyekPart}${String(idx + 1).padStart(4, '0')}`,
-                  name: p.name,
-                  roId: p.roId,
-                  komponenId: p.komponenId,
-                  jenis: p.jenis as any,
-                  masaPelaksanaan: p.masaPelaksanaan as any,
-                  dokLingStatus: p.dokLingStatus,
-                  indikatorRoId: p.indikatorRoId,
+                  ...kolomPaket(p),
+                  ...relasiPaketBaru(p),
                   formValues: paketValues[idx].length
                     ? { create: paketValues[idx] }
-                    : undefined,
-
-                  alokasi: p.alokasi
-                    ? {
-                        // Sertakan pasangan Rencana/Realisasi bernilai 0 kalau
-                        // belum ada — konsisten dengan AlokasiService.create(),
-                        // supaya tabel alokasi selalu lengkap tanpa perlu
-                        // "Tambah Alokasi" manual lagi setelah proyek dibuat.
-                        create: withPairedAlokasi(p.alokasi).map((a) => ({
-                          tahun: a.tahun,
-                          status: a.status as any,
-                          rm: a.rm ?? 0,
-                          rmp: a.rmp ?? 0,
-                          pln: a.pln ?? 0,
-                          sbsn: a.sbsn ?? 0,
-                          kpbu: a.kpbu ?? 0,
-                          total:
-                            (a.rm ?? 0) +
-                            (a.rmp ?? 0) +
-                            (a.pln ?? 0) +
-                            (a.sbsn ?? 0) +
-                            (a.kpbu ?? 0),
-                          outputTarget: a.outputTarget,
-                          outputUnit: a.outputUnit,
-                          outcomeTarget: a.outcomeTarget,
-                          outcomeUnit: a.outcomeUnit,
-                          catatan: a.catatan,
-                        })),
-                      }
                     : undefined,
                 })),
               }
@@ -626,19 +602,9 @@ export class ProyekService {
       where: { id },
       include: {
         paket: {
+          where: { deletedAt: null },
           orderBy: { createdAt: Prisma.SortOrder.asc },
-          include: {
-            alokasi: {
-              select: {
-                status: true,
-                total: true,
-                outputTarget: true,
-                outputUnit: true,
-                outcomeTarget: true,
-                outcomeUnit: true,
-              },
-            },
-          },
+          include: paketRingkasInclude,
         },
       },
     });
@@ -651,7 +617,8 @@ export class ProyekService {
 
     const paket0 = proyek.paket?.[0];
     // Total SEMUA paket & tahun (alokasi RENCANA) — rasio Valuasi.
-    const paketSekarang = ringkasPaket(proyek.paket.flatMap((p) => p.alokasi));
+    const paketSekarang = ringkasPaket(proyek.paket.map(paketRingkasDb));
+    cekSaldo({ ...proyek, ...dto }, proyek.paket.map(paketRingkasDb));
 
     // Skor evaluasi dihitung ulang tiap kali proyek disimpan dari struktur
     // Form Proyek (Master Data) — lihat hitungEvaluasi/form-skor.ts.
@@ -674,11 +641,15 @@ export class ProyekService {
           deleteMany: {},
           create: formValueCreates,
         },
-        balaiId: dto.balaiId,
+        balaiId: balaiAkun(user, dto.balaiId),
         periodeId: dto.periodeId,
         projectName: dto.projectName,
         kewenangan: dto.kewenangan as any,
         ...lokasiData(dto),
+        saldoAnggaran: dto.saldoAnggaran,
+        saldoVolumeRo: dto.saldoVolumeRo,
+        saldoVolumeIro: dto.saldoVolumeIro,
+        satkerBolehUbahPaket: izinSatker(user, dto.satkerBolehUbahPaket),
         kebutuhanTanah: dto.kebutuhanTanah,
         wilayahSungaiId: dto.wilayahSungaiId,
         kegiatanPrioritasId: dto.kegiatanPrioritasId,
@@ -779,19 +750,9 @@ export class ProyekService {
       where: { id: proyekId },
       include: {
         paket: {
+          where: { deletedAt: null },
           orderBy: { createdAt: Prisma.SortOrder.asc },
-          include: {
-            alokasi: {
-              select: {
-                status: true,
-                total: true,
-                outputTarget: true,
-                outputUnit: true,
-                outcomeTarget: true,
-                outcomeUnit: true,
-              },
-            },
-          },
+          include: paketRingkasInclude,
         },
         formValues: { include: { item: true, option: true } },
       },
@@ -800,7 +761,7 @@ export class ProyekService {
 
     const paket0 = proyek.paket?.[0];
     // Total SEMUA paket & tahun (alokasi RENCANA) — rasio Valuasi.
-    const paketSekarang = ringkasPaket(proyek.paket.flatMap((p) => p.alokasi));
+    const paketSekarang = ringkasPaket(proyek.paket.map(paketRingkasDb));
 
     const formValues: FormValueDto[] = proyek.formValues.map((fv) => ({
       key: fv.item.key,

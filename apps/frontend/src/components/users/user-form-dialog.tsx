@@ -44,7 +44,8 @@ interface UserData {
   phone?: string;
   status: string;
   role?: { code: string; name: string };
-  balai?: { id: number; name: string };
+  balai?: { id: number; name: string; kegiatanId?: string | null };
+  satker?: { id: string; name: string } | null;
 }
 
 const createSchema = z.object({
@@ -55,7 +56,8 @@ const createSchema = z.object({
   nip: z.string().optional(),
   phone: z.string().optional(),
   roleCode: z.string().min(1, "Role wajib dipilih"),
-  balaiId: z.number().optional(),
+  balaiId: z.number().nullable().optional(),
+  satkerId: z.string().nullable().optional(),
 });
 
 const editSchema = z.object({
@@ -64,7 +66,8 @@ const editSchema = z.object({
   nip: z.string().optional(),
   phone: z.string().optional(),
   roleCode: z.string().min(1, "Role wajib dipilih"),
-  balaiId: z.number().optional(),
+  balaiId: z.number().nullable().optional(),
+  satkerId: z.string().nullable().optional(),
   password: z.string().min(6).optional().or(z.literal("")),
 });
 
@@ -101,6 +104,7 @@ function Section({
 export function UserFormDialog({ open, onClose, onSuccess, editData }: Props) {
   const [roles, setRoles] = useState<Role[]>([]);
   const [balaiList, setBalaiList] = useState<Balai[]>([]);
+  const [satkerList, setSatkerList] = useState<{ id: string; name: string }[]>([]);
   const [loadingMaster, setLoadingMaster] = useState(false);
   const isEdit = !!editData;
 
@@ -149,13 +153,26 @@ export function UserFormDialog({ open, onClose, onSuccess, editData }: Props) {
         nip: editData.nip || "",
         phone: editData.phone || "",
         roleCode: editData.role?.code || "",
-        balaiId: editData.balai?.id,
+        balaiId: editData.balai?.id ?? null,
+        satkerId: editData.satker?.id ?? null,
         password: "",
       });
     } else {
       reset({ email: "", nip: "", phone: "", password: "" });
     }
   }, [editData, open]);
+
+  const balaiDipilih = watch("balaiId");
+  useEffect(() => {
+    if (!balaiDipilih) {
+      setSatkerList([]);
+      return;
+    }
+    api
+      .get(`/master/satker?balaiId=${balaiDipilih}`)
+      .then((r) => setSatkerList(r.data))
+      .catch(() => setSatkerList([]));
+  }, [balaiDipilih]);
 
   const onSubmit = async (data: any) => {
     try {
@@ -326,15 +343,19 @@ export function UserFormDialog({ open, onClose, onSuccess, editData }: Props) {
               </div>
 
               <div className="space-y-2">
-                <Label>Balai</Label>
+                <Label htmlFor="user-balai">Balai</Label>
                 <Select
-                  value={watch("balaiId")?.toString() || ""}
-                  onValueChange={(v) => setValue("balaiId", Number(v))}
+                  value={watch("balaiId")?.toString() || "__none__"}
+                  onValueChange={(v) => {
+                    setValue("balaiId", v === "__none__" ? null : Number(v));
+                    setValue("satkerId", null);
+                  }}
                 >
-                  <SelectTrigger className="w-full h-10">
-                    <SelectValue placeholder="Pilih balai (opsional)" />
+                  <SelectTrigger id="user-balai" className="w-full h-10">
+                    <SelectValue placeholder="Pilih balai" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="__none__">— Tidak ada (akun pusat) —</SelectItem>
                     {balaiList.map((b) => (
                       <SelectItem key={b.id} value={b.id.toString()}>
                         {b.shortName && (
@@ -353,6 +374,33 @@ export function UserFormDialog({ open, onClose, onSuccess, editData }: Props) {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="user-satker">Satker</Label>
+                <Select
+                  value={watch("satkerId") || "__none__"}
+                  disabled={!watch("balaiId")}
+                  onValueChange={(v) => setValue("satkerId", v === "__none__" ? null : v)}
+                >
+                  <SelectTrigger id="user-satker" className="w-full h-10">
+                    <SelectValue placeholder="Pilih satker" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— Tidak ada (akun Balai) —</SelectItem>
+                    {satkerList.map((st) => (
+                      <SelectItem key={st.id} value={st.id}>
+                        {st.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!!watch("balaiId") && satkerList.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Balai ini belum punya satker di Master Data.
+                  </p>
+                )}
               </div>
             </div>
           </Section>

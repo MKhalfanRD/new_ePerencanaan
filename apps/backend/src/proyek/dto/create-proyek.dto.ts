@@ -12,122 +12,14 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { FormValueDto } from './preview-skor.dto';
+import { PaketInputDto } from '../../paket/dto/create-paket.dto';
 
-export class AlokasiDto {
-  @ApiProperty({ example: 2025 })
-  @IsInt()
-  tahun: number;
-
-  @ApiProperty({ enum: ['RENCANA', 'REALISASI'] })
-  @IsEnum(['RENCANA', 'REALISASI'])
-  status: string;
-
-  @ApiPropertyOptional({ example: 1000000000 })
-  @IsOptional()
-  @IsNumber()
-  rm?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  rmp?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  pln?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  sbsn?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  kpbu?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  outputTarget?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  outputUnit?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  outcomeTarget?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  outcomeUnit?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  catatan?: string;
-}
-
-/**
- * 1 Proyek bisa punya banyak Paket. Field tagging (PKPN/ISP/ISK/Tematik/
- * fkb/fkw/mpa/catatan) sudah pindah ke Proyek (1 proyek = 1 set tagging) —
- * lihat CreateProyekDto. Sisa di sini murni identitas & alokasi paket.
- */
-export class PaketDto {
+/** Paket di form Buat Proyek — isian sama dengan POST /paket. */
+export class PaketDto extends PaketInputDto {
   @ApiPropertyOptional({ description: 'Kosongkan untuk paket baru' })
   @IsOptional()
   @IsString()
   id?: string;
-
-  // kodePaket sengaja tidak ada di sini — digenerate otomatis di service.
-
-  @ApiProperty()
-  @IsString()
-  name: string;
-
-  @ApiProperty({ example: '005' })
-  @IsString()
-  roId: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  komponenId?: string;
-
-  @ApiProperty({ enum: ['FISIK', 'NON_FISIK'] })
-  @IsEnum(['FISIK', 'NON_FISIK'])
-  jenis: string;
-
-  @ApiProperty({ enum: ['SINGLE_YEAR', 'MULTI_YEAR'] })
-  @IsEnum(['SINGLE_YEAR', 'MULTI_YEAR'])
-  masaPelaksanaan: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  dokLingStatus?: string;
-
-  @ApiPropertyOptional() @IsOptional() @IsString() indikatorRoId?: string;
-
-  // Isian field custom tab Pemaketan (paket_form_value).
-  @ApiPropertyOptional({ type: [FormValueDto] })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => FormValueDto)
-  formValues?: FormValueDto[];
-
-  @ApiPropertyOptional({ type: [AlokasiDto] })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => AlokasiDto)
-  alokasi?: AlokasiDto[];
 }
 
 export class CreateProyekDto {
@@ -298,6 +190,12 @@ export class CreateProyekDto {
   @IsOptional()
   @IsString()
   catatanSspsda?: string;
+
+  // Pemaketan: saldo (kosong = tanpa batas) & izin satker ubah paket.
+  @ApiPropertyOptional() @IsOptional() @IsNumber() saldoAnggaran?: number | null;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() saldoVolumeRo?: number | null;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() saldoVolumeIro?: number | null;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() satkerBolehUbahPaket?: boolean;
 
   // Relasi
   @ApiPropertyOptional({ type: [PaketDto] })

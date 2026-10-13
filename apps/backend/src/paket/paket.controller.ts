@@ -28,7 +28,7 @@ export class PaketController {
   @Roles('SATKER', 'ADMINISTRATOR')
   @Post()
   create(@Body() dto: CreatePaketDto, @CurrentUser() user: any) {
-    return this.paketService.create(dto, user.role);
+    return this.paketService.create(dto, user);
   }
 
   @ApiOperation({
@@ -43,14 +43,18 @@ export class PaketController {
   @ApiOperation({ summary: 'Edit paket' })
   @Roles('SATKER', 'ADMINISTRATOR')
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdatePaketDto) {
-    return this.paketService.update(id, dto);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdatePaketDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.paketService.update(id, dto, user);
   }
 
   @ApiOperation({ summary: 'Hapus paket' })
   @Roles('SATKER', 'ADMINISTRATOR')
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.paketService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.paketService.remove(id, user);
   }
 }

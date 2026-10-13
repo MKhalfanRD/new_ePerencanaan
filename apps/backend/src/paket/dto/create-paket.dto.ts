@@ -1,7 +1,10 @@
 import {
   IsArray,
-  IsOptional,
+  IsBoolean,
   IsEnum,
+  IsInt,
+  IsNumber,
+  IsOptional,
   IsString,
   ValidateNested,
 } from 'class-validator';
@@ -9,43 +12,74 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { FormValueDto } from '../../proyek/dto/preview-skor.dto';
 
-export class CreatePaketDto {
-  @ApiProperty()
-  @IsString()
-  proyekId: string;
+export class PaketIndikatorRoDto {
+  @ApiProperty() @IsString() indikatorRoId: string;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() volume?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() satuan?: string;
+}
 
-  // kodePaket sengaja tidak ada di sini — digenerate otomatis di service
-  // (lihat src/common/kode-generator.ts), bukan input manual.
+/** Alokasi RENCANA 1 tahun (rupiah per sumber dana). */
+export class PaketAlokasiDto {
+  @ApiProperty({ example: 2026 }) @IsInt() tahun: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() rm?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() rmp?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() pln?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() sbsn?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() kpbu?: number;
+}
 
-  @ApiProperty()
-  @IsString()
-  name: string;
+/** Isian 1 paket (format baru) — dipakai POST/PATCH /paket & Buat Proyek. */
+export class PaketInputDto {
+  // kodePaket sengaja tidak ada di sini — digenerate otomatis di service.
+  @ApiProperty() @IsString() name: string;
 
-  @ApiProperty({ example: '005' })
-  @IsString()
-  roId: string;
+  @ApiProperty({ example: '005' }) @IsString() roId: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional() @IsOptional() @IsString() komponenId?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() satkerId?: string;
+
+  @ApiPropertyOptional({ type: [String], description: 'id provinsi' })
   @IsOptional()
-  @IsString()
-  komponenId?: string;
+  @IsArray()
+  @IsString({ each: true })
+  lokasiRo?: string[];
 
-  @ApiProperty({ enum: ['FISIK', 'NON_FISIK'] })
-  @IsEnum(['FISIK', 'NON_FISIK'])
-  jenis: string;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() volumeRo?: number;
 
-  @ApiProperty({ enum: ['SINGLE_YEAR', 'MULTI_YEAR'] })
-  @IsEnum(['SINGLE_YEAR', 'MULTI_YEAR'])
-  masaPelaksanaan: string;
-
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: [PaketIndikatorRoDto] })
   @IsOptional()
-  @IsString()
-  dokLingStatus?: string;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PaketIndikatorRoDto)
+  indikatorRo?: PaketIndikatorRoDto[];
 
-  // PKPN/ISP/ISK/Tematik/fkb/fkw/mpa/catatan pindah ke Proyek (1 proyek =
-  // 1 set tagging) — lihat CreateProyekDto.
-  @ApiPropertyOptional() @IsOptional() @IsString() indikatorRoId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsInt() tahunMulai?: number;
+  @ApiPropertyOptional() @IsOptional() @IsInt() tahunSelesai?: number;
+
+  @ApiPropertyOptional({ type: [PaketAlokasiDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PaketAlokasiDto)
+  alokasi?: PaketAlokasiDto[];
+
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() lokasiSamaProyek?: boolean;
+  @ApiPropertyOptional({ enum: ['TITIK', 'GARIS', 'POLIGON'] })
+  @IsOptional()
+  @IsEnum(['TITIK', 'GARIS', 'POLIGON'])
+  tipeKoordinat?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() provinceId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() provinceName?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() cityId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() cityName?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() districtId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() districtName?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() villageId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() villageName?: string;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() latitude?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() longitude?: number;
+  @ApiPropertyOptional() @IsOptional() @IsArray() coordinates?: number[][];
 
   // Isian field custom tab Pemaketan (paket_form_value).
   @ApiPropertyOptional({ type: [FormValueDto] })
@@ -54,4 +88,8 @@ export class CreatePaketDto {
   @ValidateNested({ each: true })
   @Type(() => FormValueDto)
   formValues?: FormValueDto[];
+}
+
+export class CreatePaketDto extends PaketInputDto {
+  @ApiProperty() @IsString() proyekId: string;
 }

@@ -69,6 +69,7 @@ import {
 } from "@/lib/option-sources";
 import { SOURCE_EDITORS } from "@/lib/option-source-editors";
 import { nilaiKondisi } from "@/lib/form-condition";
+import { PEMAKETAN_INTI_KEYS } from "@/components/proyek/paket-template";
 import {
   fmtSkor,
   maksTab,
@@ -111,7 +112,7 @@ const ENUM_ITEM_KEYS = new Set([
 
 const TAB_NOTES: Partial<Record<TabKey, string>> = {
   pemaketan:
-    "Field di sini diisi per paket (form Buat Proyek & dialog Tambah/Edit Paket). Nama Paket, RO, Jenis & Masa Pelaksanaan selalu tampil. Blok alokasi tahun berjalan selalu tampil di bawah field paket. Field upload tidak tersedia untuk paket.",
+    "Bagian \"Sekali per proyek\" tampil di tab ini; bagian \"Per paket\" jadi kartu di dialog paket. Field inti (saldo, kategori, daftar paket, data paket) tidak bisa dihapus, tapi bisa diganti nama, diurutkan, dipindah bagian, atau disembunyikan.",
 };
 
 const FIELD_TYPE_LABEL: Record<string, string> = {
@@ -212,6 +213,8 @@ export function FormProyekTab({
 
   const [addSectionTabId, setAddSectionTabId] = useState<string | null>(null);
   const [newSectionLabel, setNewSectionLabel] = useState("");
+  // Tab Pemaketan: bagian baru diisi sekali per proyek / per paket.
+  const [newSectionPerPaket, setNewSectionPerPaket] = useState(false);
   const [newItemLabel, setNewItemLabel] = useState("");
   const [newItemType, setNewItemType] =
     useState<(typeof FIELD_TYPE_OPTIONS)[number]>("CHECKBOX");
@@ -284,7 +287,9 @@ export function FormProyekTab({
         tabId: addSectionTabId,
         key: newSectionLabel.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-"),
         label: newSectionLabel.trim(),
+        perPaket: newSectionPerPaket,
       });
+      setNewSectionPerPaket(false);
       setAddSectionTabId(null);
       setNewSectionLabel("");
       bump();
@@ -803,6 +808,9 @@ export function FormProyekTab({
   // ===== "Tampil jika" — field muncul hanya kalau field pemicu bernilai
   // salah satu pilihan yang dicentang (lihat lib/form-condition.ts). =====
   const pilihanItem = (it: FormItemNode): { value: string; label: string }[] => {
+    const defSumber = it.optionSource ? OPTION_SOURCES[it.optionSource] : undefined;
+    if (defSumber?.rowsBy && defSumber.parent === "kegiatan")
+      return defSumber.rowsBy(sourceData[it.optionSource!] ?? [], kegiatanId);
     if (it.optionSource)
       return sourceRowsFor(it.key, it.optionSource, sourceData[it.optionSource] ?? []);
     if (it.options.length)
@@ -1069,6 +1077,39 @@ export function FormProyekTab({
             onChange={(v) => patchSection(section.id, { isActive: v })}
           />
         </div>
+        {tab.key === "pemaketan" &&
+          (() => {
+            // Bagian berisi field inti tidak bisa ganti jenis (field intinya
+            // khusus per proyek / per paket).
+            const adaInti = section.items.some((i) => PEMAKETAN_INTI_KEYS.has(i.key));
+            return (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Diisi</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    [false, "Sekali per proyek"],
+                    [true, "Per paket"],
+                  ].map(([v, l]) => (
+                    <Button
+                      key={String(v)}
+                      type="button"
+                      size="sm"
+                      variant={!!section.perPaket === v ? "default" : "outline"}
+                      disabled={adaInti}
+                      onClick={() => patchSection(section.id, { perPaket: v })}
+                    >
+                      {l as string}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {adaInti
+                    ? "Berisi field inti, jenisnya tetap."
+                    : "Per paket = jadi kartu di dialog paket."}
+                </p>
+              </div>
+            );
+          })()}
         {(tab.key === "valuasi" || tab.key === "kinerja") &&
           (() => {
             // Bagian Valuasi/Kinerja bisa khusus kategori proyek tertentu.
@@ -1086,12 +1127,12 @@ export function FormProyekTab({
                   <p className="text-sm font-bold">Berlaku untuk kategori proyek</p>
                   <p className="text-[11px] text-muted-foreground">
                     Tidak dicentang = bagian selalu muncul. Daftar kategori diatur di
-                    field Kategori Proyek (tab Valuasi).
+                    field Kategori Proyek (tab Pemaketan).
                   </p>
                 </div>
                 {!kategori ? (
                   <p className="text-[11px] text-amber-700">
-                    Belum ada field Kategori Proyek di tab Valuasi.
+                    Belum ada field Kategori Proyek di tab Pemaketan.
                   </p>
                 ) : (
                   pilihanItem(kategori).map((o) => (
@@ -1123,15 +1164,17 @@ export function FormProyekTab({
             ? () => pindahUrutan(tab.sections, section.id, 1, "form-section")
             : null,
         )}
-        <Button
-          variant="outline"
-          className="w-full border-destructive/40 text-destructive hover:bg-destructive/5"
-          onClick={() =>
-            setDeleteTarget({ type: "section", id: section.id, label: section.label })
-          }
-        >
-          <Trash2 size={14} className="mr-1.5" /> Hapus bagian
-        </Button>
+        {!section.items.some((i) => PEMAKETAN_INTI_KEYS.has(i.key)) && (
+          <Button
+            variant="outline"
+            className="w-full border-destructive/40 text-destructive hover:bg-destructive/5"
+            onClick={() =>
+              setDeleteTarget({ type: "section", id: section.id, label: section.label })
+            }
+          >
+            <Trash2 size={14} className="mr-1.5" /> Hapus bagian
+          </Button>
+        )}
       </div>
     );
   };
@@ -1330,6 +1373,42 @@ export function FormProyekTab({
                     disabled={!!induKTersembunyi}
                     onChange={(v) => patchItem(item.id, { isActive: v })}
                   />
+                </div>
+              );
+            })()}
+          {!induk &&
+            (() => {
+              // Pindah ke bagian lain di tab yang sama (field inti paket cuma
+              // antar bagian per paket, inti proyek cuma antar bagian proyek).
+              const inti = PEMAKETAN_INTI_KEYS.has(item.key);
+              const tujuan = tab.sections.filter(
+                (sec) =>
+                  sec.id !== section.id &&
+                  (!inti || !!sec.perPaket === !!section.perPaket),
+              );
+              if (!tujuan.length) return null;
+              return (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Pindah ke bagian lain</Label>
+                  <Select
+                    value=""
+                    onValueChange={(v) => {
+                      patchItem(item.id, { sectionId: v });
+                      setSelectedSectionId(null);
+                    }}
+                  >
+                    <SelectTrigger aria-label="Pindah ke bagian lain" className="h-9 text-sm">
+                      <SelectValue placeholder={`Sekarang: ${section.label}`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tujuan.map((sec) => (
+                        <SelectItem key={sec.id} value={sec.id}>
+                          {sec.label}
+                          {tab.key === "pemaketan" && (sec.perPaket ? " · per paket" : " · per proyek")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               );
             })()}
@@ -1778,7 +1857,7 @@ export function FormProyekTab({
           )}
         </div>
 
-        {!wajibTetap && (
+        {!wajibTetap && !PEMAKETAN_INTI_KEYS.has(item.key) && (
           <Button
             variant="outline"
             className="w-full border-destructive/40 text-destructive hover:bg-destructive/5"
@@ -1893,6 +1972,17 @@ export function FormProyekTab({
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-sm font-bold">{section.label}</span>
+                  {tabKey === "pemaketan" && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "shrink-0 text-[10px] font-normal",
+                        section.perPaket ? "border-primary/40 text-primary" : "text-muted-foreground",
+                      )}
+                    >
+                      {section.perPaket ? "Per paket" : "Sekali per proyek"}
+                    </Badge>
+                  )}
                   {section.conditionItemId && (
                     <Badge variant="outline" className="shrink-0 text-[10px] font-normal text-primary">
                       Khusus {syaratBagian(section)}
@@ -2245,7 +2335,12 @@ export function FormProyekTab({
       {/* Dialog: tambah section */}
       <Dialog
         open={!!addSectionTabId}
-        onOpenChange={(v) => !v && setAddSectionTabId(null)}
+        onOpenChange={(v) => {
+          if (!v) {
+            setAddSectionTabId(null);
+            setNewSectionPerPaket(false);
+          }
+        }}
       >
         <DialogContent onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
@@ -2261,6 +2356,26 @@ export function FormProyekTab({
               placeholder="Contoh: Kelengkapan Proyek"
               onKeyDown={(e) => e.key === "Enter" && submitAddSection()}
             />
+            {templateTabs.find((t) => t.id === addSectionTabId)?.key === "pemaketan" && (
+              <div className="space-y-1.5 pt-2">
+                <Label>Diisi</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    [false, "Sekali per proyek"],
+                    [true, "Per paket"],
+                  ].map(([v, l]) => (
+                    <Button
+                      key={String(v)}
+                      type="button"
+                      variant={newSectionPerPaket === v ? "default" : "outline"}
+                      onClick={() => setNewSectionPerPaket(v as boolean)}
+                    >
+                      {l as string}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddSectionTabId(null)}>

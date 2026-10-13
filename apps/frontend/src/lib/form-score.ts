@@ -140,25 +140,26 @@ export function bandingkan(nilai: number, operator: string, standar: number) {
   }
 }
 
-export function ringkasPaket(
-  alokasi: {
-    status?: string | null;
-    total?: unknown;
-    outputTarget?: unknown;
-    outputUnit?: string | null;
-    outcomeTarget?: unknown;
-    outcomeUnit?: string | null;
-  }[],
-): RingkasPaket {
-  const rencana = alokasi.filter((a) => !a.status || a.status === "RENCANA");
+/** Ringkasan 1 paket utk rasio & saldo (sama dgn backend form-skor.ts). */
+export interface PaketRingkas {
+  total: number;
+  utama: boolean;
+  volumeRo: number;
+  satuanRo?: string | null;
+  iro: { volume: number; satuan?: string | null }[];
+}
+/** A = anggaran SEMUA paket; B/C = volume RO/IRO paket berkomponen UTAMA. */
+export function ringkasPaket(paket: PaketRingkas[]): RingkasPaket {
+  const utama = paket.filter((p) => p.utama);
   const unik = (xs: (string | null | undefined)[]) =>
     [...new Set(xs.map((x) => x?.trim()).filter((x): x is string => !!x))];
+  const iro = utama.flatMap((p) => p.iro);
   return {
-    A: rencana.reduce((s, a) => s + Number(a.total ?? 0), 0),
-    B: rencana.reduce((s, a) => s + Number(a.outputTarget ?? 0), 0),
-    C: rencana.reduce((s, a) => s + Number(a.outcomeTarget ?? 0), 0),
-    satuanB: unik(rencana.map((a) => a.outputUnit)),
-    satuanC: unik(rencana.map((a) => a.outcomeUnit)),
+    A: paket.reduce((s, p) => s + p.total, 0),
+    B: utama.reduce((s, p) => s + p.volumeRo, 0),
+    C: iro.reduce((s, i) => s + i.volume, 0),
+    satuanB: unik(utama.filter((p) => p.volumeRo).map((p) => p.satuanRo)),
+    satuanC: unik(iro.filter((i) => i.volume).map((i) => i.satuan)),
   };
 }
 

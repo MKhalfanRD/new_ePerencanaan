@@ -10,6 +10,8 @@ import {
   Target,
   Tags,
   Flag,
+  MapPin,
+  Shapes,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +22,8 @@ import { FormProyekTab } from "@/components/master/form-proyek-tab";
 import { PnppkpTab } from "@/components/master/pnppkp-tab";
 import { TaggingRenjaTab } from "@/components/master/tagging-renja-tab";
 import { SasaranTab } from "@/components/master/sasaran-tab";
+import { ProvinsiTab } from "@/components/master/provinsi-tab";
+import { KategoriProyekTab } from "@/components/master/kategori-proyek-tab";
 
 // Program/Kegiatan/KRO/RO/IRO/Komponen/Tahun jadi SATU halaman
 // ("Nomenklatur") — tab "Periode" lama dilebur ke sana sebagai bagian
@@ -28,6 +32,8 @@ const tabs = [
   { id: "nomenklatur", label: "Nomenklatur", icon: FolderTree },
   { id: "balai", label: "Balai", icon: Building2 },
   { id: "wilayah-sungai", label: "Wilayah Sungai", icon: Droplets },
+  { id: "provinsi", label: "Provinsi", icon: MapPin },
+  { id: "kategori-proyek", label: "Kategori Proyek", icon: Shapes },
   { id: "form-proyek", label: "Form Proyek", icon: ClipboardCheck },
   { id: "pnppkp", label: "PN / PP / KP", icon: Target },
   { id: "tagging-renja", label: "Tagging RENJA", icon: Tags },
@@ -86,6 +92,8 @@ function MasterPageInner() {
         {activeTab === "balai" && <BalaiTab />}
         {activeTab === "nomenklatur" && <NomenklaturTab />}
         {activeTab === "wilayah-sungai" && <WilayahSungaiTab />}
+        {activeTab === "provinsi" && <ProvinsiTab />}
+        {activeTab === "kategori-proyek" && <KategoriProyekTab />}
         {activeTab === "form-proyek" && (
           <FormProyekTab initialKegiatanId={initialKegiatanId} />
         )}

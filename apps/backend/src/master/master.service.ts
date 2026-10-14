@@ -828,8 +828,28 @@ export class MasterService {
     if (sama) throw new BadRequestException(`Satker "${name}" sudah ada di balai ini`);
     return { balaiId, name };
   }
+  /** Kode berikutnya: SK + 4 digit, lanjut dari nomor terbesar. */
+  private async kodeSatkerBaru() {
+    const akhir = await this.prisma.satker.findFirst({
+      where: { kode: { startsWith: 'SK' } },
+      orderBy: { kode: 'desc' },
+      select: { kode: true },
+    });
+    const n = Number(akhir?.kode.slice(2)) || 0;
+    return `SK${String(n + 1).padStart(4, '0')}`;
+  }
   async createSatker(dto: { balaiId?: unknown; name?: unknown }) {
-    return this.prisma.satker.create({ data: await this.dataSatker(dto) });
+    const data = await this.dataSatker(dto);
+    // Dua admin menyimpan bersamaan bisa dapat kode sama -> coba lagi.
+    for (let coba = 0; ; coba++) {
+      try {
+        return await this.prisma.satker.create({
+          data: { ...data, kode: await this.kodeSatkerBaru() },
+        });
+      } catch (err: any) {
+        if (err?.code !== 'P2002' || coba >= 3) throw err;
+      }
+    }
   }
   async updateSatker(id: string, dto: { balaiId?: unknown; name?: unknown }) {
     return this.prisma.satker.update({ where: { id }, data: await this.dataSatker(dto, id) });

@@ -9,25 +9,26 @@ import { FormFieldType, Prisma } from '@prisma/client';
 type Baku = [key: string, label: string, fieldType: FormFieldType, extra?: object];
 
 const SALDO: Baku[] = [
+  // Saklar izin satker paling atas: menentukan satker boleh mengisi saldo,
+  // kategori & paket.
+  ['satkerBolehUbahPaket', 'Satker boleh membuat & mengubah paket', 'CHECKBOX'],
   ['saldoAnggaran', 'Saldo anggaran', 'NUMBER'],
   ['saldoVolumeRo', 'Saldo volume RO', 'NUMBER'],
   ['saldoVolumeIro', 'Saldo volume IRO', 'NUMBER'],
 ];
 const PAKET_PROYEK: Baku[] = [
   ['kategoriProyek', 'Kategori proyek', 'DROPDOWN', { optionSource: 'kategoriProyek' }],
-  ['satkerBolehUbahPaket', 'Satker boleh membuat & mengubah paket', 'CHECKBOX'],
   ['daftarPaket', 'Daftar paket', 'TEXT'],
 ];
+// Komponen, volume RO/IRO & sumber dana diisi per tahun di "Rincian per tahun".
 const PER_PAKET: Baku[] = [
   ['paketSatker', 'Satker', 'DROPDOWN'],
   ['paketName', 'Nama paket', 'TEXT'],
   ['paketRo', 'KRO / RO', 'DROPDOWN'],
-  ['paketKomponen', 'Komponen', 'DROPDOWN'],
-  ['paketLokasiRo', 'Lokasi RO', 'CHECKBOX'],
-  ['paketVolumeRo', 'Volume RO', 'NUMBER'],
   ['paketIndikatorRo', 'Indikator RO', 'DROPDOWN'],
   ['paketTahun', 'Tahun pelaksanaan', 'NUMBER'],
-  ['paketAlokasi', 'Alokasi anggaran', 'NUMBER'],
+  ['paketAlokasi', 'Rincian per tahun', 'NUMBER'],
+  ['paketLokasiRo', 'Lokasi RO', 'CHECKBOX'],
   ['paketLokasi', 'Lokasi paket', 'TEXT'],
 ];
 

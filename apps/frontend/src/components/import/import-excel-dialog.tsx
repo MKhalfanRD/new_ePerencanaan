@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useRef, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   Upload,
   FileSpreadsheet,
@@ -10,13 +11,10 @@ import {
   ArrowRight,
   ArrowLeft,
   X,
-  Sparkles,
   AlertTriangle,
   Download,
-  Copy,
-  RefreshCw,
-  SkipForward,
-  Search,
+  Info,
+  ExternalLink,
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
@@ -32,7 +30,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -51,27 +48,37 @@ interface UnmatchedBalai {
   excelName: string;
   suggestions: { id: number; name: string; score: number }[];
 }
-interface ExistingProyek {
-  groupKey: string;
-  namaProyek: string;
+interface NilaiAlokasi {
+  tahun: number;
+  komponen: string;
+  volRo: number | null;
+  volIro: number | null;
+  rm: number;
+  rmp: number;
+  pln: number;
+  sbsn: number;
+  kpbu: number;
+  total: number;
+}
+interface Duplikat {
+  excelRowNumber: number;
+  sheet: string;
   balaiName: string;
-  existingId: string;
-  existingPaketCount: number;
-  existingTotal: number;
-  newPaketCount: number;
-  newTotal: number;
+  namaProyek: string;
+  namaPaket: string;
+  tahun: number;
+  alasan: string;
+  sumberLama: string;
+  lama: NilaiAlokasi;
+  excel: NilaiAlokasi;
 }
 interface ParseError {
   excelRowNumber: number;
+  sheet?: string;
   namaProyek: string;
   balaiName: string;
   reason: string;
 }
-interface TemplateColumn {
-  key: string;
-  required: boolean;
-}
-
 interface PreviewResult {
   sessionId: string;
   summary: {
@@ -80,25 +87,49 @@ interface PreviewResult {
     totalRowsError: number;
     totalProyek: number;
     totalProyekBaru: number;
-    totalProyekDuplikat: number;
+    totalAlokasiBaru: number;
+    totalDuplikat: number;
     totalBalaiTerdeteksi: number;
     totalBalaiMatched: number;
     totalBalaiUnmatched: number;
   };
   matched: MatchedBalai[];
   unmatched: UnmatchedBalai[];
-  existingProyek: ExistingProyek[];
+  duplikat: Duplikat[];
   parseErrors: ParseError[];
+  info: string[];
+  rencana: RencanaProyek[];
+  bolehBuatBalai: boolean;
+}
+
+interface RencanaProyek {
+  namaProyek: string;
+  balaiName: string;
+  kegiatan: string;
+  aksi: "baru" | "ditambah";
+  proyekId: string | null;
+  paket: { nama: string; baru: boolean; tahun: number[] }[];
+}
+
+interface HasilProyek {
+  proyekId: string;
+  kodeProyek: string;
+  namaProyek: string;
+  aksi: "baru" | "ditambah";
+  paketBaru: number;
+  alokasiBaru: number;
 }
 
 interface CommitResult {
   message: string;
   createdProyek: number;
   updatedProyek: number;
-  skippedProyek: number;
   createdPaket: number;
+  createdAlokasi: number;
+  skippedDuplikat: number;
   skipped: number;
   commitErrors: ParseError[];
+  hasil: HasilProyek[];
 }
 
 type Resolution = {
@@ -106,48 +137,184 @@ type Resolution = {
   useExistingBalaiId?: number;
   createNew?: boolean;
 };
-type ProyekAction = "skip" | "replace";
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  /** lihatHasil = true: tampilkan daftar proyek dengan filter "Hasil import terakhir". */
+  onSuccess: (lihatHasil?: boolean) => void;
 }
 
-const formatRupiah = (val: number) =>
-  new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(val);
+const KOLOM_BANDING: [keyof NilaiAlokasi, string][] = [
+  ["tahun", "Tahun"],
+  ["komponen", "Komponen"],
+  ["volRo", "Vol RO"],
+  ["volIro", "Vol IRO"],
+  ["rm", "RM"],
+  ["rmp", "RMP"],
+  ["pln", "PLN"],
+  ["sbsn", "SBSN"],
+  ["kpbu", "KPBU"],
+  ["total", "Total"],
+];
+const tampilNilai = (k: keyof NilaiAlokasi, v: string | number | null) =>
+  v == null || v === ""
+    ? "-"
+    : k === "tahun" || typeof v === "string"
+      ? String(v)
+      : new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 }).format(v);
 
-// Satu contoh valid per kolom wajib supaya file template langsung bisa
-// diisi tanpa menebak format (lihat validasi di import.service.ts).
-const CONTOH_WAJIB: Record<string, string> = {
-  jenisPaket: "F",
-  masaLaksana: "Single Year",
-  namaPaket: "Contoh Paket Normalisasi Sungai",
-  kdKegiatan: "5601",
-  kdRO: "EAA",
-};
-
-function downloadTemplate(columns: TemplateColumn[]) {
-  const header = columns.map((c) =>
-    c.key === "kodeProyek" ? "KodeProyek" : c.key,
+// Sandingkan alokasi pembanding (sistem / baris Excel lain) dengan baris
+// Excel yang duplikat; nilai yang berbeda disorot.
+function TabelBanding({ d }: { d: Duplikat }) {
+  return (
+    <table className="w-full text-xs mt-2 border rounded">
+      <thead className="bg-muted/50">
+        <tr>
+          <th className="text-left p-1.5 font-medium w-24"></th>
+          <th className="text-left p-1.5 font-medium">{d.sumberLama}</th>
+          <th className="text-left p-1.5 font-medium">
+            Excel {d.sheet} baris #{d.excelRowNumber}
+          </th>
+        </tr>
+      </thead>
+      <tbody className="divide-y">
+        {KOLOM_BANDING.map(([k, label]) => {
+          const beda = d.lama[k] !== d.excel[k];
+          return (
+            <tr key={k} className={beda ? "bg-amber-50" : undefined}>
+              <td className="p-1.5 text-muted-foreground">{label}</td>
+              <td className="p-1.5">{tampilNilai(k, d.lama[k])}</td>
+              <td className={`p-1.5 ${beda ? "font-semibold text-amber-700" : ""}`}>
+                {tampilNilai(k, d.excel[k])}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
-  const contoh = columns.map((c) => CONTOH_WAJIB[c.key] ?? "");
-  const ws = XLSX.utils.aoa_to_sheet([header, contoh]);
-  ws["!cols"] = columns.map(() => ({ wch: 16 }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Template Import");
-  XLSX.writeFile(wb, `template-import-proyek-${Date.now()}.xlsx`);
+}
+
+function RencanaPanel({ items }: { items: RencanaProyek[] }) {
+  const [batas, setBatas] = useState(30);
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <div className="p-3 bg-muted/40">
+        <p className="text-sm font-medium">Rencana import ({items.length} proyek)</p>
+        <p className="text-xs text-muted-foreground">
+          Belum ada data tersimpan. Periksa daftar ini, lalu klik Import Sekarang
+          untuk menyetujui.
+        </p>
+      </div>
+      <ul className="divide-y border-t max-h-80 overflow-y-auto">
+        {items.slice(0, batas).map((r, i) => (
+          <li key={i} className="p-2.5 text-xs space-y-1">
+            <div className="flex items-start gap-2">
+              <Badge
+                variant={r.aksi === "baru" ? "default" : "secondary"}
+                className="text-[10px] shrink-0"
+              >
+                {r.aksi === "baru" ? "Proyek baru" : "Ditambah"}
+              </Badge>
+              <div className="min-w-0">
+                <p className="font-medium truncate">{r.namaProyek}</p>
+                <p className="text-muted-foreground truncate">
+                  {r.balaiName} · kegiatan {r.kegiatan}
+                </p>
+              </div>
+            </div>
+            <ul className="pl-3 space-y-0.5 text-muted-foreground">
+              {r.paket.map((pk, j) => (
+                <li key={j} className="truncate">
+                  {pk.baru ? "Paket baru" : "Tambah tahun"}: {pk.nama} ·{" "}
+                  {pk.tahun.join(", ")}
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+        {items.length > batas && (
+          <li className="p-2 text-center">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={() => setBatas((b) => b + 30)}
+            >
+              Tampilkan lagi ({items.length - batas} tersisa)
+            </Button>
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
+function DuplikatPanel({ items }: { items: Duplikat[] }) {
+  const [buka, setBuka] = useState<number | null>(null);
+  // File Renstra bisa ribuan duplikat — tampilkan bertahap.
+  const [batas, setBatas] = useState(50);
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 overflow-hidden">
+      <div className="flex items-center gap-2 p-3">
+        <AlertTriangle size={15} className="text-amber-600" />
+        <span className="text-sm font-medium text-amber-800">
+          {items.length} alokasi duplikat, tidak diimpor
+        </span>
+      </div>
+      <ul className="divide-y border-t border-amber-200 bg-white max-h-80 overflow-y-auto">
+        {items.slice(0, batas).map((d, i) => (
+          <li key={i} className="p-2.5 text-xs">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-medium truncate">
+                  {d.sheet} #{d.excelRowNumber} · {d.namaPaket}
+                </p>
+                <p className="text-muted-foreground truncate">
+                  {d.namaProyek} · {d.balaiName}
+                </p>
+                <p className="text-amber-700 mt-0.5">{d.alasan}</p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs shrink-0"
+                onClick={() => setBuka(buka === i ? null : i)}
+              >
+                {buka === i ? "Tutup" : "Lihat detail"}
+              </Button>
+            </div>
+            {buka === i && <TabelBanding d={d} />}
+          </li>
+        ))}
+        {items.length > batas && (
+          <li className="p-2 text-center">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={() => setBatas((b) => b + 50)}
+            >
+              Tampilkan lagi ({items.length - batas} tersisa)
+            </Button>
+          </li>
+        )}
+      </ul>
+    </div>
+  );
 }
 
 function downloadErrorsToExcel(errors: ParseError[], filename: string) {
   const rows = errors.map((e) => ({
+    Sheet: e.sheet ?? "",
     "Baris Excel": e.excelRowNumber,
     "Nama Proyek": e.namaProyek,
     Balai: e.balaiName,
     "Alasan Gagal": e.reason,
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = [{ wch: 12 }, { wch: 40 }, { wch: 30 }, { wch: 50 }];
+  ws["!cols"] = [{ wch: 10 }, { wch: 12 }, { wch: 40 }, { wch: 30 }, { wch: 50 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Data Error");
   XLSX.writeFile(wb, `${filename}-${Date.now()}.xlsx`);
@@ -187,7 +354,7 @@ function ErrorTable({
             {pageData.map((e, i) => (
               <tr key={i}>
                 <td className="p-2 text-muted-foreground">
-                  #{e.excelRowNumber}
+                  {e.sheet && `${e.sheet} `}#{e.excelRowNumber}
                 </td>
                 <td className="p-2 truncate max-w-[120px]">{e.namaProyek}</td>
                 {showBalai && (
@@ -251,55 +418,26 @@ function ErrorTable({
 }
 
 export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [step, setStep] = useState<"upload" | "balai" | "duplicate" | "done">(
+  const [step, setStep] = useState<"upload" | "balai" | "done">(
     "upload",
   );
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  // DB.xlsx tidak punya kolom Tahun/Status Rencana-Realisasi (satu file =
-  // satu snapshot anggaran) — dipilih sekali untuk seluruh batch import.
-  const [importTahun, setImportTahun] = useState(
-    new Date().getFullYear().toString(),
-  );
-  const [importStatus, setImportStatus] = useState<"RENCANA" | "REALISASI">(
-    "RENCANA",
-  );
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [resolutions, setResolutions] = useState<Record<string, Resolution>>(
     {},
   );
-  const [proyekActions, setProyekActions] = useState<
-    Record<string, ProyekAction>
-  >({});
-  const [duplicatePage, setDuplicatePage] = useState(1);
-  const [duplicateSearch, setDuplicateSearch] = useState("");
   const [committing, setCommitting] = useState(false);
   const [result, setResult] = useState<CommitResult | null>(null);
   const [showParseErrors, setShowParseErrors] = useState(false);
   const [showCommitErrors, setShowCommitErrors] = useState(false);
-  const [templateColumns, setTemplateColumns] = useState<TemplateColumn[]>(
-    [],
-  );
-
-  const duplicatePerPage = 10;
-
-  useEffect(() => {
-    if (!open || templateColumns.length > 0) return;
-    api
-      .get<TemplateColumn[]>("/import/template-columns")
-      .then((res) => setTemplateColumns(res.data))
-      .catch(() => undefined);
-  }, [open, templateColumns.length]);
-
   const reset = () => {
     setStep("upload");
     setFile(null);
     setPreview(null);
     setResolutions({});
-    setProyekActions({});
-    setDuplicatePage(1);
-    setDuplicateSearch("");
     setResult(null);
     setShowParseErrors(false);
     setShowCommitErrors(false);
@@ -337,16 +475,11 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                 excelName: u.excelName,
                 useExistingBalaiId: u.suggestions[0].id,
               }
-            : { excelName: u.excelName, createNew: true };
+            : res.data.bolehBuatBalai
+              ? { excelName: u.excelName, createNew: true }
+              : { excelName: u.excelName };
       }
       setResolutions(initialResolutions);
-
-      // Default semua proyek duplikat: skip
-      const initialActions: Record<string, ProyekAction> = {};
-      for (const ep of res.data.existingProyek) {
-        initialActions[ep.groupKey] = "skip";
-      }
-      setProyekActions(initialActions);
 
       setStep("balai");
     } catch (err: any) {
@@ -362,6 +495,8 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
         ...prev,
         [excelName]: { excelName, createNew: true },
       }));
+    } else if (value === "SKIP") {
+      setResolutions((prev) => ({ ...prev, [excelName]: { excelName } }));
     } else {
       setResolutions((prev) => ({
         ...prev,
@@ -370,31 +505,13 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
     }
   };
 
-  const handleNextFromBalai = () => {
-    if (preview && preview.existingProyek.length > 0) {
-      setStep("duplicate");
-    } else {
-      handleCommit();
-    }
-  };
-
   const handleCommit = async () => {
     if (!preview) return;
     setCommitting(true);
     try {
-      const proyekResolutions = Object.entries(proyekActions).map(
-        ([groupKey, action]) => ({
-          groupKey,
-          action,
-        }),
-      );
-
       const res = await api.post<CommitResult>("/import/commit", {
         sessionId: preview.sessionId,
         balaiResolutions: Object.values(resolutions),
-        proyekResolutions,
-        tahun: Number(importTahun),
-        status: importStatus,
       });
       setResult(res.data);
       setStep("done");
@@ -405,43 +522,15 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
     }
   };
 
-  const handleFinish = () => {
-    onSuccess();
+  const handleFinish = (lihatHasil?: boolean) => {
+    onSuccess(lihatHasil);
     handleClose();
   };
 
-  const setAllProyekAction = (action: ProyekAction) => {
-    if (!preview) return;
-    const newActions: Record<string, ProyekAction> = {};
-    for (const ep of preview.existingProyek) newActions[ep.groupKey] = action;
-    setProyekActions(newActions);
+  const bukaProyek = (id: string) => {
+    handleFinish();
+    router.push(`/proyek?id=${id}`);
   };
-
-  const filteredExistingProyeks = useMemo(() => {
-    if (!preview) return [];
-    if (!duplicateSearch.trim()) return preview.existingProyek;
-    const q = duplicateSearch.toLowerCase();
-    return preview.existingProyek.filter(
-      (ep) =>
-        ep.namaProyek.toLowerCase().includes(q) ||
-        ep.balaiName.toLowerCase().includes(q),
-    );
-  }, [preview, duplicateSearch]);
-
-  const duplicateTotalPages = Math.ceil(
-    filteredExistingProyeks.length / duplicatePerPage,
-  );
-  const duplicatePageData = filteredExistingProyeks.slice(
-    (duplicatePage - 1) * duplicatePerPage,
-    duplicatePage * duplicatePerPage,
-  );
-
-  const replaceCount = Object.values(proyekActions).filter(
-    (a) => a === "replace",
-  ).length;
-  const skipCount = Object.values(proyekActions).filter(
-    (a) => a === "skip",
-  ).length;
 
   return (
     <Dialog
@@ -462,9 +551,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
           <p className="text-sm text-muted-foreground mt-1">
             {step === "upload" &&
               "Upload file Excel rekapitulasi rencana anggaran"}
-            {step === "balai" && "Periksa hasil pemetaan data balai"}
-            {step === "duplicate" &&
-              "Beberapa proyek sudah ada di sistem — pilih tindakan"}
+            {step === "balai" && "Periksa balai & alokasi duplikat"}
             {step === "done" && "Import telah selesai diproses"}
           </p>
         </DialogHeader>
@@ -501,7 +588,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   {file ? file.name : "Klik atau seret file Excel ke sini"}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Format .xlsx sesuai struktur DB.xlsx (kolom Proyek dan Paket)
+                  Format DB.xlsx (+ kolom Tahun) atau Kertas Kerja Renstra
                 </p>
               </div>
 
@@ -527,74 +614,6 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   </Button>
                 </div>
               )}
-
-              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 flex gap-2.5">
-                <Sparkles size={15} className="text-blue-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-700">
-                  Sistem akan mendeteksi proyek baru maupun yang sudah ada, lalu
-                  meminta konfirmasi sebelum data disimpan.
-                </p>
-              </div>
-
-              {templateColumns.length > 0 && (
-                <div className="rounded-lg border p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium">
-                      Belum punya file? Download template kosong
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs"
-                      onClick={() => downloadTemplate(templateColumns)}
-                    >
-                      <Download size={12} className="mr-1.5" /> Download
-                      Template
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Kolom wajib:{" "}
-                    {templateColumns
-                      .filter((c) => c.required)
-                      .map((c) => c.key)
-                      .join(", ")}
-                    . Kolom lain opsional, boleh dikosongkan.
-                  </p>
-                </div>
-              )}
-
-              {/* DB.xlsx tidak punya kolom Tahun/Status — dipilih sekali untuk
-                  seluruh file yang diimpor */}
-              <div className="grid grid-cols-2 gap-3 pt-1">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Tahun Anggaran
-                  </label>
-                  <Input
-                    type="number"
-                    value={importTahun}
-                    onChange={(e) => setImportTahun(e.target.value)}
-                    className="h-9"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Status Alokasi
-                  </label>
-                  <Select
-                    value={importStatus}
-                    onValueChange={(v) => setImportStatus(v as any)}
-                  >
-                    <SelectTrigger className="h-9">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="RENCANA">Rencana</SelectItem>
-                      <SelectItem value="REALISASI">Realisasi</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
             </div>
           )}
 
@@ -614,25 +633,46 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   <p className="text-2xl font-bold text-green-600">
                     {preview.summary.totalProyekBaru}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Baru</p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold text-amber-600">
-                    {preview.summary.totalProyekDuplikat}
-                  </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Sudah Ada
+                    Proyek Baru
                   </p>
                 </div>
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-2xl font-bold">
-                    {preview.summary.totalRowsValid}
+                    {preview.summary.totalAlokasiBaru}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Paket Valid
+                    Alokasi Masuk
+                  </p>
+                </div>
+                <div className="rounded-lg border p-3 text-center">
+                  <p className="text-2xl font-bold text-amber-600">
+                    {preview.summary.totalDuplikat}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Duplikat
                   </p>
                 </div>
               </div>
+
+              {preview.info.length > 0 && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 flex gap-2.5">
+                  <Info size={15} className="text-blue-600 shrink-0 mt-0.5" />
+                  <ul className="text-xs text-blue-800 space-y-1">
+                    {preview.info.map((t) => (
+                      <li key={t}>{t}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {preview.rencana.length > 0 && (
+                <RencanaPanel items={preview.rencana} />
+              )}
+
+              {preview.duplikat.length > 0 && (
+                <DuplikatPanel items={preview.duplikat} />
+              )}
 
               {preview.summary.totalRowsError > 0 && (
                 <div className="rounded-lg border border-red-200 bg-red-50 overflow-hidden">
@@ -721,7 +761,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                               ? "CREATE_NEW"
                               : resolutions[
                                   u.excelName
-                                ]?.useExistingBalaiId?.toString() || ""
+                                ]?.useExistingBalaiId?.toString() || "SKIP"
                           }
                           onValueChange={(v) =>
                             handleResolutionChange(u.excelName, v)
@@ -740,203 +780,19 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                                 </span>
                               </SelectItem>
                             ))}
-                            <SelectItem value="CREATE_NEW">
-                              ➕ Buat balai baru: &quot;{u.excelName}&quot;
+                            {preview.bolehBuatBalai && (
+                              <SelectItem value="CREATE_NEW">
+                                ➕ Buat balai baru: &quot;{u.excelName}&quot;
+                              </SelectItem>
+                            )}
+                            <SelectItem value="SKIP">
+                              Lewati proyek balai ini (minta admin tambah balai)
                             </SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* STEP: Duplicate proyek resolution */}
-          {step === "duplicate" && preview && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-muted-foreground shrink-0">
-                  <span className="text-amber-600 font-medium">
-                    {skipCount} pakai lama
-                  </span>
-                  ,
-                  <span className="text-blue-600 font-medium">
-                    {" "}
-                    {replaceCount} diganti baru
-                  </span>
-                </p>
-                <div className="flex gap-2 shrink-0">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs"
-                    onClick={() => setAllProyekAction("skip")}
-                  >
-                    <SkipForward size={12} className="mr-1.5" /> Skip Semua
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs"
-                    onClick={() => setAllProyekAction("replace")}
-                  >
-                    <RefreshCw size={12} className="mr-1.5" /> Replace Semua
-                  </Button>
-                </div>
-              </div>
-
-              {/* Search box */}
-              <div className="relative">
-                <Search
-                  size={14}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                />
-                <Input
-                  placeholder="Cari nama proyek atau balai..."
-                  value={duplicateSearch}
-                  onChange={(e) => {
-                    setDuplicateSearch(e.target.value);
-                    setDuplicatePage(1);
-                  }}
-                  className="pl-9 h-9 text-sm"
-                />
-                {duplicateSearch && (
-                  <button
-                    onClick={() => {
-                      setDuplicateSearch("");
-                      setDuplicatePage(1);
-                    }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-
-              {duplicateSearch && (
-                <p className="text-xs text-muted-foreground">
-                  {filteredExistingProyeks.length} hasil ditemukan untuk &quot;
-                  {duplicateSearch}&quot;
-                </p>
-              )}
-
-              <div className="space-y-2.5">
-                {duplicatePageData.length === 0 ? (
-                  <div className="text-center py-10 text-muted-foreground">
-                    <Search size={28} className="mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">
-                      Tidak ada proyek yang cocok dengan pencarian
-                    </p>
-                  </div>
-                ) : (
-                  duplicatePageData.map((ep) => {
-                    const action = proyekActions[ep.groupKey] ?? "skip";
-                    return (
-                      <div
-                        key={ep.groupKey}
-                        className="rounded-lg border p-3 space-y-2"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {ep.namaProyek}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {ep.balaiName}
-                            </p>
-                          </div>
-                          <Badge
-                            variant={
-                              action === "replace" ? "default" : "secondary"
-                            }
-                            className="text-xs shrink-0"
-                          >
-                            <Copy size={10} className="mr-1" /> Duplikat
-                          </Badge>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4 text-xs">
-                          <div className="rounded-lg bg-muted/40 p-3">
-                            <p className="text-muted-foreground mb-1">
-                              Data Lama
-                            </p>
-                            <p className="font-semibold text-sm">
-                              {ep.existingPaketCount} paket · Rp{" "}
-                              {formatRupiah(ep.existingTotal)}
-                            </p>
-                          </div>
-                          <div className="rounded-lg bg-blue-50 p-3">
-                            <p className="text-muted-foreground mb-1">
-                              Data Baru (Excel)
-                            </p>
-                            <p className="font-semibold text-sm">
-                              {ep.newPaketCount} paket · Rp{" "}
-                              {formatRupiah(ep.newTotal)}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <button
-                            onClick={() =>
-                              setProyekActions((p) => ({
-                                ...p,
-                                [ep.groupKey]: "skip",
-                              }))
-                            }
-                            className={`text-sm font-medium py-2.5 rounded-lg border transition-colors ${
-                              action === "skip"
-                                ? "bg-amber-100 border-amber-400 text-amber-700"
-                                : "border-border hover:bg-muted/40"
-                            }`}
-                          >
-                            Pakai Data Lama
-                          </button>
-                          <button
-                            onClick={() =>
-                              setProyekActions((p) => ({
-                                ...p,
-                                [ep.groupKey]: "replace",
-                              }))
-                            }
-                            className={`text-sm font-medium py-2.5 rounded-lg border transition-colors ${
-                              action === "replace"
-                                ? "bg-blue-100 border-blue-400 text-blue-700"
-                                : "border-border hover:bg-muted/40"
-                            }`}
-                          >
-                            Ganti dengan Baru
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {duplicateTotalPages > 1 && (
-                <div className="flex items-center justify-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={duplicatePage === 1}
-                    onClick={() => setDuplicatePage((p) => p - 1)}
-                  >
-                    Sebelumnya
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    Halaman {duplicatePage} dari {duplicateTotalPages}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={duplicatePage === duplicateTotalPages}
-                    onClick={() => setDuplicatePage((p) => p + 1)}
-                  >
-                    Berikutnya
-                  </Button>
                 </div>
               )}
             </div>
@@ -964,7 +820,8 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                       : "Import Berhasil!"}
                   </p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Data dari Excel telah diproses ke dalam sistem
+                    {result.createdPaket} paket baru, {result.createdAlokasi}{" "}
+                    alokasi masuk
                   </p>
                 </div>
               </div>
@@ -974,19 +831,23 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   <p className="text-xl font-bold text-green-600">
                     {result.createdProyek}
                   </p>
-                  <p className="text-xs text-muted-foreground">Baru</p>
+                  <p className="text-xs text-muted-foreground">Proyek Baru</p>
                 </div>
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-xl font-bold text-blue-600">
                     {result.updatedProyek}
                   </p>
-                  <p className="text-xs text-muted-foreground">Diganti</p>
+                  <p className="text-xs text-muted-foreground">
+                    Proyek Ditambah
+                  </p>
                 </div>
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-xl font-bold text-amber-600">
-                    {result.skippedProyek}
+                    {result.skippedDuplikat}
                   </p>
-                  <p className="text-xs text-muted-foreground">Di-skip</p>
+                  <p className="text-xs text-muted-foreground">
+                    Duplikat Dilewati
+                  </p>
                 </div>
                 <div className="rounded-lg border p-3 text-center">
                   <p
@@ -997,6 +858,60 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   <p className="text-xs text-muted-foreground">Error</p>
                 </div>
               </div>
+
+              {result.hasil.length > 0 && (
+                <div className="rounded-lg border overflow-hidden">
+                  <div className="flex items-center justify-between gap-2 p-3 bg-muted/40">
+                    <p className="text-sm font-medium">
+                      Proyek hasil import ({result.hasil.length})
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => handleFinish(true)}
+                    >
+                      Lihat di daftar proyek
+                    </Button>
+                  </div>
+                  <ul className="divide-y border-t max-h-64 overflow-y-auto">
+                    {result.hasil.slice(0, 200).map((h) => (
+                      <li
+                        key={h.proyekId}
+                        className="flex items-center gap-2 p-2.5 text-xs"
+                      >
+                        <Badge
+                          variant={h.aksi === "baru" ? "default" : "secondary"}
+                          className="text-[10px] shrink-0"
+                        >
+                          {h.aksi === "baru" ? "Baru" : "Ditambah"}
+                        </Badge>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium truncate">{h.namaProyek}</p>
+                          <p className="text-muted-foreground">
+                            {h.kodeProyek} · {h.paketBaru} paket baru ·{" "}
+                            {h.alokasiBaru} alokasi
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs shrink-0"
+                          onClick={() => bukaProyek(h.proyekId)}
+                        >
+                          <ExternalLink size={12} className="mr-1" /> Buka
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                  {result.hasil.length > 200 && (
+                    <p className="p-2 text-center text-xs text-muted-foreground border-t">
+                      {result.hasil.length - 200} proyek lainnya ada di daftar
+                      proyek (filter Hasil import terakhir).
+                    </p>
+                  )}
+                </div>
+              )}
 
               {result.skipped > 0 && (
                 <div className="rounded-lg border border-red-200 bg-red-50 overflow-hidden">
@@ -1049,7 +964,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
               </Button>
               <Button
                 onClick={handleUpload}
-                disabled={!file || !importTahun || uploading}
+                disabled={!file || uploading}
               >
                 {uploading ? (
                   <Loader2 size={15} className="mr-2 animate-spin" />
@@ -1065,27 +980,10 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
               <Button variant="outline" onClick={() => setStep("upload")}>
                 <ArrowLeft size={15} className="mr-2" /> Kembali
               </Button>
-              <Button onClick={handleNextFromBalai} disabled={committing}>
-                {committing && (
-                  <Loader2 size={15} className="mr-2 animate-spin" />
-                )}
-                {preview && preview.existingProyek.length > 0
-                  ? "Lanjutkan"
-                  : committing
-                    ? "Mengimpor..."
-                    : "Import Sekarang"}
-                {preview && preview.existingProyek.length > 0 && (
-                  <ArrowRight size={15} className="ml-2" />
-                )}
-              </Button>
-            </>
-          )}
-          {step === "duplicate" && (
-            <>
-              <Button variant="outline" onClick={() => setStep("balai")}>
-                <ArrowLeft size={15} className="mr-2" /> Kembali
-              </Button>
-              <Button onClick={handleCommit} disabled={committing}>
+              <Button
+                onClick={handleCommit}
+                disabled={committing || preview?.summary.totalAlokasiBaru === 0}
+              >
                 {committing && (
                   <Loader2 size={15} className="mr-2 animate-spin" />
                 )}
@@ -1094,7 +992,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
             </>
           )}
           {step === "done" && (
-            <Button onClick={handleFinish} className="w-full">
+            <Button onClick={() => handleFinish()} className="w-full">
               Selesai
             </Button>
           )}

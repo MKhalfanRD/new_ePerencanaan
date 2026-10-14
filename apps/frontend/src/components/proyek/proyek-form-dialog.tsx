@@ -35,7 +35,7 @@ import {
 } from "@/components/master/field-control";
 import { rowsForItem, subLabel, useSourceData } from "@/lib/option-sources";
 import { kondisiTerpenuhi } from "@/lib/form-condition";
-import { fmtSkor, ringkasPaket, skorField } from "@/lib/form-score";
+import { fmtSkor, ringkasPaket, skorField, teksRasio } from "@/lib/form-score";
 import {
   PaketLabel,
   PAKET_ALWAYS_REQUIRED_KEYS,
@@ -1851,7 +1851,9 @@ export function ProyekFormDialog({
   // di tab ini. Buat proyek: paket di form (`paket`); edit: langsung /paket.
   const paketTemplateSections = paketSections(formTemplate?.tabs);
   const daftarPaket: PaketIsian[] = isEdit ? paketServer : (watch("paket") ?? []);
-  const ringkasDaftar = daftarPaket.map((pk) => ringkasIsianPaket(pk, roList, komponenList));
+  // Per paket (dipisah utk "paket lain" di dialog) & gabungan semua tahun.
+  const ringkasPerPaket = daftarPaket.map((pk) => ringkasIsianPaket(pk, roList, komponenList));
+  const ringkasDaftar = ringkasPerPaket.flat();
   const saldoForm = {
     anggaran: watch("saldoAnggaran"),
     volumeRo: watch("saldoVolumeRo"),
@@ -2591,12 +2593,16 @@ export function ProyekFormDialog({
                     )}
                   </>
                 ) : (
-                  renderTemplatedTab(
-                    "pemaketan",
-                    pemaketanRenderers,
-                    "grid grid-cols-1 sm:grid-cols-2 gap-4",
-                    (sec) => !sec.perPaket,
-                  )
+                  // Akun Satker: saldo, kategori & paket cuma bisa diisi kalau
+                  // saklar izin dari pusat/Balai menyala.
+                  <fieldset disabled={!bolehUbahPaket} className="m-0 min-w-0 border-0 p-0">
+                    {renderTemplatedTab(
+                      "pemaketan",
+                      pemaketanRenderers,
+                      "grid grid-cols-1 sm:grid-cols-2 gap-4",
+                      (sec) => !sec.perPaket,
+                    )}
+                  </fieldset>
                 )}
                 {!adminMode && (
                   <PaketDialog
@@ -2611,7 +2617,7 @@ export function ProyekFormDialog({
                     tahunMin={periodeForm?.startYear}
                     tahunMax={periodeForm?.endYear}
                     saldo={saldoForm}
-                    paketLain={ringkasDaftar.filter((_, i) => i !== paketEdit?.idx)}
+                    paketLain={ringkasPerPaket.filter((_, i) => i !== paketEdit?.idx).flat()}
                     breadcrumb={[
                       { label: watch("projectName") || "Proyek baru", onClick: () => setPaketEdit(null) },
                       { label: paketEdit?.idx != null ? "Edit paket" : "Tambah paket" },
@@ -2651,7 +2657,92 @@ export function ProyekFormDialog({
                       </p>
                     );
                   })()}
-                {renderTemplatedTab("valuasi", {}, TAB_GRID_CLASS.valuasi!)}
+                {!adminMode && (() => {
+                  // Ringkasan otomatis dari Pemaketan: A semua tahun, B/C cuma
+                  // tahun berkomponen utama; tiap rasio yang lolos -> bobotnya.
+                  const rasio = (formTemplate?.tabs.find((t) => t.key === "valuasi")?.sections ?? [])
+                    .flatMap((sec) => sec.items)
+                    .filter((i) => i.fieldType === "RASIO" && isItemVisible(i))
+                    .map((i) => ({ item: i, info: teksRasio(i.rasio, i.thresholdValue, ringkasForm) }));
+                  const total = rasio.reduce(
+                    (sum, r) => sum + ("terpenuhi" in r.info && r.info.terpenuhi ? (r.item.score ?? 0) : 0),
+                    0,
+                  );
+                  const kartu: [string, string][] = [
+                    ["A · Total anggaran", formatRupiah(ringkasForm.A)],
+                    ["B · Total volume RO (utama)", `${fmtSkor(ringkasForm.B)} ${ringkasForm.satuanB.join("/")}`],
+                    ["C · Total volume IRO (utama)", `${fmtSkor(ringkasForm.C)} ${ringkasForm.satuanC.join("/")}`],
+                  ];
+                  return (
+                    <div className="space-y-3 pl-12">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {kartu.map(([l, v]) => (
+                          <div key={l} className="rounded-lg bg-muted/50 px-3 py-2.5">
+                            <p className="text-[11px] text-muted-foreground">{l}</p>
+                            <p className="text-base font-semibold tabular-nums">{v}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {rasio.length > 0 && (
+                        <div className="overflow-x-auto rounded-lg border">
+                          <table className="w-full text-xs">
+                            <thead className="bg-muted/50 text-left text-muted-foreground">
+                              <tr>
+                                <th className="px-3 py-2 font-medium">Rasio</th>
+                                <th className="px-3 py-2 font-medium">Hasil</th>
+                                <th className="px-3 py-2 font-medium">Syarat</th>
+                                <th className="px-3 py-2 text-right font-medium">Bobot</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rasio.map(({ item, info }) => {
+                                const lolos = "terpenuhi" in info && info.terpenuhi;
+                                return (
+                                  <tr key={item.id} className="border-t align-top">
+                                    <td className="px-3 py-2 font-medium">{item.label}</td>
+                                    <td className="px-3 py-2">
+                                      {"teks" in info ? info.teks : (
+                                        <span className="text-muted-foreground">{info.pesan}</span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                      {info.syarat || "—"}{" "}
+                                      {"teks" in info && (lolos ? (
+                                        <span className="text-emerald-600">✓</span>
+                                      ) : (
+                                        <span className="text-destructive">✗</span>
+                                      ))}
+                                    </td>
+                                    <td className="px-3 py-2 text-right tabular-nums">
+                                      {lolos ? `${fmtSkor(item.score ?? 0)}%` : "0%"}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                              <tr className="border-t bg-muted/30 font-semibold">
+                                <td className="px-3 py-2" colSpan={3}>Total bobot rasio</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{fmtSkor(total)}%</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+                {renderTemplatedTab(
+                  "valuasi",
+                  // Form user: rasio sudah tampil di tabel ringkasan di atas.
+                  adminMode
+                    ? {}
+                    : Object.fromEntries(
+                        (formTemplate?.tabs.find((t) => t.key === "valuasi")?.sections ?? [])
+                          .flatMap((sec) => sec.items)
+                          .filter((i) => i.fieldType === "RASIO")
+                          .map((i) => [i.key, () => null]),
+                      ),
+                  TAB_GRID_CLASS.valuasi!,
+                )}
               </TabsContent>
 
               {/* === TAB: KINERJA PROYEK === daftar kriteria mengikuti

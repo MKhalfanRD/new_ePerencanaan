@@ -632,30 +632,15 @@ export function ProyekDetailSheet({
                             <dd>
                               {pk.ro.kro.code}.{pk.ro.code} — {pk.ro.name}
                             </dd>
-                            <dt className="text-muted-foreground">Komponen</dt>
-                            <dd>
-                              {pk.komponen
-                                ? `${pk.komponen.code} — ${pk.komponen.name} · ${pk.komponen.jenis === "PENDUKUNG" ? "pendukung" : "utama"}`
-                                : "—"}
-                            </dd>
                             <dt className="text-muted-foreground">Lokasi RO</dt>
                             <dd>
                               {(pk.lokasiRo ?? []).map((id) => namaProvinsi[id] ?? id).join(", ") || "—"}
                             </dd>
-                            <dt className="text-muted-foreground">Volume RO</dt>
-                            <dd>
-                              {pk.volumeRo != null
-                                ? `${Number(pk.volumeRo).toLocaleString("id-ID")} ${pk.ro.satuan?.name ?? ""}`
-                                : "—"}
-                            </dd>
                             <dt className="text-muted-foreground">Indikator RO</dt>
                             <dd>
-                              {(pk.indikatorRo ?? [])
-                                .map(
-                                  (i) =>
-                                    `${i.indikatorRo?.nama ?? "—"}${i.volume != null ? ` · ${Number(i.volume).toLocaleString("id-ID")} ${i.satuan ?? ""}` : ""}`,
-                                )
-                                .join("; ") || "—"}
+                              {pk.indikatorRo?.[0]
+                                ? `${pk.indikatorRo[0].indikatorRo?.nama ?? "—"} (${pk.indikatorRo[0].satuan ?? "—"})`
+                                : "—"}
                             </dd>
                             <dt className="text-muted-foreground">Tahun</dt>
                             <dd>
@@ -690,9 +675,21 @@ export function ProyekDetailSheet({
                                 >
                                   <span className="w-12 font-semibold">{a.tahun}</span>
                                   <span className="order-last w-full text-muted-foreground sm:order-none sm:w-auto sm:flex-1">
-                                    {SUMBER_DANA.filter((k) => Number(a[k]) > 0)
-                                      .map((k) => `${k.toUpperCase()} ${formatRupiahShort(Number(a[k]))}`)
-                                      .join(" · ") || "—"}
+                                    {a.komponen
+                                      ? `${a.komponen.code} ${a.komponen.name} (${a.komponen.jenis === "PENDUKUNG" ? "pendukung" : "utama"})`
+                                      : "Komponen —"}
+                                    {" · "}
+                                    {[
+                                      a.outputTarget != null &&
+                                        `RO ${Number(a.outputTarget).toLocaleString("id-ID")} ${pk.ro.satuan?.name ?? ""}`,
+                                      a.outcomeTarget != null &&
+                                        `IRO ${Number(a.outcomeTarget).toLocaleString("id-ID")} ${pk.indikatorRo?.[0]?.satuan ?? ""}`,
+                                      ...SUMBER_DANA.filter((k) => Number(a[k]) > 0).map(
+                                        (k) => `${k.toUpperCase()} ${formatRupiahShort(Number(a[k]))}`,
+                                      ),
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ")}
                                   </span>
                                   <span className="ml-auto font-semibold" title={formatRupiah(Number(a.total))}>
                                     {formatRupiahShort(Number(a.total))}
@@ -731,7 +728,7 @@ export function ProyekDetailSheet({
           volumeRo: proyek.saldoVolumeRo == null ? null : Number(proyek.saldoVolumeRo),
           volumeIro: proyek.saldoVolumeIro == null ? null : Number(proyek.saldoVolumeIro),
         }}
-        paketLain={paket.filter((x) => x.id !== editPaket?.id).map(ringkasPaketServer)}
+        paketLain={paket.filter((x) => x.id !== editPaket?.id).flatMap(ringkasPaketServer)}
         breadcrumb={[
           { label: "Daftar Proyek", onClick: onClose },
           { label: proyek.projectName || "Proyek", onClick: () => setShowPaketForm(false) },

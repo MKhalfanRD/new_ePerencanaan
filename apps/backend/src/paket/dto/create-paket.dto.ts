@@ -12,15 +12,13 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { FormValueDto } from '../../proyek/dto/preview-skor.dto';
 
-export class PaketIndikatorRoDto {
-  @ApiProperty() @IsString() indikatorRoId: string;
-  @ApiPropertyOptional() @IsOptional() @IsNumber() volume?: number;
-  @ApiPropertyOptional() @IsOptional() @IsString() satuan?: string;
-}
-
-/** Alokasi RENCANA 1 tahun (rupiah per sumber dana). */
+/** Rincian 1 tahun (alokasi RENCANA): komponen, volume RO/IRO & rupiah per
+ * sumber dana. */
 export class PaketAlokasiDto {
   @ApiProperty({ example: 2026 }) @IsInt() tahun: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() komponenId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() volumeRo?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() volumeIro?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() rm?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() rmp?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() pln?: number;
@@ -35,8 +33,6 @@ export class PaketInputDto {
 
   @ApiProperty({ example: '005' }) @IsString() roId: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsString() komponenId?: string;
-
   @ApiPropertyOptional() @IsOptional() @IsString() satkerId?: string;
 
   @ApiPropertyOptional({ type: [String], description: 'id provinsi' })
@@ -45,14 +41,9 @@ export class PaketInputDto {
   @IsString({ each: true })
   lokasiRo?: string[];
 
-  @ApiPropertyOptional() @IsOptional() @IsNumber() volumeRo?: number;
-
-  @ApiPropertyOptional({ type: [PaketIndikatorRoDto] })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => PaketIndikatorRoDto)
-  indikatorRo?: PaketIndikatorRoDto[];
+  // 1 Indikator RO per paket; volumenya diisi per tahun (PaketAlokasiDto).
+  @ApiPropertyOptional() @IsOptional() @IsString() indikatorRoId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() satuanIro?: string;
 
   @ApiPropertyOptional() @IsOptional() @IsInt() tahunMulai?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() tahunSelesai?: number;

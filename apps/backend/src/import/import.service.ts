@@ -4,13 +4,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as XLSX from 'xlsx';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CommitImportDto } from './dto/import.dto';
+import { changesForCreate } from '../activity-log/activity-log.util';
+import { lintasUnit } from '../paket/paket-data';
 import {
-  changesForCreate,
-  diffEntity,
-} from '../activity-log/activity-log.util';
-import { generateKodeProyek } from '../common/kode-generator';
+  generateKodePaket,
+  generateKodeProyek,
+} from '../common/kode-generator';
 
 /**
  * Parser Excel untuk format `DB.xlsx` (bukan lagi RKA-K/L per-RO/tahun yang
@@ -84,6 +86,9 @@ export const COL = {
 } as const;
 interface ParsedPaketRow {
   excelRowNumber: number;
+  sheet: string;
+  /** Dari kolom header "Tahun" (dicari lewat nama, posisi bebas). */
+  tahun: number;
   // --- Proyek (carry-forward) ---
   kodeProyek: string;
   namaProyek: string;
@@ -105,8 +110,11 @@ interface ParsedPaketRow {
   kdKomponen: string;
   nmKomponen: string;
   namaPaket: string;
-  jenisPaket: 'FISIK' | 'NON_FISIK';
-  masaLaksana: 'SINGLE_YEAR' | 'MULTI_YEAR';
+  // Kosong untuk format Renstra (kolomnya tidak ada).
+  jenisPaket: 'FISIK' | 'NON_FISIK' | null;
+  masaLaksana: 'SINGLE_YEAR' | 'MULTI_YEAR' | null;
+  /** Format Renstra: nama provinsi (kolom Provinsi/LOKUS) -> lokasi RO paket. */
+  provinsi?: string;
   volOutput?: number;
   outputSatuan?: string;
   volOutcome?: number;
@@ -147,14 +155,100 @@ interface ParsedPaketRow {
 
 export interface ImportError {
   excelRowNumber: number;
+  sheet?: string;
   namaProyek: string;
   balaiName: string;
   reason: string;
 }
 
+/** Nilai satu alokasi (rincian tahun) untuk disandingkan di warning duplikat. */
+export interface NilaiAlokasi {
+  tahun: number;
+  komponen: string;
+  volRo: number | null;
+  volIro: number | null;
+  rm: number;
+  rmp: number;
+  pln: number;
+  sbsn: number;
+  kpbu: number;
+  total: number;
+}
+
+export interface DuplikatAlokasi {
+  excelRowNumber: number;
+  sheet: string;
+  balaiName: string;
+  namaProyek: string;
+  namaPaket: string;
+  tahun: number;
+  alasan: string;
+  /** Asal data pembanding: "Data di sistem" atau "Excel baris #n". */
+  sumberLama: string;
+  lama: NilaiAlokasi;
+  excel: NilaiAlokasi;
+}
+
+// Proyek yang sudah ada + paket & alokasi RENCANA-nya, untuk cek duplikat.
+const INCLUDE_PROYEK = {
+  paket: {
+    where: { deletedAt: null },
+    include: {
+      ro: { select: { kro: { select: { kegiatanId: true } } } },
+      alokasi: {
+        where: { status: 'RENCANA' as const },
+        include: { komponen: { select: { code: true, name: true } } },
+      },
+    },
+  },
+} satisfies Prisma.ProyekInclude;
+type ProyekLama = Prisma.ProyekGetPayload<{ include: typeof INCLUDE_PROYEK }>;
+type PaketLama = ProyekLama['paket'][number];
+
+const rendah = (v: string) => v.trim().toLowerCase();
+const labelBaris = (r: ParsedPaketRow) => `${r.sheet} baris #${r.excelRowNumber}`;
+/** "ISK 04 Jumlah ..." -> "Jumlah ..." (kode di depan tidak ada di master). */
+const tanpaKode = (v: string) => v.replace(/^I?S[KP]\s*\d+\s*/i, '').trim();
+const namaProvinsi = (v: string) => rendah(v.replace(/\(.*?\)/g, ''));
+/** Paket dikenali di bawah kegiatan-nya: KodePaket, atau nama kalau kode kosong. */
+const kunciPaket = (r: ParsedPaketRow) =>
+  `${r.kdKegiatan}|${r.kodePaket || rendah(r.namaPaket)}`;
+const cariPaket = (proyek: ProyekLama, r: ParsedPaketRow) =>
+  proyek.paket.find(
+    (p) =>
+      p.ro.kro.kegiatanId === r.kdKegiatan &&
+      (r.kodePaket
+        ? p.kodePaket === r.kodePaket
+        : rendah(p.name) === rendah(r.namaPaket)),
+  );
+const nilaiExcel = (r: ParsedPaketRow): NilaiAlokasi => ({
+  tahun: r.tahun,
+  komponen: [r.kdKomponen, r.nmKomponen].filter(Boolean).join(' '),
+  volRo: r.volOutput ?? null,
+  volIro: r.volOutcome ?? null,
+  rm: r.rm,
+  rmp: r.rmp,
+  pln: r.pln,
+  sbsn: r.sbsn,
+  kpbu: r.kpbu,
+  total: r.total || r.rm + r.rmp + r.pln + r.sbsn + r.kpbu,
+});
+const nilaiLama = (a: PaketLama['alokasi'][number]): NilaiAlokasi => ({
+  tahun: a.tahun,
+  komponen: a.komponen ? `${a.komponen.code} ${a.komponen.name}` : '',
+  volRo: a.outputTarget == null ? null : Number(a.outputTarget),
+  volIro: a.outcomeTarget == null ? null : Number(a.outcomeTarget),
+  rm: Number(a.rm),
+  rmp: Number(a.rmp),
+  pln: Number(a.pln),
+  sbsn: Number(a.sbsn),
+  kpbu: Number(a.kpbu),
+  total: Number(a.total),
+});
+
 const importSessions = new Map<
   string,
-  { rows: ParsedPaketRow[]; createdAt: number }
+  { rows: ParsedPaketRow[]; balaiCocok: Map<string, number>; createdAt: number }
 >();
 
 setInterval(
@@ -287,20 +381,11 @@ function parseSumberUsulan(raw: string): {
 export class ImportService {
   constructor(private prisma: PrismaService) {}
 
-  /** Cari baris header (yang sel pertamanya "KodeProyek") di antara beberapa baris pertama sheet. */
-  private findHeaderRowIndex(rows: any[][]): number {
-    for (let i = 0; i < Math.min(rows.length, 5); i++) {
-      const first = str(rows[i]?.[0]).toLowerCase();
-      if (first === 'kodeproyek') return i;
-    }
-    throw new BadRequestException(
-      'Tidak ketemu baris header "KodeProyek" di 5 baris pertama sheet. Pastikan formatnya sesuai DB.xlsx.',
-    );
-  }
-
   private cellsToPaketRow(
     cells: any[],
     excelRowNumber: number,
+    kolomTahun: number,
+    sheet: string,
   ): ParsedPaketRow | null {
     const get = (col: number) => cells[col - 1];
 
@@ -326,6 +411,8 @@ export class ImportService {
 
     return {
       excelRowNumber,
+      sheet,
+      tahun: num(cells[kolomTahun]) ?? 0,
       kodeProyek: cleanCode(get(COL.kodeProyek)),
       namaProyek: str(get(COL.namaProyek)),
       kdBalai: num(get(COL.kdBalai)) ?? null,
@@ -387,20 +474,41 @@ export class ImportService {
     };
   }
 
-  async preview(fileBuffer: Buffer) {
-    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rawRows: any[][] = XLSX.utils.sheet_to_json(sheet, {
-      header: 1,
-      defval: null,
-    });
+  /** Baris valid untuk diimport? Kalau tidak, catat alasannya. */
+  private cekBaris(r: ParsedPaketRow, errors: ImportError[]): boolean {
+    const gagal = (reason: string) => {
+      errors.push({
+        excelRowNumber: r.excelRowNumber,
+        sheet: r.sheet,
+        namaProyek: r.namaProyek || '(kosong)',
+        balaiName: r.balaiName || '(kosong)',
+        reason,
+      });
+      return false;
+    };
+    if (!Number.isInteger(r.tahun) || r.tahun < 1900 || r.tahun > 2200)
+      return gagal('Tahun kosong/tidak valid');
+    if (!r.balaiName) return gagal('Balai kosong');
+    if (!r.namaPaket || !r.kdKegiatan || !r.kdRO)
+      return gagal('Nama proyek/paket, kegiatan, atau RO kosong');
+    return true;
+  }
 
-    const headerIdx = this.findHeaderRowIndex(rawRows);
-    const dataRows = rawRows.slice(headerIdx + 1);
-
-    const parsedRows: ParsedPaketRow[] = [];
-    const parseErrors: ImportError[] = [];
-
+  /** Format DB.xlsx: blok Proyek (carry-forward) + blok Paket, kolom Tahun dicari by nama. */
+  private bacaSheetDb(
+    rawRows: any[][],
+    headerIdx: number,
+    sheet: string,
+    parseErrors: ImportError[],
+  ): ParsedPaketRow[] {
+    const kolomTahun = rawRows[headerIdx].findIndex(
+      (c) => str(c).toLowerCase() === 'tahun',
+    );
+    if (kolomTahun < 0)
+      throw new BadRequestException(
+        `Sheet "${sheet}": kolom "Tahun" tidak ditemukan. Tambahkan kolom Tahun (mis. di paling kanan).`,
+      );
+    const hasil: ParsedPaketRow[] = [];
     // State carry-forward blok Proyek (cuma terisi di baris pertama grup)
     let current: Pick<
       ParsedPaketRow,
@@ -417,14 +525,15 @@ export class ImportService {
       | 'keterangan'
     > | null = null;
 
-    dataRows.forEach((row, i) => {
+    rawRows.slice(headerIdx + 1).forEach((row, i) => {
       const excelRowNumber = headerIdx + 2 + i;
       if (!row || row.every((c) => c === null || c === '')) return; // baris kosong total
 
-      const parsed = this.cellsToPaketRow(row, excelRowNumber);
+      const parsed = this.cellsToPaketRow(row, excelRowNumber, kolomTahun, sheet);
       if (!parsed) {
         parseErrors.push({
           excelRowNumber,
+          sheet,
           namaProyek: current?.namaProyek || '(kosong)',
           balaiName: current?.balaiName || '(kosong)',
           reason:
@@ -453,6 +562,7 @@ export class ImportService {
       } else {
         parseErrors.push({
           excelRowNumber,
+          sheet,
           namaProyek: '(kosong)',
           balaiName: '(kosong)',
           reason:
@@ -460,25 +570,147 @@ export class ImportService {
         });
         return;
       }
-
-      if (!parsed.namaPaket || !parsed.kdKegiatan || !parsed.kdRO) {
-        parseErrors.push({
-          excelRowNumber,
-          namaProyek: parsed.namaProyek,
-          balaiName: parsed.balaiName,
-          reason: 'NamaPaket / KdKegiatan / kdRO kosong',
-        });
-        return;
-      }
-
-      parsedRows.push(parsed);
+      if (this.cekBaris(parsed, parseErrors)) hasil.push(parsed);
     });
+    return hasil;
+  }
 
+  /**
+   * Format Kertas Kerja Renstra: 1 baris = 1 proyek di 1 tahun (TA), tanpa
+   * kolom paket/komponen/sumber dana. Paket dibuat 1 per proyek dengan nama
+   * sama; Jumlah dicatat sebagai RM. Kolom dicari lewat nama header.
+   */
+  private bacaSheetRenstra(
+    rawRows: any[][],
+    headerIdx: number,
+    sheet: string,
+    parseErrors: ImportError[],
+  ): ParsedPaketRow[] {
+    const h = rawRows[headerIdx].map((c) => str(c).toLowerCase());
+    const kol = (...nama: string[]) => h.findIndex((x) => nama.includes(x));
+    const k = {
+      ta: kol('ta'),
+      balai: kol('balai'),
+      giat: kol('kdgiat'),
+      kro: kol('kdkro'),
+      ro: kol('kdro'),
+      nama: kol('nama proyek'),
+      prov: kol('provinsi', 'lokus'),
+      vro: kol('v output', 'v ro', 'vol ro'),
+      sro: kol('sat ro'),
+      iro: kol('iro'),
+      siro: kol('sat iro'),
+      jumlah: kol('jumlah'),
+      sk: kol('sk'),
+      isk: kol('isk'),
+      sp: kol('sp'),
+      isp: kol('isp'),
+    };
+    const wajib = { TA: k.ta, BALAI: k.balai, kdgiat: k.giat, kdKRO: k.kro, kdRO: k.ro, 'Nama Proyek': k.nama, Jumlah: k.jumlah };
+    const kurang = Object.entries(wajib).filter(([, i]) => i < 0).map(([n]) => n);
+    if (kurang.length)
+      throw new BadRequestException(`Sheet "${sheet}": kolom ${kurang.join(', ')} tidak ditemukan`);
+
+    const hasil: ParsedPaketRow[] = [];
+    rawRows.slice(headerIdx + 1).forEach((row, i) => {
+      if (!row || row.every((c) => c === null || c === '')) return;
+      const sel = (idx: number) => (idx < 0 ? null : row[idx]);
+      const teks = (idx: number) => str(sel(idx)) || undefined;
+      const namaProyek = str(sel(k.nama));
+      const kdRO = cleanCode(sel(k.ro));
+      const jumlah = num(sel(k.jumlah)) ?? 0;
+      const parsed: ParsedPaketRow = {
+        excelRowNumber: headerIdx + 2 + i,
+        sheet,
+        tahun: num(sel(k.ta)) ?? 0,
+        kodeProyek: '',
+        namaProyek,
+        kdBalai: null,
+        balaiName: str(sel(k.balai)),
+        kewenangan: '',
+        kebutuhanTanah: false,
+        sumberUsulanProyekRaw: '',
+        keterangan: '',
+        kodePaket: '',
+        kdKegiatan: cleanCode(sel(k.giat)),
+        kdKRO: cleanCode(sel(k.kro)).toUpperCase(),
+        // kdRO di Renstra berupa angka (1) -> kode master 3 digit ("001")
+        kdRO: /^\d+$/.test(kdRO) ? kdRO.padStart(3, '0') : kdRO,
+        namaRO: '',
+        kdKomponen: '',
+        nmKomponen: '',
+        namaPaket: namaProyek,
+        jenisPaket: null,
+        masaLaksana: null,
+        volOutput: num(sel(k.vro)),
+        outputSatuan: teks(k.sro),
+        volOutcome: num(sel(k.iro)),
+        outcomeSatuan: teks(k.siro),
+        provinsi: teks(k.prov),
+        sk: teks(k.sk),
+        isk: teks(k.isk),
+        sp: teks(k.sp),
+        isp: teks(k.isp),
+        fkb: false,
+        fkw: false,
+        mpa: false,
+        rm: jumlah,
+        rmp: 0,
+        pln: 0,
+        sbsn: 0,
+        kpbu: 0,
+        total: jumlah,
+      };
+      if (this.cekBaris(parsed, parseErrors)) hasil.push(parsed);
+    });
+    return hasil;
+  }
+
+  async preview(fileBuffer: Buffer, user: any) {
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+    const parsedRows: ParsedPaketRow[] = [];
+    const parseErrors: ImportError[] = [];
+    const sheetRenstra: string[] = [];
+    const sheetDilewati: string[] = [];
+
+    // Semua sheet dibaca; yang header-nya tidak dikenali (ringkasan/referensi) dilewati.
+    for (const nama of workbook.SheetNames) {
+      const rawRows: any[][] = XLSX.utils.sheet_to_json(workbook.Sheets[nama], {
+        header: 1,
+        defval: null,
+      });
+      const headerIdx = rawRows
+        .slice(0, 5)
+        .findIndex((r) => ['kodeproyek', 'ta'].includes(str(r?.[0]).toLowerCase()));
+      if (headerIdx < 0) {
+        sheetDilewati.push(nama);
+        continue;
+      }
+      if (str(rawRows[headerIdx][0]).toLowerCase() === 'kodeproyek') {
+        parsedRows.push(...this.bacaSheetDb(rawRows, headerIdx, nama, parseErrors));
+      } else {
+        sheetRenstra.push(nama);
+        parsedRows.push(...this.bacaSheetRenstra(rawRows, headerIdx, nama, parseErrors));
+      }
+    }
+
+    if (sheetDilewati.length === workbook.SheetNames.length)
+      throw new BadRequestException(
+        'Tidak ada sheet data yang dikenali. Header harus diawali "KodeProyek" (format DB.xlsx) atau "TA" (format Renstra).',
+      );
     if (parsedRows.length === 0) {
       throw new BadRequestException(
-        'Tidak ada baris Paket valid ditemukan di file Excel.',
+        'Tidak ada baris valid ditemukan di file Excel.',
       );
     }
+
+    const info: string[] = [];
+    if (sheetRenstra.length)
+      info.push(
+        `Sheet ${sheetRenstra.join(', ')}: format Renstra, tidak ada kolom paket, komponen & sumber dana. Dibuat 1 paket per proyek (nama sama) dan Jumlah dicatat sebagai RM; paket bisa diubah di tab Pemaketan.`,
+      );
+    if (sheetDilewati.length)
+      info.push(`Sheet dilewati (bukan tabel data): ${sheetDilewati.join(', ')}.`);
 
     // ===== Deteksi Balai — cocokkan dulu via KdBalai (id persis), baru fallback fuzzy nama =====
     const groups = this.groupRows(parsedRows);
@@ -538,46 +770,38 @@ export class ImportService {
       unmatched.push({ excelName: name, suggestions });
     }
 
-    // ===== Deteksi proyek yang sudah ada (by kodeProyek) =====
-    const existingProyek: {
-      groupKey: string;
-      namaProyek: string;
-      balaiName: string;
-      existingId: string;
-      existingPaketCount: number;
-      existingTotal: number;
-      newPaketCount: number;
-      newTotal: number;
-    }[] = [];
-
     const matchedBalaiId = new Map(
       matched.map((m) => [m.excelName, m.balaiId]),
     );
-    for (const [groupKey, rows] of groups) {
-      const first = rows[0];
-      const existing = await this.findExistingProyek(
-        rows,
-        matchedBalaiId.get(first.balaiName),
-      );
-      if (existing) {
-        const existingTotal = existing.paket
-          .flatMap((p) => p.alokasi)
-          .reduce((s, a) => s + Number(a.total), 0);
-        existingProyek.push({
-          groupKey,
-          namaProyek: first.namaProyek,
-          balaiName: first.balaiName,
-          existingId: existing.id,
-          existingPaketCount: existing.paket.length,
-          existingTotal,
-          newPaketCount: rows.length,
-          newTotal: rows.reduce((s, r) => s + r.total, 0),
-        });
-      }
-    }
+    const { rencana, duplikat } = await this.rencanakan(parsedRows, (nama) =>
+      matchedBalaiId.get(nama),
+    );
+
+    // Daftar rencana per proyek: user melihat apa yang akan dibuat/ditambah
+    // sebelum menyetujui (belum ada data tersimpan di tahap ini).
+    const daftarRencana = rencana
+      .map(({ grup, existing, paket }) => ({
+        namaProyek: grup[0].namaProyek,
+        balaiName: grup[0].balaiName,
+        kegiatan: grup[0].kdKegiatan,
+        aksi: existing ? ('ditambah' as const) : ('baru' as const),
+        proyekId: existing?.id ?? null,
+        paket: paket
+          .filter((p) => p.rows.length > 0)
+          .map((p) => ({
+            nama: p.rows[0].namaPaket,
+            baru: !p.lama,
+            tahun: p.rows.map((r) => r.tahun).sort((a, b) => a - b),
+          })),
+      }))
+      .filter((d) => d.paket.length > 0);
 
     const sessionId = `import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    importSessions.set(sessionId, { rows: parsedRows, createdAt: Date.now() });
+    importSessions.set(sessionId, {
+      rows: parsedRows,
+      balaiCocok: matchedBalaiId,
+      createdAt: Date.now(),
+    });
 
     return {
       sessionId,
@@ -586,24 +810,90 @@ export class ImportService {
         totalRowsValid: parsedRows.length,
         totalRowsError: parseErrors.length,
         totalProyek: groups.size,
-        totalProyekBaru: groups.size - existingProyek.length,
-        totalProyekDuplikat: existingProyek.length,
+        totalProyekBaru: rencana.filter((r) => !r.existing).length,
+        totalAlokasiBaru: parsedRows.length - duplikat.length,
+        totalDuplikat: duplikat.length,
         totalBalaiTerdeteksi: balaiCandidates.size,
         totalBalaiMatched: matched.length,
         totalBalaiUnmatched: unmatched.length,
       },
       matched,
       unmatched,
-      existingProyek,
+      duplikat,
       parseErrors,
+      info,
+      rencana: daftarRencana,
+      // Hanya admin yang boleh menambah balai ke master lewat import.
+      bolehBuatBalai: lintasUnit(user),
     };
+  }
+
+  /**
+   * Petakan tiap baris ke cabang balai -> kegiatan -> proyek -> paket -> tahun.
+   * Paket sama + tahun beda = alokasi baru; tahun sama (di sistem atau baris
+   * lain di file yang sama) = duplikat, dilewati.
+   */
+  private async rencanakan(
+    rows: ParsedPaketRow[],
+    balaiIdOf: (balaiName: string) => number | undefined,
+  ) {
+    const rencana: {
+      grup: ParsedPaketRow[];
+      existing: ProyekLama | null;
+      paket: { rows: ParsedPaketRow[]; lama?: PaketLama }[];
+    }[] = [];
+    const duplikat: DuplikatAlokasi[] = [];
+    const grups = [...this.groupRows(rows).values()];
+    const cariLama = await this.cariProyekLama(grups, balaiIdOf);
+    for (const grup of grups) {
+      const existing = cariLama(grup);
+      const paket = new Map<string, { rows: ParsedPaketRow[]; lama?: PaketLama }>();
+      for (const row of grup) {
+        const k = kunciPaket(row);
+        let p = paket.get(k);
+        if (!p) {
+          p = { rows: [], lama: existing ? cariPaket(existing, row) : undefined };
+          paket.set(k, p);
+        }
+        const diSistem = p.lama?.alokasi.find((a) => a.tahun === row.tahun);
+        const diFile = p.rows.find((r) => r.tahun === row.tahun);
+        const dasar = {
+          excelRowNumber: row.excelRowNumber,
+          sheet: row.sheet,
+          balaiName: row.balaiName,
+          namaProyek: row.namaProyek,
+          namaPaket: row.namaPaket,
+          tahun: row.tahun,
+          excel: nilaiExcel(row),
+        };
+        if (diSistem)
+          duplikat.push({
+            ...dasar,
+            alasan: `Sudah ada: balai, kegiatan, proyek, paket, tahun ${row.tahun}`,
+            sumberLama: 'Data di sistem',
+            lama: nilaiLama(diSistem),
+          });
+        else if (diFile)
+          duplikat.push({
+            ...dasar,
+            alasan: `Ganda di file: sama dengan ${labelBaris(diFile)}`,
+            sumberLama: `Excel ${labelBaris(diFile)}`,
+            lama: nilaiExcel(diFile),
+          });
+        else p.rows.push(row);
+      }
+      rencana.push({ grup, existing, paket: [...paket.values()] });
+    }
+    return { rencana, duplikat };
   }
 
   /** Group key: KodeProyek kalau ada, fallback balaiName|namaProyek. */
   private groupRows(rows: ParsedPaketRow[]): Map<string, ParsedPaketRow[]> {
     const groups = new Map<string, ParsedPaketRow[]>();
     for (const row of rows) {
-      const key = row.kodeProyek || `${row.balaiName}|${row.namaProyek}`;
+      const key =
+        row.kodeProyek ||
+        `${row.balaiName}|${row.kdKegiatan}|${rendah(row.namaProyek)}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(row);
     }
@@ -614,72 +904,69 @@ export class ImportService {
    * Proyek dianggap sudah ada kalau KodeProyek-nya sama, atau (tanpa kode)
    * nama + balai + kegiatan sama. Kegiatan cuma punya 1 program, jadi
    * kegiatan sama = program sama. Nama sama tapi kegiatan beda = proyek lain.
+   * Satu query untuk semua grup (file Renstra bisa ribuan proyek).
    */
-  private async findExistingProyek(
-    rows: ParsedPaketRow[],
-    balaiId: number | undefined,
-  ) {
-    const first = rows[0];
-    const include = { paket: { include: { alokasi: true } } };
-    if (first.kodeProyek) {
-      const byKode = await this.prisma.proyek.findFirst({
-        where: { kodeProyek: first.kodeProyek, deletedAt: null },
-        include,
-      });
-      if (byKode) return byKode;
-    }
-    if (balaiId == null) return null;
-    return this.prisma.proyek.findFirst({
+  private async cariProyekLama(
+    grups: ParsedPaketRow[][],
+    balaiIdOf: (balaiName: string) => number | undefined,
+  ): Promise<(grup: ParsedPaketRow[]) => ProyekLama | null> {
+    const kode = [...new Set(grups.map((g) => g[0].kodeProyek).filter(Boolean))];
+    const nama = [...new Set(grups.map((g) => g[0].namaProyek.trim()))];
+    const semua = await this.prisma.proyek.findMany({
       where: {
         deletedAt: null,
-        balaiId,
-        projectName: { equals: first.namaProyek.trim(), mode: 'insensitive' },
-        paket: {
-          some: {
-            deletedAt: null,
-            ro: {
-              kro: {
-                kegiatanId: { in: [...new Set(rows.map((r) => r.kdKegiatan))] },
-              },
-            },
-          },
-        },
+        OR: [
+          { kodeProyek: { in: kode } },
+          { projectName: { in: nama, mode: 'insensitive' } },
+        ],
       },
-      include,
+      include: INCLUDE_PROYEK,
     });
+    return (grup) => {
+      const first = grup[0];
+      if (first.kodeProyek) {
+        const byKode = semua.find((p) => p.kodeProyek === first.kodeProyek);
+        if (byKode) return byKode;
+      }
+      const balaiId = balaiIdOf(first.balaiName);
+      if (balaiId == null) return null;
+      const kegiatan = new Set(grup.map((r) => r.kdKegiatan));
+      return (
+        semua.find(
+          (p) =>
+            p.balaiId === balaiId &&
+            rendah(p.projectName) === rendah(first.namaProyek) &&
+            p.paket.some((pk) => kegiatan.has(pk.ro.kro.kegiatanId)),
+        ) ?? null
+      );
+    };
   }
 
-  /** Daftar kolom template import, dalam urutan kolom asli, dengan flag wajib/opsional. */
-  getTemplateColumns() {
-    const REQUIRED = new Set([
-      'jenisPaket',
-      'masaLaksana',
-      'namaPaket',
-      'kdKegiatan',
-      'kdRO',
-    ]);
-    return Object.keys(COL).map((key) => ({
-      key,
-      required: REQUIRED.has(key),
-    }));
-  }
-
-  async commit(dto: CommitImportDto, userId: string, username: string) {
+  async commit(dto: CommitImportDto, user: any) {
+    const { userId, username } = user;
     const session = importSessions.get(dto.sessionId);
     if (!session) {
       throw new NotFoundException(
         'Sesi import sudah tidak berlaku, silakan upload ulang file Excel',
       );
     }
-    const { rows } = session;
+    const { rows, balaiCocok } = session;
     const commitErrors: ImportError[] = [];
 
     // ===== Resolve balai =====
-    const balaiMap = new Map<string, number>();
+    // Balai yang sudah cocok otomatis saat preview + pilihan user untuk sisanya.
+    // Balai baru hanya boleh dibuat admin; balai yang tidak diselesaikan ->
+    // baris proyeknya dilewati (bukan menggagalkan seluruh import).
+    const balaiMap = new Map(balaiCocok);
+    const bolehBuatBalai = lintasUnit(user);
     for (const res of dto.balaiResolutions) {
       if (res.useExistingBalaiId) {
-        balaiMap.set(res.excelName, res.useExistingBalaiId);
-      } else if (res.createNew) {
+        const ada = await this.prisma.balai.findUnique({
+          where: { id: res.useExistingBalaiId },
+          select: { id: true },
+        });
+        if (ada) balaiMap.set(res.excelName, ada.id);
+      } else if (res.createNew && bolehBuatBalai) {
         const row = rows.find((r) => r.balaiName === res.excelName);
         const newId =
           row?.kdBalai ??
@@ -692,14 +979,6 @@ export class ImportService {
         });
         balaiMap.set(res.excelName, newBalai.id);
       }
-    }
-    const unresolvedBalai = [...new Set(rows.map((r) => r.balaiName))].filter(
-      (name) => !balaiMap.has(name),
-    );
-    if (unresolvedBalai.length > 0) {
-      throw new BadRequestException(
-        `Balai berikut belum diselesaikan: ${unresolvedBalai.join(', ')}`,
-      );
     }
 
     // ===== Master data cache (hindari query berulang per baris) =====
@@ -839,7 +1118,7 @@ export class ImportService {
       if (!ro) return undefined;
       const found = await this.prisma.indikatorSasaranProgram.findFirst({
         where: {
-          name: { contains: isp, mode: 'insensitive' },
+          name: { contains: tanpaKode(isp), mode: 'insensitive' },
           sasaranProgram: { programId: ro.kro.kegiatan.programId },
         },
       });
@@ -852,19 +1131,26 @@ export class ImportService {
       if (!isk) return undefined;
       const found = await this.prisma.indikatorSasaranKegiatan.findFirst({
         where: {
-          name: { contains: isk, mode: 'insensitive' },
+          name: { contains: tanpaKode(isk), mode: 'insensitive' },
           sasaranKegiatan: { kegiatanId },
         },
       });
       return found?.id;
     };
 
-    // ===== Bangun payload Paket per baris (lintas grup, dipakai saat create maupun replace) =====
-    const buildPaketData = async (row: ParsedPaketRow) => {
+    const provinsiId = new Map(
+      (await this.prisma.wilayahProvince.findMany({ select: { id: true, name: true } })).map(
+        (p) => [namaProvinsi(p.name), p.id],
+      ),
+    );
+
+    // ===== Payload Paket (dari baris tahun pertama) =====
+    const buildPaketData = async (row: ParsedPaketRow, rowsPaket: ParsedPaketRow[]) => {
       const roId = await resolveRoId(row);
       if (!roId) {
         commitErrors.push({
           excelRowNumber: row.excelRowNumber,
+          sheet: row.sheet,
           namaProyek: row.namaProyek,
           balaiName: row.balaiName,
           reason: `RO "${row.kdKegiatan}.${row.kdKRO}.${row.kdRO}" tidak ditemukan di master nomenklatur`,
@@ -873,14 +1159,12 @@ export class ImportService {
       }
 
       const [
-        komponenId,
         pkpnId,
         tematikRenjaId,
         indikatorRoId,
         indikatorSasaranProgramId,
         indikatorSasaranKegiatanId,
       ] = await Promise.all([
-        resolveKomponenId(roId, row.kdKomponen, row.nmKomponen),
         resolvePkpnId(row.pkpn || ''),
         resolveTematikId(row.tematikRenja || ''),
         resolveIndikatorRoId(roId, row.iro || '', row.satuanIro || ''),
@@ -888,31 +1172,35 @@ export class ImportService {
         resolveIskId(row.kdKegiatan, row.isk || ''),
       ]);
 
-      // Tagging/catatan milik Proyek (1 proyek = 1 set) — diambil dari baris
-      // pertama grup, lihat taggingProyek(). Volume & IRO sekali per paket.
-      const rencana = dto.status === 'RENCANA';
+      // Tagging/catatan milik Proyek (1 proyek = 1 set) — diambil dari paket
+      // pertama proyek baru. Volume & IRO sekali per paket.
       return {
-        kodePaket: row.kodePaket || undefined,
-        name: row.namaPaket,
         roId,
-        komponenId,
-        jenis: row.jenisPaket as any,
-        masaPelaksanaan: row.masaLaksana as any,
-        dokLingStatus: row.dokLing,
-        volumeRo: rencana ? row.volOutput : undefined,
-        tahunMulai: dto.tahun,
-        tahunSelesai: dto.tahun,
-        indikatorRo: indikatorRoId
-          ? {
-              create: [
-                {
-                  indikatorRoId,
-                  volume: rencana ? row.volOutcome : undefined,
-                  satuan: row.outcomeSatuan || undefined,
-                },
-              ],
-            }
-          : undefined,
+        paket: {
+          kodePaket: row.kodePaket || undefined,
+          name: row.namaPaket,
+          roId,
+          jenis: row.jenisPaket as any,
+          masaPelaksanaan: row.masaLaksana as any,
+          dokLingStatus: row.dokLing,
+          lokasiRo: [
+            ...new Set(
+              rowsPaket
+                .map((r) => r.provinsi && provinsiId.get(namaProvinsi(r.provinsi)))
+                .filter((id): id is string => !!id),
+            ),
+          ],
+          indikatorRo: indikatorRoId
+            ? {
+                create: [
+                  {
+                    indikatorRoId,
+                    satuan: row.outcomeSatuan || undefined,
+                  },
+                ],
+              }
+            : undefined,
+        },
         tagging: {
           catatanPembina: row.catatanPembina,
           catatanSspsda: row.catatanSspsda,
@@ -924,179 +1212,211 @@ export class ImportService {
           fkw: row.fkw,
           mpa: row.mpa,
         },
-        alokasi: {
-          create: [
-            {
-              tahun: dto.tahun,
-              status: dto.status as any,
-              rm: row.rm,
-              rmp: row.rmp,
-              pln: row.pln,
-              sbsn: row.sbsn,
-              kpbu: row.kpbu,
-              total:
-                row.total || row.rm + row.rmp + row.pln + row.sbsn + row.kpbu,
-              outputTarget: row.volOutput,
-              outputUnit: row.outputSatuan,
-              outcomeTarget: row.volOutcome,
-              outcomeUnit: row.outcomeSatuan,
-              catatan: 'Hasil import dari Excel',
-              lokasi:
-                row.kotaKabupaten || row.kabKota || row.kecamatan || row.lat
-                  ? {
-                      create: [
-                        {
-                          tipeKoordinat: 'TITIK' as const,
-                          cityName: row.kabKota || row.kotaKabupaten,
-                          districtName: row.kecamatan,
-                          latitude: row.lat,
-                          longitude: row.long,
-                        },
-                      ],
-                    }
-                  : undefined,
-            },
-          ],
+      };
+    };
+
+    // Rincian satu tahun (komponen + volume + sumber dana), selalu RENCANA.
+    const barisAlokasi = async (row: ParsedPaketRow, roId: string) => ({
+      tahun: row.tahun,
+      status: 'RENCANA' as const,
+      komponenId: await resolveKomponenId(roId, row.kdKomponen, row.nmKomponen),
+      rm: row.rm,
+      rmp: row.rmp,
+      pln: row.pln,
+      sbsn: row.sbsn,
+      kpbu: row.kpbu,
+      total: row.total || row.rm + row.rmp + row.pln + row.sbsn + row.kpbu,
+      outputTarget: row.volOutput,
+      outputUnit: row.outputSatuan,
+      outcomeTarget: row.volOutcome,
+      outcomeUnit: row.outcomeSatuan,
+      catatan: 'Hasil import dari Excel',
+      lokasi:
+        row.kotaKabupaten || row.kabKota || row.kecamatan || row.lat
+          ? {
+              create: [
+                {
+                  tipeKoordinat: 'TITIK' as const,
+                  cityName: row.kabKota || row.kotaKabupaten,
+                  districtName: row.kecamatan,
+                  latitude: row.lat,
+                  longitude: row.long,
+                },
+              ],
+            }
+          : undefined,
+    });
+
+    // Paket baru lengkap: rentang tahun = tahun terkecil s.d. terbesar barisnya.
+    const bangunPaket = async (pRows: ParsedPaketRow[]) => {
+      const urut = [...pRows].sort((a, b) => a.tahun - b.tahun);
+      const dasar = await buildPaketData(urut[0], urut);
+      if (!dasar) return null;
+      return {
+        tagging: dasar.tagging,
+        data: {
+          ...dasar.paket,
+          tahunMulai: urut[0].tahun,
+          tahunSelesai: urut[urut.length - 1].tahun,
+          alokasi: {
+            create: await Promise.all(urut.map((r) => barisAlokasi(r, dasar.roId))),
+          },
         },
       };
     };
 
-    // ===== Commit per grup =====
-    const groups = this.groupRows(rows);
-    const decisions = new Map<string, 'skip' | 'replace'>();
-    for (const pr of dto.proyekResolutions ?? []) {
-      decisions.set(pr.groupKey, pr.action);
-    }
+    const catatLog = (entityId: string, aksi: string, kodeProyek: string, changes: unknown) =>
+      this.prisma.activityLog
+        .create({
+          data: {
+            userId,
+            username,
+            method: 'POST',
+            path: '/import/commit',
+            entity: 'proyek',
+            entityId,
+            statusCode: 200,
+            meta: {
+              resource: 'Proyek',
+              source: 'import',
+              kodeProyek,
+              aksi,
+              sessionId: dto.sessionId,
+              changes,
+            } as any,
+          },
+        })
+        .catch(() => undefined);
+
+    // ===== Commit per proyek =====
+    const { rencana, duplikat } = await this.rencanakan(rows, (nama) =>
+      balaiMap.get(nama),
+    );
 
     let createdProyek = 0;
     let updatedProyek = 0;
-    let skippedProyek = 0;
+    const daftarHasil: {
+      proyekId: string;
+      kodeProyek: string;
+      namaProyek: string;
+      aksi: 'baru' | 'ditambah';
+      paketBaru: number;
+      alokasiBaru: number;
+    }[] = [];
     let createdPaket = 0;
+    let createdAlokasi = 0;
 
-    // KodePaket kosong di Excel -> generate dengan pola yang sama seperti
-    // create manual (lihat src/common/kode-generator.ts).
-    const withKodePaket = <T extends { kodePaket?: string; tagging: unknown }>(
-      paket: T[],
-      kodeProyek: string,
-    ) =>
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      paket.map(({ tagging, ...p }, idx) => ({
-        ...p,
-        kodePaket:
-          p.kodePaket ??
-          `PA${kodeProyek.slice(2)}${String(idx + 1).padStart(4, '0')}`,
-      }));
-    // Tagging proyek = isian paket pertama yang berhasil dibaca.
-    const tagging = new Map<ParsedPaketRow[], object>();
-    const bangunPaket = async (rows: ParsedPaketRow[]) => {
-      const hasil = (await Promise.all(rows.map(buildPaketData))).filter(
-        (p): p is NonNullable<typeof p> => p !== null,
-      );
-      tagging.set(rows, hasil[0]?.tagging ?? {});
-      return hasil;
-    };
-    const taggingProyek = (rows: ParsedPaketRow[]) => tagging.get(rows) ?? {};
-
-    for (const [groupKey, groupRows] of groups) {
-      const first = groupRows[0];
-      const balaiId = balaiMap.get(first.balaiName)!;
-
-      const existing = await this.findExistingProyek(groupRows, balaiId);
-
-      if (existing) {
-        const decision = decisions.get(groupKey) ?? 'skip';
-        if (decision === 'skip') {
-          skippedProyek++;
-          continue;
-        }
-        try {
-          // Proyek lama hasil import sebelumnya bisa belum punya kode.
-          const kodeProyek =
-            existing.kodeProyek ?? (await generateKodeProyek(this.prisma));
-          const paketData = withKodePaket(
-            await bangunPaket(groupRows),
-            kodeProyek,
-          );
-          const sumberUsulanReplace = parseSumberUsulan(
-            first.sumberUsulanProyekRaw,
-          );
-          // onDelete: Cascade di Alokasi/LokasiAlokasi ikut membersihkan
-          await this.prisma.paket.deleteMany({
-            where: { proyekId: existing.id },
-          });
-          const updated = await this.prisma.proyek.update({
-            where: { id: existing.id },
-            data: {
-              kodeProyek,
-              projectName: first.namaProyek,
-              balaiId,
-              kewenangan: (first.kewenangan || 'PUSAT') as any,
-              wilayahSungaiId: await resolveWilayahSungaiId(
-                first.namaWilayahSungai || '',
-              ),
-              kegiatanPrioritasId: await resolveKegiatanPrioritasId(
-                first.kp || '',
-              ),
-              tahunStudiLayak: first.tahunStudiLayak,
-              tahunDed: first.tahunDed,
-              tahunLarap: first.tahunLarap,
-              kebutuhanTanah: first.kebutuhanTanah,
-              catatan: first.keterangan || undefined,
-              sumberUsulanProyek: sumberUsulanReplace.value as any,
-              sumberUsulanLainnya: sumberUsulanReplace.lainnya,
-              ...taggingProyek(groupRows),
-              paket: { create: paketData as any },
-            },
-          });
-          updatedProyek++;
-          createdPaket += paketData.length;
-          await this.prisma.activityLog
-            .create({
-              data: {
-                userId,
-                username,
-                method: 'POST',
-                path: '/import/commit',
-                entity: 'proyek',
-                entityId: existing.id,
-                statusCode: 200,
-                meta: {
-                  resource: 'Proyek',
-                  source: 'import',
-                  kodeProyek,
-                  aksi: 'replace',
-                  sessionId: dto.sessionId,
-                  changes: diffEntity(existing, updated),
-                } as any,
-              },
-            })
-            .catch(() => undefined);
-        } catch (err: any) {
-          commitErrors.push({
-            excelRowNumber: first.excelRowNumber,
-            namaProyek: first.namaProyek,
-            balaiName: first.balaiName,
-            reason: err.message?.substring(0, 150) || 'Gagal replace data',
-          });
-        }
+    for (const { grup, existing, paket } of rencana) {
+      const first = grup[0];
+      const baru = paket.filter((p) => p.rows.length > 0);
+      if (baru.length === 0) continue;
+      const balaiId = balaiMap.get(first.balaiName);
+      if (balaiId == null) {
+        commitErrors.push({
+          excelRowNumber: first.excelRowNumber,
+          sheet: first.sheet,
+          namaProyek: first.namaProyek,
+          balaiName: first.balaiName,
+          reason: 'Balai belum ada di master, minta admin menambahkan',
+        });
         continue;
       }
 
-      // Proyek baru
       try {
+        if (existing) {
+          // Proyek sudah ada: data proyek tidak ditimpa, hanya ditambah paket
+          // baru atau tahun baru di paket lama.
+          let kodeProyek = existing.kodeProyek;
+          if (!kodeProyek) {
+            kodeProyek = await generateKodeProyek(this.prisma);
+            await this.prisma.proyek.update({
+              where: { id: existing.id },
+              data: { kodeProyek },
+            });
+          }
+          let tambahPaket = 0;
+          let tambahAlokasi = 0;
+          for (const p of baru) {
+            if (p.lama) {
+              const lama = p.lama;
+              for (const r of p.rows) {
+                await this.prisma.alokasi.create({
+                  data: { paketId: lama.id, ...(await barisAlokasi(r, lama.roId)) },
+                });
+              }
+              const tahun = [
+                ...p.rows.map((r) => r.tahun),
+                ...lama.alokasi.map((a) => a.tahun),
+                ...[lama.tahunMulai, lama.tahunSelesai].filter(
+                  (t): t is number => t != null,
+                ),
+              ];
+              await this.prisma.paket.update({
+                where: { id: lama.id },
+                data: {
+                  tahunMulai: Math.min(...tahun),
+                  tahunSelesai: Math.max(...tahun),
+                },
+              });
+              tambahAlokasi += p.rows.length;
+            } else {
+              const hasil = await bangunPaket(p.rows);
+              if (!hasil) continue;
+              await this.prisma.paket.create({
+                data: {
+                  ...hasil.data,
+                  proyekId: existing.id,
+                  kodePaket:
+                    hasil.data.kodePaket ??
+                    (await generateKodePaket(this.prisma, kodeProyek)),
+                } as any,
+              });
+              tambahPaket++;
+              tambahAlokasi += p.rows.length;
+            }
+          }
+          if (tambahAlokasi === 0) continue;
+          updatedProyek++;
+          createdPaket += tambahPaket;
+          createdAlokasi += tambahAlokasi;
+          daftarHasil.push({
+            proyekId: existing.id,
+            kodeProyek,
+            namaProyek: existing.projectName,
+            aksi: 'ditambah',
+            paketBaru: tambahPaket,
+            alokasiBaru: tambahAlokasi,
+          });
+          await catatLog(existing.id, 'tambah', kodeProyek, {
+            paketBaru: tambahPaket,
+            alokasiBaru: tambahAlokasi,
+          });
+          continue;
+        }
+
+        // Proyek baru
+        const hasil = (await Promise.all(baru.map((p) => bangunPaket(p.rows)))).filter(
+          (h): h is NonNullable<typeof h> => h !== null,
+        );
+        if (hasil.length === 0) continue;
         const kodeProyek =
           first.kodeProyek || (await generateKodeProyek(this.prisma));
-        const paketData = withKodePaket(
-          await bangunPaket(groupRows),
-          kodeProyek,
-        );
+        // KodePaket kosong di Excel -> pola sama dengan create manual.
+        const paketData = hasil.map((h, idx) => ({
+          ...h.data,
+          kodePaket:
+            h.data.kodePaket ??
+            `PA${kodeProyek.slice(2)}${String(idx + 1).padStart(4, '0')}`,
+        }));
         const sumberUsulan = parseSumberUsulan(first.sumberUsulanProyekRaw);
         const created = await this.prisma.proyek.create({
           data: {
             kodeProyek,
             projectName: first.namaProyek,
             balaiId,
-            periodeId: await this.resolvePeriodeId(dto.tahun),
+            periodeId: await this.resolvePeriodeId(
+              Math.min(...grup.map((r) => r.tahun)),
+            ),
             kewenangan: (first.kewenangan || 'PUSAT') as any,
             wilayahSungaiId: await resolveWilayahSungaiId(
               first.namaWilayahSungai || '',
@@ -1113,41 +1433,32 @@ export class ImportService {
             sumberUsulanLainnya: sumberUsulan.lainnya,
             status: 'DRAFT',
             createdById: userId,
-            ...taggingProyek(groupRows),
+            ...hasil[0].tagging,
             paket: { create: paketData as any },
           },
         });
         createdProyek++;
         createdPaket += paketData.length;
-        await this.prisma.activityLog
-          .create({
-            data: {
-              userId,
-              username,
-              method: 'POST',
-              path: '/import/commit',
-              entity: 'proyek',
-              entityId: created.id,
-              statusCode: 200,
-              meta: {
-                resource: 'Proyek',
-                source: 'import',
-                kodeProyek,
-                aksi: 'create',
-                sessionId: dto.sessionId,
-                changes: changesForCreate(created),
-              } as any,
-            },
-          })
-          .catch(() => undefined);
+        const alokasiBaru = paketData.reduce((s, p) => s + p.alokasi.create.length, 0);
+        createdAlokasi += alokasiBaru;
+        daftarHasil.push({
+          proyekId: created.id,
+          kodeProyek,
+          namaProyek: created.projectName,
+          aksi: 'baru',
+          paketBaru: paketData.length,
+          alokasiBaru,
+        });
+        await catatLog(created.id, 'create', kodeProyek, changesForCreate(created));
       } catch (err: any) {
         commitErrors.push({
           excelRowNumber: first.excelRowNumber,
+          sheet: first.sheet,
           namaProyek: first.namaProyek,
           balaiName: first.balaiName,
           reason:
             err.code === 'P2002'
-              ? 'KodeProyek duplikat'
+              ? 'Kode proyek/paket atau alokasi tahun ini sudah ada'
               : err.message?.substring(0, 150) || 'Error tidak diketahui',
         });
       }
@@ -1159,14 +1470,16 @@ export class ImportService {
       message: 'Import berhasil diproses',
       createdProyek,
       updatedProyek,
-      skippedProyek,
       createdPaket,
+      createdAlokasi,
+      skippedDuplikat: duplikat.length,
       skipped: commitErrors.length,
       commitErrors,
+      hasil: daftarHasil,
     };
   }
 
-  /** Cari/ buat Periode yang mencakup tahun anggaran import (dipilih user di dialog commit). */
+  /** Cari/ buat Periode yang mencakup tahun alokasi terkecil proyek. */
   private async resolvePeriodeId(tahun: number): Promise<number> {
     let periode = await this.prisma.periode.findFirst({
       where: { startYear: { lte: tahun }, endYear: { gte: tahun } },

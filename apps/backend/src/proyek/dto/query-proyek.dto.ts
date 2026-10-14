@@ -28,6 +28,13 @@ export class QueryProyekDto {
   @IsString()
   search?: string;
 
+  @ApiPropertyOptional({
+    description: '"1" = hanya proyek dari import terakhir user ini',
+  })
+  @IsOptional()
+  @IsString()
+  importTerakhir?: string;
+
   @ApiPropertyOptional({ description: 'Filter berdasarkan ID periode' })
   @IsOptional()
   @Type(() => Number)

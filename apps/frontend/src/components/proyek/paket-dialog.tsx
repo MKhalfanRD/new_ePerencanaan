@@ -51,6 +51,7 @@ import {
   paketKosong,
   ringkasIsianPaket,
   totalAlokasi,
+  type BarisTahun,
   type PaketIsian,
   type PaketSection,
   type SumberDana,
@@ -128,12 +129,13 @@ function terisi(p: PaketIsian, key: string): boolean {
     case "paketSatker": return !!p.satkerId;
     case "paketName": return !!p.name.trim();
     case "paketRo": return !!p.roId;
-    case "paketKomponen": return !!p.komponenId;
     case "paketLokasiRo": return p.lokasiRo.length > 0;
-    case "paketVolumeRo": return p.volumeRo != null;
-    case "paketIndikatorRo": return p.indikatorRo.some((i) => i.indikatorRoId);
+    case "paketIndikatorRo": return !!p.indikatorRoId;
     case "paketTahun": return !!p.tahunMulai && !!p.tahunSelesai;
-    case "paketAlokasi": return alokasiDalamRentang(p).some((a) => totalAlokasi(a) > 0);
+    case "paketAlokasi": {
+      const baris = alokasiDalamRentang(p);
+      return baris.length > 0 && baris.every((a) => a.komponenId) && baris.some((a) => totalAlokasi(a) > 0);
+    }
     case "paketLokasi":
       return p.lokasiSamaProyek || p.latitude != null || !!p.coordinates?.length;
     default: {
@@ -149,12 +151,26 @@ const ikonKartu = (s: PaketSection) => {
   const keys = new Set(s.items.map((i) => i.key));
   if (keys.has("paketAlokasi") || keys.has("paketTahun")) return Wallet;
   if (keys.has("paketLokasi")) return MapPin;
-  if (keys.has("paketVolumeRo") || keys.has("paketIndikatorRo") || keys.has("paketLokasiRo"))
+  if (keys.has("paketIndikatorRo") || keys.has("paketLokasiRo"))
     return Target;
   return Package;
 };
 // Field inti yang memakan satu baris penuh.
 const LEBAR = new Set(["paketRo", "paketIndikatorRo", "paketAlokasi", "paketLokasi", "paketLokasiRo"]);
+function JenisBadge({ jenis }: { jenis?: string }) {
+  const pendukung = jenis === "PENDUKUNG";
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded-full px-1.5 py-px text-[10px] font-semibold",
+        pendukung ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800",
+      )}
+    >
+      {pendukung ? "pendukung" : "utama"}
+    </span>
+  );
+}
+
 const LABEL_SUMBER: Record<SumberDana, string> = {
   rm: "RM",
   rmp: "RMP",
@@ -256,8 +272,10 @@ export function PaketDialog({
     for (const r of roKegiatan) m.set(r.kro.id, r.kro);
     return [...m.values()].sort((a, b) => a.code.localeCompare(b.code));
   }, [roKegiatan]);
+  // Komponen milik RO paket (RO milik kegiatan proyek), utama & pendukung.
   const komponenRo = komponenList.filter((k) => k.roId === p.roId);
-  const komponen = komponenList.find((k) => k.id === p.komponenId);
+  const iroPilihan = ro?.indikatorRO ?? [];
+  const satuanIroList = iroPilihan.find((o) => o.id === p.indikatorRoId)?.satuanList ?? [];
   const tahunList = useMemo(() => {
     const awal = tahunMin ?? new Date().getFullYear();
     const akhir = tahunMax ?? awal + 4;
@@ -274,24 +292,35 @@ export function PaketDialog({
     ),
   );
   const nilaiDiPaket = (key: string) =>
-    key === "paketRo" ? p.roId : key === "paketKomponen" ? p.komponenId : p.formValues[key]?.value;
+    key === "paketRo" ? p.roId : p.formValues[key]?.value;
 
   const status = statusSaldo(saldo, [
     ...paketLain,
-    ringkasIsianPaket(p, roList, komponenList),
+    ...ringkasIsianPaket(p, roList, komponenList),
   ]);
   const lebihSaldo = status.some((s) => s.lebih);
 
-  const ubahAlokasi = (tahun: number, k: SumberDana, v: number | undefined) =>
+  const ubahBaris = (tahun: number, patch: Partial<BarisTahun>) =>
     setP((cur) => {
       const ada = cur.alokasi.some((a) => a.tahun === tahun);
       return {
         ...cur,
         alokasi: ada
-          ? cur.alokasi.map((a) => (a.tahun === tahun ? { ...a, [k]: v ?? 0 } : a))
-          : [...cur.alokasi, { tahun, [k]: v ?? 0 }],
+          ? cur.alokasi.map((a) => (a.tahun === tahun ? { ...a, ...patch } : a))
+          : [...cur.alokasi, { tahun, ...patch }],
       };
     });
+  const ubahAlokasi = (tahun: number, k: SumberDana, v: number | undefined) =>
+    ubahBaris(tahun, { [k]: v ?? 0 });
+  // Ganti RO: indikator & komponen tiap tahun ikut dikosongkan.
+  const gantiRo = (roId: string) =>
+    setP((cur) => ({
+      ...cur,
+      roId,
+      indikatorRoId: undefined,
+      satuanIro: undefined,
+      alokasi: cur.alokasi.map((a) => ({ ...a, komponenId: undefined })),
+    }));
 
   const R: Record<string, (item: FormItemNode) => React.ReactNode> = {
     paketSatker: (item) => (
@@ -339,7 +368,7 @@ export function PaketDialog({
             value={kroId || undefined}
             onValueChange={(v) => {
               setKroId(v);
-              set({ roId: "", komponenId: undefined, indikatorRo: [] });
+              gantiRo("");
             }}
           >
             <SelectTrigger aria-label="KRO" className="h-9 w-full min-w-0 text-xs">
@@ -357,9 +386,7 @@ export function PaketDialog({
             value={p.roId || undefined}
             disabled={!kroId}
             onOpenChange={(o) => o && setRoSearch("")}
-            onValueChange={(v) =>
-              set({ roId: v, komponenId: undefined, indikatorRo: [] })
-            }
+            onValueChange={gantiRo}
           >
             <SelectTrigger aria-label="RO" className="h-9 w-full min-w-0 text-xs">
               <SelectValue placeholder={kroId ? "Pilih RO" : "Pilih KRO dulu"} />
@@ -383,42 +410,6 @@ export function PaketDialog({
             </SelectContent>
           </Select>
         </div>
-      </>
-    ),
-    paketKomponen: (item) => (
-      <>
-        <div className="flex items-center justify-between gap-2">
-          <PaketLabel item={item} />
-          {komponen && (
-            <span
-              className={cn(
-                "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                komponen.jenis === "PENDUKUNG"
-                  ? "bg-amber-100 text-amber-800"
-                  : "bg-emerald-100 text-emerald-800",
-              )}
-            >
-              {komponen.jenis === "PENDUKUNG" ? "Pendukung" : "Utama"}
-            </span>
-          )}
-        </div>
-        <Select
-          value={p.komponenId || NONE}
-          disabled={!p.roId}
-          onValueChange={(v) => set({ komponenId: v === NONE ? undefined : v })}
-        >
-          <SelectTrigger aria-label="Komponen" className="h-9 w-full text-xs">
-            <SelectValue placeholder={p.roId ? "Pilih komponen" : "Pilih RO dulu"} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE}>— Tidak ada —</SelectItem>
-            {komponenRo.map((k) => (
-              <SelectItem key={k.id} value={k.id}>
-                {k.code} — {k.name} · {k.jenis === "PENDUKUNG" ? "pendukung" : "utama"}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </>
     ),
     paketLokasiRo: (item) => (
@@ -468,118 +459,58 @@ export function PaketDialog({
         </div>
       </>
     ),
-    paketVolumeRo: (item) => (
+    paketIndikatorRo: (item) => (
       <>
-        <PaketLabel item={item} htmlFor="paket-volume-ro" />
+        <PaketLabel item={item} />
         <div className="flex gap-2">
-          <AngkaInput
-            id="paket-volume-ro"
-            desimal
-            className="h-9 text-xs"
-            placeholder="0"
-            value={p.volumeRo}
-            onChange={(v) => set({ volumeRo: v })}
-          />
-          <Input
-            aria-label="Satuan RO"
-            readOnly
-            tabIndex={-1}
-            className="h-9 w-28 shrink-0 bg-muted text-xs"
-            value={ro?.satuan?.name ?? ""}
-            placeholder="Satuan"
-          />
+          <Select
+            value={p.indikatorRoId || undefined}
+            disabled={!p.roId}
+            onValueChange={(v) => {
+              const sat = iroPilihan.find((o) => o.id === v)?.satuanList ?? [];
+              set({ indikatorRoId: v, satuanIro: sat[0]?.satuan.name });
+            }}
+          >
+            <SelectTrigger aria-label="Indikator RO" className="h-9 min-w-0 flex-1 text-xs">
+              <SelectValue placeholder={p.roId ? "Pilih indikator" : "Pilih RO dulu"} />
+            </SelectTrigger>
+            <SelectContent>
+              {iroPilihan.map((o) => (
+                <SelectItem key={o.id} value={o.id}>
+                  {o.nama}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {satuanIroList.length > 1 ? (
+            <Select value={p.satuanIro || undefined} onValueChange={(v) => set({ satuanIro: v })}>
+              <SelectTrigger aria-label="Satuan IRO" className="h-9 w-28 shrink-0 text-xs">
+                <SelectValue placeholder="Satuan" />
+              </SelectTrigger>
+              <SelectContent>
+                {satuanIroList.map((x) => (
+                  <SelectItem key={x.id} value={x.satuan.name}>
+                    {x.satuan.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              aria-label="Satuan IRO"
+              readOnly
+              tabIndex={-1}
+              className="h-9 w-28 shrink-0 bg-muted text-xs"
+              value={p.satuanIro ?? ""}
+              placeholder="Satuan"
+            />
+          )}
         </div>
+        {p.roId && iroPilihan.length === 0 && (
+          <p className="text-[11px] text-muted-foreground">RO ini belum punya Indikator RO di master.</p>
+        )}
       </>
     ),
-    paketIndikatorRo: (item) => {
-      const pilihan = ro?.indikatorRO ?? [];
-      const ubah = (i: number, patch: Partial<PaketIsian["indikatorRo"][number]>) =>
-        set({ indikatorRo: p.indikatorRo.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
-      return (
-        <>
-          <PaketLabel item={item} />
-          <div className="space-y-2">
-            {p.indikatorRo.map((x, i) => {
-              const satuan = pilihan.find((o) => o.id === x.indikatorRoId)?.satuanList ?? [];
-              return (
-                <div key={i} className="flex gap-2">
-                  <Select
-                    value={x.indikatorRoId || undefined}
-                    onValueChange={(v) => {
-                      const s = pilihan.find((o) => o.id === v)?.satuanList ?? [];
-                      ubah(i, { indikatorRoId: v, satuan: s[0]?.satuan.name });
-                    }}
-                  >
-                    <SelectTrigger aria-label="Indikator RO" className="h-9 min-w-0 flex-1 text-xs">
-                      <SelectValue placeholder="Pilih indikator" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {pilihan.map((o) => (
-                        <SelectItem key={o.id} value={o.id}>
-                          {o.nama}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <AngkaInput
-                    aria-label="Volume indikator"
-                    desimal
-                    className="h-9 w-28 shrink-0 text-xs"
-                    placeholder="Volume"
-                    value={x.volume}
-                    onChange={(v) => ubah(i, { volume: v })}
-                  />
-                  {satuan.length > 1 ? (
-                    <Select value={x.satuan || undefined} onValueChange={(v) => ubah(i, { satuan: v })}>
-                      <SelectTrigger aria-label="Satuan indikator" className="h-9 w-28 shrink-0 text-xs">
-                        <SelectValue placeholder="Satuan" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {satuan.map((s) => (
-                          <SelectItem key={s.id} value={s.satuan.name}>
-                            {s.satuan.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      aria-label="Satuan indikator"
-                      readOnly
-                      tabIndex={-1}
-                      className="h-9 w-28 shrink-0 bg-muted text-xs"
-                      value={x.satuan ?? ""}
-                      placeholder="Satuan"
-                    />
-                  )}
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
-                    aria-label="Hapus indikator"
-                    onClick={() => set({ indikatorRo: p.indikatorRo.filter((_, j) => j !== i) })}
-                  >
-                    <X size={14} />
-                  </Button>
-                </div>
-              );
-            })}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              disabled={!p.roId}
-              onClick={() => set({ indikatorRo: [...p.indikatorRo, { indikatorRoId: "" }] })}
-            >
-              <Plus size={12} className="mr-1" />
-              {p.roId ? "Tambah indikator" : "Pilih RO dulu"}
-            </Button>
-          </div>
-        </>
-      );
-    },
     paketTahun: (item) => (
       <>
         <PaketLabel item={item} />
@@ -616,26 +547,82 @@ export function PaketDialog({
     ),
     paketAlokasi: (item) => {
       const totalSemua = rentang.reduce(
-        (s, t) => s + totalAlokasi(p.alokasi.find((a) => a.tahun === t) ?? {}),
+        (sum, t) => sum + totalAlokasi(p.alokasi.find((a) => a.tahun === t) ?? {}),
         0,
       );
+      const satuanRo = ro?.satuan?.name ?? "";
       return (
         <>
           <PaketLabel item={item} />
-          {!rentang.length ? (
+          {!rentang.length || !p.roId ? (
             <p className="rounded-md border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
-              Pilih tahun pelaksanaan dulu.
+              {!p.roId ? "Pilih RO dulu." : "Pilih tahun pelaksanaan dulu."}
             </p>
           ) : (
             <div className="overflow-hidden rounded-lg border">
               {rentang.map((t) => {
-                const a = p.alokasi.find((x) => x.tahun === t) ?? { tahun: t };
+                const a: BarisTahun = p.alokasi.find((x) => x.tahun === t) ?? { tahun: t };
+                const komp = komponenRo.find((k) => k.id === a.komponenId);
                 const tampil = sumberTahun[t] ?? ["rm"];
                 const sisa = SUMBER_DANA.filter((k) => !tampil.includes(k));
                 return (
-                  <div key={t} className="flex flex-wrap items-start gap-2 border-b px-3 py-2.5 last:border-b-0">
-                    <span className="w-12 pt-2 text-xs font-semibold">{t}</span>
-                    <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+                  <div key={t} className="space-y-2 border-b px-3 py-3 last:border-b-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold">{t}</span>
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {formatRupiah(totalAlokasi(a))}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_9.5rem_9.5rem]">
+                      <Select
+                        value={a.komponenId || undefined}
+                        onValueChange={(v) => ubahBaris(t, { komponenId: v })}
+                      >
+                        <SelectTrigger
+                          aria-label={`Komponen ${t}`}
+                          className="h-8 w-full min-w-0 text-xs *:data-[slot=select-value]:truncate"
+                        >
+                          <SelectValue placeholder="Pilih komponen">
+                            {komp && (
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                <span className="truncate">
+                                  {komp.code} — {komp.name}
+                                </span>
+                                <JenisBadge jenis={komp.jenis} />
+                              </span>
+                            )}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {komponenRo.map((k) => (
+                            <SelectItem key={k.id} value={k.id}>
+                              {k.code} — {k.name} <JenisBadge jenis={k.jenis} />
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {(
+                        [
+                          ["volumeRo", "Vol RO", satuanRo],
+                          ["volumeIro", "Vol IRO", p.satuanIro ?? ""],
+                        ] as const
+                      ).map(([k, l, sat]) => (
+                        <div key={k} className="flex items-center rounded-md border bg-background">
+                          <AngkaInput
+                            aria-label={`${l} ${t}`}
+                            desimal
+                            className="h-8 min-w-0 border-0 text-xs shadow-none focus-visible:ring-0"
+                            placeholder={l}
+                            value={a[k]}
+                            onChange={(v) => ubahBaris(t, { [k]: v })}
+                          />
+                          <span className="max-w-16 shrink-0 truncate border-l px-2 text-[11px] text-muted-foreground">
+                            {sat || "—"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
                       {tampil.map((k) => (
                         <div key={k} className="flex w-[11.5rem] items-center rounded-md border bg-background">
                           <span className="w-12 shrink-0 border-r px-2 text-[11px] font-semibold text-muted-foreground">
@@ -684,9 +671,6 @@ export function PaketDialog({
                         </Select>
                       )}
                     </div>
-                    <span className="ml-auto pt-2 text-xs tabular-nums text-muted-foreground">
-                      {formatRupiah(totalAlokasi(a))}
-                    </span>
                   </div>
                 );
               })}
@@ -695,6 +679,9 @@ export function PaketDialog({
                 <span className="tabular-nums">{formatRupiah(totalSemua)}</span>
               </div>
             </div>
+          )}
+          {p.roId && komponenRo.length === 0 && (
+            <p className="text-[11px] text-muted-foreground">RO ini belum punya komponen di master.</p>
           )}
         </>
       );
@@ -762,6 +749,10 @@ export function PaketDialog({
       for (const i of s.items)
         if (isRequiredPaketItem(i) && i.fieldType !== "UPLOAD" && !terisi(p, i.key))
           return toast.error(`Lengkapi "${i.label}"`);
+    // Tiap tahun wajib 1 komponen (penentu utama/pendukung di Valuasi).
+    const tanpaKomponen = rentang.find((t) => !p.alokasi.find((a) => a.tahun === t)?.komponenId);
+    if (p.roId && komponenRo.length && tanpaKomponen)
+      return toast.error(`Pilih komponen tahun ${tanpaKomponen}`);
     if (lebihSaldo) return toast.error("Paket melebihi saldo proyek");
     setSaving(true);
     try {

@@ -17,16 +17,15 @@ import type { FormItemNode, FormTabNode } from "./proyek-form-dialog";
 export type PaketSection = FormTabNode["sections"][number];
 export type FormValuesMap = Record<string, FieldControlValue>;
 
+// Komponen, volume RO/IRO & sumber dana diisi per tahun di paketAlokasi.
 export const PAKET_BAKU_KEYS = [
   "paketSatker",
   "paketName",
   "paketRo",
-  "paketKomponen",
-  "paketLokasiRo",
-  "paketVolumeRo",
   "paketIndikatorRo",
   "paketTahun",
   "paketAlokasi",
+  "paketLokasiRo",
   "paketLokasi",
 ];
 export const PEMAKETAN_PROYEK_KEYS = [
@@ -48,19 +47,27 @@ export const PAKET_ALWAYS_REQUIRED_KEYS = ["paketName", "paketRo", "paketTahun"]
 export const SUMBER_DANA = ["rm", "rmp", "pln", "sbsn", "kpbu"] as const;
 export type SumberDana = (typeof SUMBER_DANA)[number];
 
+/** Rincian 1 tahun: 1 komponen, volume RO/IRO & rupiah per sumber dana. */
+export type BarisTahun = {
+  tahun: number;
+  komponenId?: string;
+  volumeRo?: number;
+  volumeIro?: number;
+} & Partial<Record<SumberDana, number>>;
+
 export interface PaketIsian {
   id?: string;
   kodePaket?: string;
   satkerId?: string;
   name: string;
   roId: string;
-  komponenId?: string;
   lokasiRo: string[];
-  volumeRo?: number;
-  indikatorRo: { indikatorRoId: string; volume?: number; satuan?: string }[];
+  // 1 Indikator RO per paket; volumenya per tahun.
+  indikatorRoId?: string;
+  satuanIro?: string;
   tahunMulai?: number;
   tahunSelesai?: number;
-  alokasi: ({ tahun: number } & Partial<Record<SumberDana, number>>)[];
+  alokasi: BarisTahun[];
   lokasiSamaProyek: boolean;
   provinceId?: string;
   provinceName?: string;
@@ -82,7 +89,6 @@ export const paketKosong = (satkerId?: string | null): PaketIsian => ({
   name: "",
   roId: "",
   lokasiRo: [],
-  indikatorRo: [],
   alokasi: [],
   lokasiSamaProyek: true,
   formValues: {},
@@ -98,20 +104,18 @@ export function paketDariServer(p: Paket): PaketIsian {
     satkerId: p.satkerId ?? undefined,
     name: p.name,
     roId: p.roId,
-    komponenId: p.komponenId ?? undefined,
     lokasiRo: p.lokasiRo ?? [],
-    volumeRo: angka(p.volumeRo),
-    indikatorRo: (p.indikatorRo ?? []).map((i) => ({
-      indikatorRoId: i.indikatorRoId,
-      volume: angka(i.volume),
-      satuan: i.satuan ?? undefined,
-    })),
+    indikatorRoId: p.indikatorRo?.[0]?.indikatorRoId,
+    satuanIro: p.indikatorRo?.[0]?.satuan ?? undefined,
     tahunMulai: p.tahunMulai ?? undefined,
     tahunSelesai: p.tahunSelesai ?? undefined,
     alokasi: (p.alokasi ?? [])
       .filter((a) => a.status === "RENCANA")
       .map((a) => ({
         tahun: a.tahun,
+        komponenId: a.komponenId ?? undefined,
+        volumeRo: angka(a.outputTarget),
+        volumeIro: angka(a.outcomeTarget),
         ...Object.fromEntries(SUMBER_DANA.map((k) => [k, Number(a[k] ?? 0)])),
       })),
     lokasiSamaProyek: p.lokasiSamaProyek ?? true,
@@ -150,11 +154,10 @@ export function paketKePayload(p: PaketIsian) {
   return {
     name: p.name,
     roId: p.roId,
-    komponenId: p.komponenId || undefined,
     satkerId: p.satkerId || undefined,
     lokasiRo: p.lokasiRo,
-    volumeRo: p.volumeRo,
-    indikatorRo: p.indikatorRo.filter((i) => i.indikatorRoId),
+    indikatorRoId: p.indikatorRoId || undefined,
+    satuanIro: p.satuanIro || undefined,
     tahunMulai: p.tahunMulai,
     tahunSelesai: p.tahunSelesai,
     alokasi: alokasiDalamRentang(p),
@@ -175,33 +178,34 @@ export function paketKePayload(p: PaketIsian) {
   };
 }
 
-/** Ringkasan rasio/saldo 1 paket (sama aturan backend paketRingkasDb). */
+/** Ringkasan rasio/saldo per tahun 1 paket (sama aturan backend
+ * paketRingkasDb): anggaran semua tahun, volume cuma tahun berkomponen UTAMA. */
 export function ringkasIsianPaket(
   p: PaketIsian,
   roList: RO[],
   komponenList: Komponen[],
-): PaketRingkas {
-  const komponen = komponenList.find((k) => k.id === p.komponenId);
-  return {
-    total: totalPaket(p),
-    utama: (komponen?.jenis ?? "UTAMA") === "UTAMA",
-    volumeRo: p.volumeRo ?? 0,
-    satuanRo: roList.find((r) => r.id === p.roId)?.satuan?.name,
-    iro: p.indikatorRo.map((i) => ({ volume: i.volume ?? 0, satuan: i.satuan })),
-  };
+): PaketRingkas[] {
+  const satuanRo = roList.find((r) => r.id === p.roId)?.satuan?.name;
+  return alokasiDalamRentang(p).map((a) => ({
+    total: totalAlokasi(a),
+    utama: (komponenList.find((k) => k.id === a.komponenId)?.jenis ?? "UTAMA") === "UTAMA",
+    volumeRo: a.volumeRo ?? 0,
+    satuanRo,
+    iro: [{ volume: a.volumeIro ?? 0, satuan: p.satuanIro }],
+  }));
 }
 
-/** Ringkasan paket dari server (include komponen & ro.satuan). */
-export function ringkasPaketServer(p: Paket): PaketRingkas {
-  return {
-    total: (p.alokasi ?? [])
-      .filter((a) => a.status === "RENCANA")
-      .reduce((s, a) => s + Number(a.total ?? 0), 0),
-    utama: (p.komponen?.jenis ?? "UTAMA") === "UTAMA",
-    volumeRo: Number(p.volumeRo ?? 0),
-    satuanRo: p.ro?.satuan?.name,
-    iro: (p.indikatorRo ?? []).map((i) => ({ volume: Number(i.volume ?? 0), satuan: i.satuan })),
-  };
+/** Ringkasan per tahun paket dari server (alokasi RENCANA + komponen). */
+export function ringkasPaketServer(p: Paket): PaketRingkas[] {
+  return (p.alokasi ?? [])
+    .filter((a) => a.status === "RENCANA")
+    .map((a) => ({
+      total: Number(a.total ?? 0),
+      utama: (a.komponen?.jenis ?? "UTAMA") === "UTAMA",
+      volumeRo: Number(a.outputTarget ?? 0),
+      satuanRo: p.ro?.satuan?.name,
+      iro: [{ volume: Number(a.outcomeTarget ?? 0), satuan: p.indikatorRo?.[0]?.satuan }],
+    }));
 }
 
 /** Bagian Pemaketan yang diisi per paket (aktif). */
@@ -278,12 +282,10 @@ const CONTOH: Record<string, string[]> = {
   paketSatker: ["Pilih satker"],
   paketName: ["Nama paket"],
   paketRo: ["KRO", "RO"],
-  paketKomponen: ["Komponen · utama/pendukung"],
   paketLokasiRo: ["Pilih provinsi (bisa lebih dari satu)"],
-  paketVolumeRo: ["Volume", "Satuan RO"],
-  paketIndikatorRo: ["Indikator RO", "Volume", "Satuan"],
+  paketIndikatorRo: ["Indikator RO", "Satuan"],
   paketTahun: ["Tahun mulai", "Tahun selesai"],
-  paketAlokasi: ["Tahun", "RM / RMP / PLN / SBSN / KPBU", "Total"],
+  paketAlokasi: ["Per tahun: komponen utama/pendukung", "Vol RO", "Vol IRO", "Sumber dana"],
   paketLokasi: ["Sama dengan lokasi proyek? Ya / Tidak (peta)"],
   saldoAnggaran: ["Rp 0", "Dipakai … · sisa …"],
   saldoVolumeRo: ["0", "Dipakai … · sisa …"],

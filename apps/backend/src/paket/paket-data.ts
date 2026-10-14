@@ -19,10 +19,8 @@ export function kolomPaket(dto: PaketInputDto) {
   return {
     name: dto.name,
     roId: dto.roId,
-    komponenId: dto.komponenId || null,
     satkerId: dto.satkerId || null,
     lokasiRo: dto.lokasiRo ?? [],
-    volumeRo: dto.volumeRo ?? null,
     tahunMulai: dto.tahunMulai ?? null,
     tahunSelesai: dto.tahunSelesai ?? null,
     lokasiSamaProyek: !sendiri,
@@ -55,20 +53,18 @@ export function cekIsianPaket(dto: PaketInputDto) {
 }
 
 const barisIro = (dto: PaketInputDto) =>
-  (dto.indikatorRo ?? [])
-    .filter((i) => i.indikatorRoId)
-    .map((i, order) => ({
-      indikatorRoId: i.indikatorRoId,
-      volume: i.volume ?? null,
-      satuan: i.satuan || null,
-      order,
-    }));
+  dto.indikatorRoId
+    ? [{ indikatorRoId: dto.indikatorRoId, satuan: dto.satuanIro || null, order: 0 }]
+    : [];
 
 // Pemaketan cuma mengisi alokasi RENCANA. Realisasi fitur terpisah (dibahas
 // nanti) — tidak lagi dibuatkan baris REALISASI 0 otomatis.
 const barisRencana = (a: PaketAlokasiDto) => ({
   tahun: a.tahun,
   status: 'RENCANA' as const,
+  komponenId: a.komponenId || null,
+  outputTarget: a.volumeRo ?? null,
+  outcomeTarget: a.volumeIro ?? null,
   rm: a.rm ?? 0,
   rmp: a.rmp ?? 0,
   pln: a.pln ?? 0,
@@ -94,7 +90,7 @@ export async function simpanRelasiPaket(
   paketId: string,
   dto: PaketInputDto,
 ) {
-  if (dto.indikatorRo !== undefined) {
+  if (dto.indikatorRoId !== undefined) {
     await tx.paketIndikatorRo.deleteMany({ where: { paketId } });
     const iro = barisIro(dto);
     if (iro.length)
@@ -115,20 +111,23 @@ export async function simpanRelasiPaket(
   }
 }
 
-/** Ringkasan paket dari isian form (jenis komponen dibaca dari master). */
+/** Ringkasan per tahun dari isian form (jenis komponen dibaca dari master). */
 export async function ringkasIsian(
   tx: Prisma.TransactionClient,
   dto: PaketInputDto,
-): Promise<PaketRingkas> {
-  const komponen = dto.komponenId
-    ? await tx.komponen.findUnique({ where: { id: dto.komponenId }, select: { jenis: true } })
-    : null;
-  return {
-    total: (dto.alokasi ?? []).reduce((s, a) => s + totalAlokasi(a), 0),
-    utama: (komponen?.jenis ?? 'UTAMA') === 'UTAMA',
-    volumeRo: dto.volumeRo ?? 0,
-    iro: (dto.indikatorRo ?? []).map((i) => ({ volume: i.volume ?? 0 })),
-  };
+): Promise<PaketRingkas[]> {
+  const ids = [...new Set((dto.alokasi ?? []).map((a) => a.komponenId).filter((x): x is string => !!x))];
+  const jenis = new Map(
+    (await tx.komponen.findMany({ where: { id: { in: ids } }, select: { id: true, jenis: true } })).map(
+      (k) => [k.id, k.jenis],
+    ),
+  );
+  return (dto.alokasi ?? []).map((a) => ({
+    total: totalAlokasi(a),
+    utama: (jenis.get(a.komponenId ?? '') ?? 'UTAMA') === 'UTAMA',
+    volumeRo: a.volumeRo ?? 0,
+    iro: [{ volume: a.volumeIro ?? 0 }],
+  }));
 }
 
 const angka = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 4 });
@@ -153,7 +152,7 @@ export function cekSaldo(
 }
 
 const LINTAS_UNIT = ['SUPER_ADMIN', 'ADMINISTRATOR'];
-const lintasUnit = (user: any) =>
+export const lintasUnit = (user: any) =>
   LINTAS_UNIT.includes(user?.role) || LINTAS_UNIT.includes(user?.baseRole);
 
 /**

@@ -46,10 +46,17 @@ import { PreviewSkorDto, FormValueDto } from './dto/preview-skor.dto';
 
 // Data paket utk rasio Valuasi & saldo (lihat paketRingkasDb).
 const paketRingkasInclude = {
-  komponen: { select: { jenis: true } },
   ro: { select: { satuan: { select: { name: true } } } },
-  indikatorRo: { select: { volume: true, satuan: true } },
-  alokasi: { select: { status: true, total: true } },
+  indikatorRo: { select: { satuan: true } },
+  alokasi: {
+    select: {
+      status: true,
+      total: true,
+      outputTarget: true,
+      outcomeTarget: true,
+      komponen: { select: { jenis: true } },
+    },
+  },
 } satisfies Prisma.PaketInclude;
 
 /** Akun Balai/Satker: proyek selalu di balainya sendiri. */
@@ -79,7 +86,6 @@ const proyekInclude = Prisma.validator<Prisma.ProyekInclude>()({
           satuan: true,
         },
       },
-      komponen: true,
       satker: { select: { id: true, name: true } },
       indikatorRo: {
         include: {
@@ -89,7 +95,7 @@ const proyekInclude = Prisma.validator<Prisma.ProyekInclude>()({
       },
       formValues: { include: { item: true, option: true } },
       alokasi: {
-        include: { lokasi: true },
+        include: { lokasi: true, komponen: true },
         orderBy: [
           { tahun: Prisma.SortOrder.asc },
           { status: Prisma.SortOrder.asc },
@@ -393,7 +399,7 @@ export class ProyekService {
       for (const p of dto.paket ?? [])
         p.satkerId = await satkerPaket(tx, user, dto.balaiId, p.satkerId);
       // Anggaran semua paket, volume paket UTAMA — rasio Valuasi & saldo.
-      const ringkasan = await Promise.all((dto.paket ?? []).map((p) => ringkasIsian(tx, p)));
+      const ringkasan = (await Promise.all((dto.paket ?? []).map((p) => ringkasIsian(tx, p)))).flat();
       cekSaldo(dto, ringkasan);
       const paketSekarang = ringkasPaket(ringkasan);
       const { skorEvaluasi, formValueCreates } = await this.hitungEvaluasi(
@@ -474,11 +480,33 @@ export class ProyekService {
     return proyek;
   }
 
+  /** Proyek yang dibuat/ditambah oleh sesi import terakhir user ini (dari log aktivitas). */
+  private async proyekImportTerakhir(user: any): Promise<string[]> {
+    const dariImport = {
+      userId: user.userId,
+      path: '/import/commit',
+      meta: { path: ['source'], equals: 'import' },
+    };
+    const terakhir = await this.prisma.activityLog.findFirst({
+      where: dariImport,
+      orderBy: { createdAt: 'desc' },
+      select: { meta: true },
+    });
+    const sesi = (terakhir?.meta as any)?.sessionId;
+    if (!sesi) return [];
+    const log = await this.prisma.activityLog.findMany({
+      where: { ...dariImport, AND: [{ meta: { path: ['sessionId'], equals: sesi } }] },
+      select: { entityId: true },
+    });
+    return log.map((l) => l.entityId).filter((id): id is string => !!id);
+  }
+
   async findAll(user: any, query: QueryProyekDto) {
-    const { status, page = 1, limit = 10, search, periodeId } = query;
+    const { status, page = 1, limit = 10, search, periodeId, importTerakhir } =
+      query;
     const skip = (page - 1) * limit;
 
-    const cacheKey = `proyek:list:${user.userId}:${user.role}:${user.kegiatanId ?? ''}:${status ?? ''}:${page}:${limit}:${search ?? ''}:${periodeId ?? ''}`;
+    const cacheKey = `proyek:list:${user.userId}:${user.role}:${user.kegiatanId ?? ''}:${status ?? ''}:${page}:${limit}:${search ?? ''}:${periodeId ?? ''}:${importTerakhir ?? ''}`;
     const cached = await this.redis.get(cacheKey);
     if (cached) return cached;
 
@@ -499,6 +527,7 @@ export class ProyekService {
     if (status) where.status = status as any;
     if (periodeId) where.periodeId = Number(periodeId);
     if (search) where.projectName = { contains: search, mode: 'insensitive' };
+    if (importTerakhir === '1') where.id = { in: await this.proyekImportTerakhir(user) };
 
     const [data, total] = await Promise.all([
       this.prisma.proyek.findMany({
@@ -617,8 +646,8 @@ export class ProyekService {
 
     const paket0 = proyek.paket?.[0];
     // Total SEMUA paket & tahun (alokasi RENCANA) — rasio Valuasi.
-    const paketSekarang = ringkasPaket(proyek.paket.map(paketRingkasDb));
-    cekSaldo({ ...proyek, ...dto }, proyek.paket.map(paketRingkasDb));
+    const paketSekarang = ringkasPaket(proyek.paket.flatMap(paketRingkasDb));
+    cekSaldo({ ...proyek, ...dto }, proyek.paket.flatMap(paketRingkasDb));
 
     // Skor evaluasi dihitung ulang tiap kali proyek disimpan dari struktur
     // Form Proyek (Master Data) — lihat hitungEvaluasi/form-skor.ts.
@@ -646,9 +675,14 @@ export class ProyekService {
         projectName: dto.projectName,
         kewenangan: dto.kewenangan as any,
         ...lokasiData(dto),
-        saldoAnggaran: dto.saldoAnggaran,
-        saldoVolumeRo: dto.saldoVolumeRo,
-        saldoVolumeIro: dto.saldoVolumeIro,
+        // Akun Satker cuma boleh ubah saldo kalau saklar izin menyala.
+        ...(izinSatker(user, true) === undefined && !proyek.satkerBolehUbahPaket
+          ? {}
+          : {
+              saldoAnggaran: dto.saldoAnggaran,
+              saldoVolumeRo: dto.saldoVolumeRo,
+              saldoVolumeIro: dto.saldoVolumeIro,
+            }),
         satkerBolehUbahPaket: izinSatker(user, dto.satkerBolehUbahPaket),
         kebutuhanTanah: dto.kebutuhanTanah,
         wilayahSungaiId: dto.wilayahSungaiId,
@@ -761,7 +795,7 @@ export class ProyekService {
 
     const paket0 = proyek.paket?.[0];
     // Total SEMUA paket & tahun (alokasi RENCANA) — rasio Valuasi.
-    const paketSekarang = ringkasPaket(proyek.paket.map(paketRingkasDb));
+    const paketSekarang = ringkasPaket(proyek.paket.flatMap(paketRingkasDb));
 
     const formValues: FormValueDto[] = proyek.formValues.map((fv) => ({
       key: fv.item.key,

@@ -111,15 +111,15 @@ export function bandingkan(nilai: number, operator: string, standar: number): bo
     default: return nilai < standar;
   }
 }
-/** Ringkasan 1 paket utk rasio & saldo. */
+/** Ringkasan 1 baris rincian (1 tahun 1 paket) utk rasio & saldo. */
 export interface PaketRingkas {
-  total: number; // jumlah alokasi RENCANA semua tahun (Rp)
-  utama: boolean; // komponen UTAMA (atau tanpa komponen)
+  total: number; // alokasi RENCANA tahun itu (Rp)
+  utama: boolean; // komponen tahun itu UTAMA (atau tanpa komponen)
   volumeRo: number;
   satuanRo?: string | null;
   iro: { volume: number; satuan?: string | null }[];
 }
-/** A = anggaran SEMUA paket; B/C = volume RO/IRO paket berkomponen UTAMA. */
+/** A = anggaran SEMUA baris; B/C = volume RO/IRO baris berkomponen UTAMA. */
 export function ringkasPaket(paket: PaketRingkas[]): RingkasPaket {
   const utama = paket.filter((p) => p.utama);
   const unik = (xs: (string | null | undefined)[]) =>
@@ -133,23 +133,28 @@ export function ringkasPaket(paket: PaketRingkas[]): RingkasPaket {
     satuanC: unik(iro.filter((i) => i.volume).map((i) => i.satuan)),
   };
 }
-/** Paket dari DB (include komponen, ro.satuan, indikatorRo, alokasi). */
+/** Paket dari DB -> 1 ringkasan per tahun (alokasi RENCANA + komponennya,
+ * ro.satuan, indikatorRo.satuan). */
 export function paketRingkasDb(p: {
-  komponen?: { jenis: string } | null;
   ro?: { satuan?: { name: string } | null } | null;
-  volumeRo?: unknown;
-  indikatorRo?: { volume?: unknown; satuan?: string | null }[];
-  alokasi?: { status: string; total?: unknown }[];
-}): PaketRingkas {
-  return {
-    total: (p.alokasi ?? [])
-      .filter((a) => a.status === 'RENCANA')
-      .reduce((s, a) => s + Number(a.total ?? 0), 0),
-    utama: (p.komponen?.jenis ?? 'UTAMA') === 'UTAMA',
-    volumeRo: Number(p.volumeRo ?? 0),
-    satuanRo: p.ro?.satuan?.name,
-    iro: (p.indikatorRo ?? []).map((i) => ({ volume: Number(i.volume ?? 0), satuan: i.satuan })),
-  };
+  indikatorRo?: { satuan?: string | null }[];
+  alokasi?: {
+    status: string;
+    total?: unknown;
+    outputTarget?: unknown;
+    outcomeTarget?: unknown;
+    komponen?: { jenis: string } | null;
+  }[];
+}): PaketRingkas[] {
+  return (p.alokasi ?? [])
+    .filter((a) => a.status === 'RENCANA')
+    .map((a) => ({
+      total: Number(a.total ?? 0),
+      utama: (a.komponen?.jenis ?? 'UTAMA') === 'UTAMA',
+      volumeRo: Number(a.outputTarget ?? 0),
+      satuanRo: p.ro?.satuan?.name,
+      iro: [{ volume: Number(a.outcomeTarget ?? 0), satuan: p.indikatorRo?.[0]?.satuan }],
+    }));
 }
 /**
  * Nilai rasio pembilang:penyebut. A dibagi skala satuan standar (mis. juta).
@@ -375,14 +380,16 @@ if (require.main === module) {
   strictEqual(rk.A, 3_600_000_000);
   strictEqual(rk.B, 200);
   strictEqual(rk.satuanB.length, 1);
-  strictEqual(
-    paketRingkasDb({
-      komponen: { jenis: 'PENDUKUNG' },
-      volumeRo: '3',
-      alokasi: [{ status: 'RENCANA', total: '5' }, { status: 'REALISASI', total: '9' }],
-    }).total,
-    5,
-  );
+  const rinci = paketRingkasDb({
+    alokasi: [
+      { status: 'RENCANA', total: '5', outputTarget: '2', komponen: { jenis: 'PENDUKUNG' } },
+      { status: 'RENCANA', total: '7', outputTarget: '3' },
+      { status: 'REALISASI', total: '9' },
+    ],
+  });
+  strictEqual(rinci.length, 2);
+  strictEqual(ringkasPaket(rinci).A, 12);
+  strictEqual(ringkasPaket(rinci).B, 3); // baris pendukung tidak dihitung
   strictEqual(hitungRasio({ pembilang: 'A', penyebut: 'B', satuan: 'juta' }, rk), 18);
   strictEqual(
     hitungRasio({ pembilang: 'A', penyebut: 'B' }, { ...rk, satuanB: ['meter', 'unit'] }),

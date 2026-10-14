@@ -1,0 +1,342 @@
+<title>Opsi Alur RO Pemaketan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: satu kolom dokumen kerja, tiap kondisi satu blok (dicetak satu halaman per kondisi). */
+:root {
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --fg: #1c2328;
+  --muted: #5b6770;
+  --line: #d9dee2;
+  --accent: #0f5c6e;
+  --accent-soft: #e3f0f2;
+  --ok: #1d6b3a;
+  --ok-soft: #e4f2e8;
+  --bad: #a3271c;
+  --bad-soft: #f8e6e4;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12171a; --surface: #1a2125; --fg: #e3e8eb; --muted: #9aa7b0; --line: #2e383e;
+    --accent: #6fc3d3; --accent-soft: #173238; --ok: #7fcf98; --ok-soft: #173023;
+    --bad: #f0958b; --bad-soft: #3a1d1a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12171a; --surface: #1a2125; --fg: #e3e8eb; --muted: #9aa7b0; --line: #2e383e;
+  --accent: #6fc3d3; --accent-soft: #173238; --ok: #7fcf98; --ok-soft: #173023;
+  --bad: #f0958b; --bad-soft: #3a1d1a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 960px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 28px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 21px; font-weight: 700; }
+h3 { font-size: 15px; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.muted { color: var(--muted); }
+header { display: grid; gap: 10px; }
+.block { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 22px; display: grid; gap: 16px; min-width: 0; }
+.rules { display: grid; gap: 8px; padding-left: 20px; margin: 0; }
+.terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.term { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 2px; }
+.term b { font-family: var(--font-mono); color: var(--accent); }
+.kondisi-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 14px; }
+.tag { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.tag.now { background: var(--ok-soft); color: var(--ok); }
+.chart { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--bg); }
+.chart pre.mermaid { margin: 0; background: transparent; font-family: var(--font-body); white-space: pre; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 12.5px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 12.5px; }
+.ok { color: var(--ok); font-weight: 600; }
+.bad { color: var(--bad); font-weight: 600; }
+.chip { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; }
+.chip.u { background: var(--ok-soft); color: var(--ok); }
+.chip.p { background: var(--bad-soft); color: var(--bad); }
+.pros { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.pros div { display: grid; gap: 4px; }
+.pros ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
+.box { display: inline-block; width: 14px; height: 14px; border: 1.5px solid var(--fg); border-radius: 3px; vertical-align: -2px; }
+.notes { display: grid; gap: 0; }
+.notes span { display: block; border-bottom: 1px solid var(--line); height: 34px; }
+footer { font-size: 12.5px; }
+@media print {
+  body { background: #fff; }
+  .wrap { padding-block: 0; }
+  .kondisi { break-before: page; }
+  .block { border-color: #bbb; }
+}
+</style>
+
+<main class="wrap">
+  <header>
+    <span class="eyebrow">ePerencanaan · Form Proyek</span>
+    <h1>Opsi alur RO di tab Pemaketan dan dampaknya ke Valuasi</h1>
+    <p class="muted">Bahan keputusan: pilih satu dari empat kondisi (boleh dengan revisi). Keempatnya berbeda di dua hal: di mana RO dipilih (sekali per paket atau per tahun), dan apakah satuan volume dikunci seragam dalam satu proyek.</p>
+  </header>
+
+  <section class="block" aria-labelledby="sama">
+    <h2 id="sama">Aturan yang sama di semua kondisi</h2>
+    <ol class="rules">
+      <li>Tab Pemaketan: saklar izin satker, lalu saldo anggaran, saldo volume RO, saldo volume IRO, lalu kategori proyek (master per kegiatan), lalu daftar paket.</li>
+      <li>Paket: satker (milik balai proyek), nama paket, tahun mulai s.d. selesai. Tiap tahun berisi 1 komponen, volume RO, volume IRO, dan sumber dana (RM/RMP/PLN/SBSN/KPBU).</li>
+      <li>Komponen dipilih dari master Komponen milik RO (RO milik kegiatan proyek). Jenis utama/pendukung dibaca dari master Komponen; user boleh memilih keduanya.</li>
+      <li>Paket ditolak bila totalnya melebihi saldo. Anggaran dihitung dari semua tahun; volume hanya dari tahun berkomponen utama.</li>
+      <li>Valuasi: A, B, C dihitung otomatis. Rasio yang dipakai hanya bagian Valuasi yang berlaku untuk kategori proyek. Rasio yang memenuhi standar mendapat bobotnya; bobot dijumlah, maksimal bobot tab Valuasi.</li>
+      <li>Volume dengan satuan berbeda tidak bisa dijumlah. Bila satuannya campur, rasio yang memakai B atau C tidak dihitung (bobot 0).</li>
+    </ol>
+    <div class="terms">
+      <div class="term"><b>A</b><span>Total anggaran semua paket, semua tahun</span></div>
+      <div class="term"><b>B</b><span>Total volume RO dari tahun berkomponen utama</span></div>
+      <div class="term"><b>C</b><span>Total volume indikator RO (IRO) dari tahun berkomponen utama</span></div>
+      <div class="term"><b>A/B, A/C, C/B</b><span>Contoh rasio yang diatur di kanvas: rumus, simbol syarat, standar, bobot</span></div>
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="contoh">
+    <h2 id="contoh">Data contoh yang dipakai di tiap kondisi</h2>
+    <p class="muted">Satu proyek kategori "Pembangunan jaringan", saldo anggaran Rp 2 M. Syarat contoh: A/B &lt; 1 M per Km (bobot 5%), A/C &lt; 0,04 M per Ha (bobot 4%), C/B ≥ 5 Ha per Km (bobot 3%).</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Paket</th><th>Tahun</th><th>Komponen</th><th class="num">Vol RO</th><th class="num">Vol IRO</th><th class="num">Dana</th></tr></thead>
+        <tbody>
+          <tr><td>Paket A</td><td>2026</td><td>103 Konstruksi <span class="chip u">utama</span></td><td class="num">1</td><td class="num">10 Ha</td><td class="num">Rp 400 jt</td></tr>
+          <tr><td>Paket A</td><td>2027</td><td>100 Supervisi <span class="chip p">pendukung</span></td><td class="num">0,5</td><td class="num">5 Ha</td><td class="num">Rp 300 jt</td></tr>
+          <tr><td>Paket B</td><td>2026</td><td>103 Konstruksi <span class="chip u">utama</span></td><td class="num">1</td><td class="num">10 Ha</td><td class="num">Rp 300 jt</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">Satuan volume RO di tiap baris tergantung RO yang dipilih, dan itulah yang membedakan keempat kondisi.</p>
+  </section>
+
+  <section class="block kondisi" aria-labelledby="k1">
+    <div class="kondisi-head"><span class="eyebrow">Kondisi 1</span><h2 id="k1">1 RO per paket, satuan dikunci se-proyek</h2></div>
+    <p>RO dipilih sekali per paket. RO paket pertama menentukan satuan proyek; paket berikutnya hanya bisa memilih RO dengan satuan yang sama (begitu juga satuan indikator RO).</p>
+    <div class="chart"><pre class="mermaid">
+flowchart TD
+  A(["Mulai: tab Pemaketan"]) --> B["Isi saklar izin, saldo, kategori proyek"]
+  B --> C["Tambah paket"]
+  C --> D{"Paket pertama di proyek?"}
+  D -- Ya --> E["Pilih KRO dan RO dari kegiatan"]
+  D -- Tidak --> F["Pilih KRO dan RO: hanya RO bersatuan sama dengan paket pertama"]
+  E --> G["Pilih 1 indikator RO milik RO paket"]
+  F --> G
+  G --> H["Pilih tahun mulai s.d. selesai"]
+  H --> I["Tahun ke-t: pilih 1 komponen milik RO paket"]
+  I --> J["Isi volume RO, volume IRO, sumber dana"]
+  J --> K{"Masih ada tahun?"}
+  K -- Ya --> I
+  K -- Tidak --> L{"Melebihi saldo?"}
+  L -- Ya --> M(["Ditolak, perbaiki isian"])
+  L -- Tidak --> N{"Tambah paket lagi?"}
+  N -- Ya --> C
+  N -- Tidak --> V["Tab Valuasi: baca semua baris tahun"]
+  V --> W["A = anggaran semua baris"]
+  W --> X{"Komponen baris utama?"}
+  X -- Ya --> Y["Volume masuk B dan C"]
+  X -- Tidak --> Z["Volume diabaikan"]
+  Y --> R["Satuan pasti seragam"]
+  Z --> R
+  R --> S["Hitung rasio bagian sesuai kategori"]
+  S --> T{"Memenuhi standar?"}
+  T -- Ya --> U["Dapat bobot rasio"]
+  T -- Tidak --> U0["Bobot 0"]
+  U --> Q(["Jumlah bobot masuk skor Valuasi"])
+  U0 --> Q
+</pre></div>
+    <h3>Hasil dengan data contoh</h3>
+    <p class="muted">Paket A dan B sama-sama memakai RO bersatuan Km. A = Rp 1 M, B = 2 Km (baris 2027 pendukung tidak dihitung), C = 20 Ha.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Rasio</th><th>Hasil</th><th>Syarat</th><th class="num">Bobot</th></tr></thead>
+      <tbody>
+        <tr><td>A/B</td><td>1 M : 2 Km = 0,5 M/Km</td><td>&lt; 1 M/Km <span class="ok">lolos</span></td><td class="num">5%</td></tr>
+        <tr><td>A/C</td><td>1 M : 20 Ha = 0,05 M/Ha</td><td>&lt; 0,04 M/Ha <span class="bad">tidak</span></td><td class="num">0%</td></tr>
+        <tr><td>C/B</td><td>20 Ha : 2 Km = 10 Ha/Km</td><td>≥ 5 Ha/Km <span class="ok">lolos</span></td><td class="num">3%</td></tr>
+        <tr><td colspan="3"><b>Total bobot rasio</b></td><td class="num"><b>8%</b></td></tr>
+      </tbody>
+    </table></div>
+    <div class="pros">
+      <div><h3>Kelebihan</h3><ul><li>Rasio selalu bisa dihitung.</li><li>Isian paket tetap sederhana (RO sekali).</li></ul></div>
+      <div><h3>Kekurangan</h3><ul><li>Proyek tidak bisa mencampur RO bersatuan berbeda (mis. Km dan Unit).</li><li>Butuh perubahan kecil: penyaring RO berdasarkan satuan.</li></ul></div>
+    </div>
+  </section>
+
+  <section class="block kondisi" aria-labelledby="k2">
+    <div class="kondisi-head"><span class="eyebrow">Kondisi 2</span><h2 id="k2">1 RO per paket, satuan bebas</h2><span class="tag now">Berjalan sekarang</span></div>
+    <p>RO dipilih sekali per paket, tanpa batasan satuan. Paket berbeda boleh memakai RO bersatuan berbeda.</p>
+    <div class="chart"><pre class="mermaid">
+flowchart TD
+  A(["Mulai: tab Pemaketan"]) --> B["Isi saklar izin, saldo, kategori proyek"]
+  B --> C["Tambah paket"]
+  C --> E["Pilih KRO dan RO dari kegiatan, satuan bebas"]
+  E --> G["Pilih 1 indikator RO milik RO paket"]
+  G --> H["Pilih tahun mulai s.d. selesai"]
+  H --> I["Tahun ke-t: pilih 1 komponen milik RO paket"]
+  I --> J["Isi volume RO, volume IRO, sumber dana"]
+  J --> K{"Masih ada tahun?"}
+  K -- Ya --> I
+  K -- Tidak --> L{"Melebihi saldo?"}
+  L -- Ya --> M(["Ditolak, perbaiki isian"])
+  L -- Tidak --> N{"Tambah paket lagi?"}
+  N -- Ya --> C
+  N -- Tidak --> V["Tab Valuasi: baca semua baris tahun"]
+  V --> W["A = anggaran semua baris"]
+  W --> X{"Komponen baris utama?"}
+  X -- Ya --> Y["Volume masuk B dan C"]
+  X -- Tidak --> Z["Volume diabaikan"]
+  Y --> R{"Satuan B dan C seragam?"}
+  Z --> R
+  R -- Tidak --> RN["Rasio yang memakai B/C tidak dihitung, bobot 0"]
+  R -- Ya --> S["Hitung rasio bagian sesuai kategori"]
+  S --> T{"Memenuhi standar?"}
+  T -- Ya --> U["Dapat bobot rasio"]
+  T -- Tidak --> U0["Bobot 0"]
+  U --> Q(["Jumlah bobot masuk skor Valuasi"])
+  U0 --> Q
+  RN --> Q
+</pre></div>
+    <h3>Hasil dengan data contoh</h3>
+    <p class="muted">Paket A memakai RO bersatuan Km, Paket B memakai RO bersatuan Unit. B = 1 Km + 1 Unit (campur), C = 20 Ha.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Rasio</th><th>Hasil</th><th>Syarat</th><th class="num">Bobot</th></tr></thead>
+      <tbody>
+        <tr><td>A/B</td><td>Tidak dihitung, satuan B campur</td><td><span class="bad">tidak</span></td><td class="num">0%</td></tr>
+        <tr><td>A/C</td><td>1 M : 20 Ha = 0,05 M/Ha</td><td>&lt; 0,04 M/Ha <span class="bad">tidak</span></td><td class="num">0%</td></tr>
+        <tr><td>C/B</td><td>Tidak dihitung, satuan B campur</td><td><span class="bad">tidak</span></td><td class="num">0%</td></tr>
+        <tr><td colspan="3"><b>Total bobot rasio</b></td><td class="num"><b>0%</b></td></tr>
+      </tbody>
+    </table></div>
+    <div class="pros">
+      <div><h3>Kelebihan</h3><ul><li>Paling bebas: tiap paket memakai RO apa saja.</li><li>Tidak ada perubahan aplikasi.</li></ul></div>
+      <div><h3>Kekurangan</h3><ul><li>Proyek dengan satuan campur kehilangan bobot rasio A/B dan C/B.</li><li>Saldo volume menjumlah angka beda satuan (mis. Km + Unit).</li></ul></div>
+    </div>
+  </section>
+
+  <section class="block kondisi" aria-labelledby="k3">
+    <div class="kondisi-head"><span class="eyebrow">Kondisi 3</span><h2 id="k3">RO per tahun dalam paket, satuan dikunci se-proyek</h2></div>
+    <p>RO dipilih di tiap tahun, jadi satu paket bisa punya beberapa RO. Semua RO dalam proyek wajib bersatuan sama dengan RO baris pertama (begitu juga satuan indikator RO).</p>
+    <div class="chart"><pre class="mermaid">
+flowchart TD
+  A(["Mulai: tab Pemaketan"]) --> B["Isi saklar izin, saldo, kategori proyek"]
+  B --> C["Tambah paket"]
+  C --> H["Pilih tahun mulai s.d. selesai"]
+  H --> T0["Tahun ke-t"]
+  T0 --> D{"Baris pertama di proyek?"}
+  D -- Ya --> E["Pilih KRO dan RO dari kegiatan"]
+  D -- Tidak --> F["Pilih KRO dan RO: hanya RO bersatuan sama dengan baris pertama"]
+  E --> G["Pilih indikator RO milik RO tahun itu"]
+  F --> G
+  G --> I["Pilih 1 komponen milik RO tahun itu"]
+  I --> J["Isi volume RO, volume IRO, sumber dana"]
+  J --> K{"Masih ada tahun?"}
+  K -- Ya --> T0
+  K -- Tidak --> L{"Melebihi saldo?"}
+  L -- Ya --> M(["Ditolak, perbaiki isian"])
+  L -- Tidak --> N{"Tambah paket lagi?"}
+  N -- Ya --> C
+  N -- Tidak --> V["Tab Valuasi: baca semua baris tahun"]
+  V --> W["A = anggaran semua baris"]
+  W --> X{"Komponen baris utama?"}
+  X -- Ya --> Y["Volume masuk B dan C"]
+  X -- Tidak --> Z["Volume diabaikan"]
+  Y --> R["Satuan pasti seragam"]
+  Z --> R
+  R --> S["Hitung rasio bagian sesuai kategori"]
+  S --> T{"Memenuhi standar?"}
+  T -- Ya --> U["Dapat bobot rasio"]
+  T -- Tidak --> U0["Bobot 0"]
+  U --> Q(["Jumlah bobot masuk skor Valuasi"])
+  U0 --> Q
+</pre></div>
+    <h3>Hasil dengan data contoh</h3>
+    <p class="muted">Paket A tahun 2026 dan 2027 boleh memakai RO berbeda, asal sama-sama bersatuan Km. Hasilnya sama dengan kondisi 1: A = Rp 1 M, B = 2 Km, C = 20 Ha, total bobot rasio 8%.</p>
+    <div class="pros">
+      <div><h3>Kelebihan</h3><ul><li>Satu paket bisa mencakup beberapa RO.</li><li>Rasio tetap selalu bisa dihitung.</li></ul></div>
+      <div><h3>Kekurangan</h3><ul><li>Isian per tahun lebih panjang (KRO, RO, indikator, komponen tiap tahun).</li><li>Perubahan aplikasi besar: RO pindah ke tiap baris tahun.</li></ul></div>
+    </div>
+  </section>
+
+  <section class="block kondisi" aria-labelledby="k4">
+    <div class="kondisi-head"><span class="eyebrow">Kondisi 4</span><h2 id="k4">RO per tahun dalam paket, satuan bebas</h2></div>
+    <p>RO dipilih di tiap tahun tanpa batasan satuan. Satuan bisa berbeda antartahun, bahkan dalam satu paket.</p>
+    <div class="chart"><pre class="mermaid">
+flowchart TD
+  A(["Mulai: tab Pemaketan"]) --> B["Isi saklar izin, saldo, kategori proyek"]
+  B --> C["Tambah paket"]
+  C --> H["Pilih tahun mulai s.d. selesai"]
+  H --> T0["Tahun ke-t: pilih KRO dan RO dari kegiatan, satuan bebas"]
+  T0 --> G["Pilih indikator RO milik RO tahun itu"]
+  G --> I["Pilih 1 komponen milik RO tahun itu"]
+  I --> J["Isi volume RO, volume IRO, sumber dana"]
+  J --> K{"Masih ada tahun?"}
+  K -- Ya --> T0
+  K -- Tidak --> L{"Melebihi saldo?"}
+  L -- Ya --> M(["Ditolak, perbaiki isian"])
+  L -- Tidak --> N{"Tambah paket lagi?"}
+  N -- Ya --> C
+  N -- Tidak --> V["Tab Valuasi: baca semua baris tahun"]
+  V --> W["A = anggaran semua baris"]
+  W --> X{"Komponen baris utama?"}
+  X -- Ya --> Y["Volume masuk B dan C"]
+  X -- Tidak --> Z["Volume diabaikan"]
+  Y --> R{"Satuan B dan C seragam?"}
+  Z --> R
+  R -- Tidak --> RN["Rasio yang memakai B/C tidak dihitung, bobot 0"]
+  R -- Ya --> S["Hitung rasio bagian sesuai kategori"]
+  S --> T{"Memenuhi standar?"}
+  T -- Ya --> U["Dapat bobot rasio"]
+  T -- Tidak --> U0["Bobot 0"]
+  U --> Q(["Jumlah bobot masuk skor Valuasi"])
+  U0 --> Q
+  RN --> Q
+</pre></div>
+    <h3>Hasil dengan data contoh</h3>
+    <p class="muted">Paket A tahun 2026 memakai RO bersatuan Km, Paket B tahun 2026 memakai RO bersatuan Unit. Sama seperti kondisi 2: A/B dan C/B tidak dihitung, A/C = 0,05 M/Ha (tidak lolos), total bobot rasio 0%. Satuan campur bisa terjadi bahkan dalam satu paket.</p>
+    <div class="pros">
+      <div><h3>Kelebihan</h3><ul><li>Paling fleksibel: RO bebas tiap tahun.</li></ul></div>
+      <div><h3>Kekurangan</h3><ul><li>Paling sering kehilangan bobot rasio A/B dan C/B.</li><li>Isian per tahun paling panjang; perubahan aplikasi besar.</li></ul></div>
+    </div>
+  </section>
+
+  <section class="block kondisi" aria-labelledby="banding">
+    <h2 id="banding">Perbandingan dan keputusan</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Kondisi</th><th>RO dipilih</th><th>Satuan</th><th>Rasio A/B &amp; C/B</th><th>Perubahan aplikasi</th><th>Pilih</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Sekali per paket</td><td>Dikunci se-proyek</td><td class="ok">Selalu terhitung</td><td>Kecil</td><td><span class="box"></span></td></tr>
+        <tr><td>2 (sekarang)</td><td>Sekali per paket</td><td>Bebas</td><td class="bad">0 bila satuan campur antarpaket</td><td>Tidak ada</td><td><span class="box"></span></td></tr>
+        <tr><td>3</td><td>Per tahun</td><td>Dikunci se-proyek</td><td class="ok">Selalu terhitung</td><td>Besar</td><td><span class="box"></span></td></tr>
+        <tr><td>4</td><td>Per tahun</td><td>Bebas</td><td class="bad">0 bila satuan campur, termasuk dalam 1 paket</td><td>Besar</td><td><span class="box"></span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="notes" aria-label="Catatan revisi">
+      <h3>Catatan atau revisi</h3>
+      <span></span><span></span><span></span><span></span>
+    </div>
+    <footer class="muted">Paraf / tanggal: ______________________</footer>
+  </section>
+</main>
+
+<script>
+// Di Artifact, mermaid dirender otomatis. Saat file dibuka langsung di browser,
+// muat mermaid sendiri kalau diagram belum tergambar.
+setTimeout(function () {
+  if (document.querySelector("pre.mermaid svg")) return;
+  var s = document.createElement("script");
+  s.src = "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js";
+  s.onload = function () {
+    var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    window.mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "neutral", flowchart: { curve: "basis" } });
+    window.mermaid.run({ querySelector: "pre.mermaid" });
+  };
+  document.head.appendChild(s);
+}, 1500);
+</script>

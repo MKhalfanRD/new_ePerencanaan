@@ -87,7 +87,6 @@ const NOMENKLATUR_SOURCE: Record<string, { label: string; info: string }> = {
     label: "RO",
     info: "Pilihan mengikuti kegiatan proyek; KRO ikut dari RO yang dipilih.",
   },
-  paketKomponen: { label: "Komponen", info: "Pilihan mengikuti RO yang dipilih." },
   paketIndikatorRo: { label: "Indikator RO", info: "Pilihan mengikuti RO yang dipilih." },
 };
 // Field bawaan berpilihan tetap sistem (enum) — value tidak bisa diubah,

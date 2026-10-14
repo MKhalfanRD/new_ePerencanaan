@@ -131,8 +131,6 @@ export interface Paket {
   name: string;
   roId: string;
   ro: RO;
-  komponenId?: string;
-  komponen?: Komponen;
   satkerId?: string | null;
   satker?: { id: string; name: string } | null;
   // Format lama — tidak diisi lagi dari form.
@@ -140,11 +138,10 @@ export interface Paket {
   masaPelaksanaan?: "SINGLE_YEAR" | "MULTI_YEAR" | null;
   dokLingStatus?: string;
   lokasiRo?: string[];
-  volumeRo?: string | null;
+  // 1 Indikator RO per paket (volumenya per tahun di alokasi).
   indikatorRo?: {
     id: string;
     indikatorRoId: string;
-    volume?: string | null;
     satuan?: string | null;
     indikatorRo?: IndikatorRO;
   }[];
@@ -175,6 +172,9 @@ export interface Alokasi {
   paketId: string;
   tahun: number;
   status: "RENCANA" | "REALISASI";
+  // Rincian per tahun: komponen tahun itu (volume di outputTarget/outcomeTarget).
+  komponenId?: string | null;
+  komponen?: Komponen | null;
   rm: string;
   rmp: string;
   pln: string;

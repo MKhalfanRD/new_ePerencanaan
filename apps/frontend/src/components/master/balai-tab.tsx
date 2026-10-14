@@ -51,6 +51,7 @@ type FormData = z.infer<typeof schema>;
 
 interface Satker {
   id: string;
+  kode: string;
   name: string;
   balaiId: number;
 }
@@ -246,7 +247,10 @@ export function BalaiTab() {
             label: "Satker",
             render: (item) => satker.filter((x) => x.balaiId === item.id).length || "—",
             exportValue: (item) =>
-              satker.filter((x) => x.balaiId === item.id).map((x) => x.name).join("; "),
+              satker
+                .filter((x) => x.balaiId === item.id)
+                .map((x) => `${x.kode} ${x.name}`)
+                .join("; "),
             skipImport: true,
           },
           {
@@ -285,6 +289,7 @@ export function BalaiTab() {
                 <ul className="divide-y rounded-lg border bg-background">
                   {daftar.map((x) => (
                     <li key={x.id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                      <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground">{x.kode}</span>
                       <span className="flex-1">{x.name}</span>
                       <Button
                         variant="ghost"
@@ -438,7 +443,14 @@ export function BalaiTab() {
         <DialogContent className="!max-w-lg !w-[85vw]" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{formSatker?.id ? "Ubah satker" : "Tambah satker"}</DialogTitle>
-            <p className="text-sm text-muted-foreground">{formSatker?.balai.name}</p>
+            <p className="text-sm text-muted-foreground">
+              {formSatker?.balai.name}
+              {formSatker?.id &&
+                ` · kode ${satker.find((x) => x.id === formSatker.id)?.kode ?? ""}`}
+            </p>
+            {!formSatker?.id && (
+              <p className="text-xs text-muted-foreground">Kode satker dibuat otomatis saat disimpan.</p>
+            )}
           </DialogHeader>
           {formSatker && (
             <div className="space-y-2 py-1">

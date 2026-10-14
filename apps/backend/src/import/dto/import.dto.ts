@@ -4,8 +4,6 @@ import {
   IsOptional,
   IsBoolean,
   IsNumber,
-  IsInt,
-  IsIn,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -32,20 +30,6 @@ export class BalaiResolutionDto {
   createNew?: boolean;
 }
 
-export class ProyekResolutionDto {
-  @ApiProperty({ description: 'KodeProyek (atau key fallback) dari Excel' })
-  @IsString()
-  groupKey: string;
-
-  @ApiProperty({
-    enum: ['skip', 'replace'],
-    description:
-      'skip = pakai data lama, replace = ganti paket & alokasinya dengan data Excel baru',
-  })
-  @IsIn(['skip', 'replace'])
-  action: 'skip' | 'replace';
-}
-
 export class CommitImportDto {
   @ApiProperty({ description: 'Token sesi import dari hasil preview' })
   @IsString()
@@ -56,26 +40,4 @@ export class CommitImportDto {
   @ValidateNested({ each: true })
   @Type(() => BalaiResolutionDto)
   balaiResolutions: BalaiResolutionDto[];
-
-  @ApiPropertyOptional({
-    type: [ProyekResolutionDto],
-    description:
-      'Keputusan untuk proyek yang sudah ada (skip/replace). Default: skip semua jika tidak dikirim',
-  })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ProyekResolutionDto)
-  proyekResolutions?: ProyekResolutionDto[];
-
-  // DB.xlsx tidak punya kolom Tahun/Status Rencana-Realisasi (satu file =
-  // satu snapshot anggaran) — jadi dipilih sekali untuk seluruh batch import,
-  // bukan per baris. Lihat docs-planning/audit-restrukturisasi-db-xlsx.md §3.1.
-  @ApiProperty({ example: 2026 })
-  @IsInt()
-  tahun: number;
-
-  @ApiProperty({ enum: ['RENCANA', 'REALISASI'] })
-  @IsIn(['RENCANA', 'REALISASI'])
-  status: 'RENCANA' | 'REALISASI';
 }

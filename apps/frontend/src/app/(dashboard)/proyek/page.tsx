@@ -138,6 +138,9 @@ function ProyekPageInner() {
   // berperiode beda bikin kolom tahun melebar ke rentang periode itu juga.
   const [periodeList, setPeriodeList] = useState<Periode[]>([]);
   const [filterPeriode, setFilterPeriode] = useState("");
+  // Hanya proyek dari import terakhir user (periode diabaikan supaya semua
+  // hasil import tampil, apa pun periodenya).
+  const [filterImport, setFilterImport] = useState(false);
 
   useEffect(() => {
     api
@@ -156,7 +159,9 @@ function ProyekPageInner() {
         page: String(page),
         limit: "100",
         ...(search && { search }),
-        ...(filterPeriode && { periodeId: filterPeriode }),
+        ...(filterImport
+          ? { importTerakhir: "1" }
+          : filterPeriode && { periodeId: filterPeriode }),
       });
       const res = await api.get<PaginatedResponse<Proyek>>(`/proyek?${params}`);
       setProyekList(res.data.data);
@@ -179,10 +184,10 @@ function ProyekPageInner() {
     // Tunggu filterPeriode ke-resolve (default periode dulu dipilih otomatis
     // setelah periodeList termuat) — kalau tidak, fetch awal tanpa periodeId
     // bisa menang race melawan fetch ber-periodeId begitu default terpasang.
-    if (!filterPeriode) return;
+    if (!filterPeriode && !filterImport) return;
     fetchProyek();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, filterPeriode]);
+  }, [page, filterPeriode, filterImport]);
   const prevSearch = useRef(search);
   useEffect(() => {
     // Skip di mount (search belum benar-benar berubah) — kalau tidak, fetch
@@ -635,8 +640,25 @@ function ProyekPageInner() {
             className="pl-9"
           />
         </div>
+        {punyaRole(user, "SATKER", "ADMINISTRATOR") && (
+          <button
+            type="button"
+            onClick={() => {
+              setFilterImport((v) => !v);
+              setPage(1);
+            }}
+            className={`h-7 rounded-md border px-2 text-xs ${
+              filterImport
+                ? "border-primary bg-primary/10 text-primary font-medium"
+                : "bg-background text-muted-foreground"
+            }`}
+          >
+            Hasil import terakhir{filterImport && " ✕"}
+          </button>
+        )}
         <select
           value={filterPeriode}
+          disabled={filterImport}
           onChange={(e) => {
             setFilterPeriode(e.target.value);
             setPage(1);
@@ -1193,9 +1215,12 @@ function ProyekPageInner() {
       <ImportExcelDialog
         open={showImport}
         onClose={() => setShowImport(false)}
-        onSuccess={() => {
+        onSuccess={(lihatHasil) => {
           setShowImport(false);
-          fetchProyek();
+          if (lihatHasil && !filterImport) {
+            setPage(1);
+            setFilterImport(true);
+          } else fetchProyek();
         }}
       />
 

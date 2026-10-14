@@ -181,6 +181,8 @@ model Satker {
   id      String @id @default(cuid())
   balaiId Int
   balai   Balai  @relation(fields: [balaiId], references: [id], onDelete: Cascade)
+  // Kode otomatis SK0001, SK0002, ... (tidak diisi manual, tidak berubah).
+  kode    String @unique @db.VarChar(20)
   name    String @db.VarChar(255)
 
   users User[]
@@ -319,7 +321,7 @@ model Komponen {
   // dihitung dari paket berkomponen UTAMA (anggaran tetap semua).
   jenis    String  @default("UTAMA") @db.VarChar(10)
 
-  paket Paket[]
+  alokasi Alokasi[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -974,9 +976,6 @@ model Paket {
   roId String @db.VarChar(20)
   ro   RO     @relation(fields: [roId], references: [id])
 
-  komponenId String?
-  komponen   Komponen? @relation(fields: [komponenId], references: [id])
-
   // Satker pelaksana (master Satker di bawah balai proyek).
   satkerId String?
   satker   Satker? @relation(fields: [satkerId], references: [id], onDelete: SetNull)
@@ -988,8 +987,6 @@ model Paket {
 
   // Lokasi RO = id provinsi (master Provinsi), bisa lebih dari satu.
   lokasiRo String[] @default([])
-  // Volume RO sekali per paket (satuan = satuan RO di master).
-  volumeRo Decimal? @db.Decimal(14, 4)
   // Rentang tahun paket — alokasi RENCANA diisi per tahun di rentang ini.
   tahunMulai   Int? @db.SmallInt
   tahunSelesai Int? @db.SmallInt
@@ -1028,14 +1025,13 @@ model Paket {
   @@map("paket")
 }
 
-/// Indikator RO paket + volume (1 paket bisa banyak IRO).
+/// Indikator RO paket (1 per paket; volume diisi per tahun di Alokasi).
 model PaketIndikatorRo {
   id            String      @id @default(cuid())
   paketId       String
   paket         Paket       @relation(fields: [paketId], references: [id], onDelete: Cascade)
   indikatorRoId String
   indikatorRo   IndikatorRO @relation(fields: [indikatorRoId], references: [id])
-  volume        Decimal?    @db.Decimal(14, 4)
   satuan        String?     @db.VarChar(50)
   order         Int         @default(0) @db.SmallInt
 
@@ -1054,6 +1050,11 @@ model Alokasi {
 
   tahun  Int            @db.SmallInt
   status AllokasiStatus
+
+  // Rincian per tahun (RENCANA): 1 komponen per tahun; volume RO/IRO di
+  // outputTarget/outcomeTarget. Volume rasio & saldo cuma dari komponen UTAMA.
+  komponenId String?
+  komponen   Komponen? @relation(fields: [komponenId], references: [id], onDelete: SetNull)
 
   rm    Decimal @default(0) @db.Decimal(16, 0)
   rmp   Decimal @default(0) @db.Decimal(16, 0)

@@ -90,6 +90,9 @@ export function CascadingWilayah({ value, onChange, labels }: Props) {
       .finally(() => setLoading((p) => ({ ...p, village: false })));
   }, [value.districtId]);
 
+  // Nama ditampilkan langsung dari value: kalau wilayah diisi otomatis dari
+  // peta, nilainya masuk sebelum daftar pilihan selesai dimuat dan Select
+  // tidak memperbarui teksnya sendiri (tampil kosong walau sudah terisi).
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="space-y-2">
@@ -105,7 +108,7 @@ export function CascadingWilayah({ value, onChange, labels }: Props) {
           }}
         >
           <SelectTrigger className="h-9 text-xs">
-            <SelectValue placeholder="Pilih provinsi" />
+            <SelectValue placeholder="Pilih provinsi">{value.provinceId ? value.provinceName : undefined}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {provinces.map((p) => (
@@ -139,7 +142,7 @@ export function CascadingWilayah({ value, onChange, labels }: Props) {
           }}
         >
           <SelectTrigger className="h-9 text-xs">
-            <SelectValue placeholder="Pilih kota/kabupaten" />
+            <SelectValue placeholder="Pilih kota/kabupaten">{value.cityId ? value.cityName : undefined}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {regencies.map((r) => (
@@ -171,7 +174,7 @@ export function CascadingWilayah({ value, onChange, labels }: Props) {
           }}
         >
           <SelectTrigger className="h-9 text-xs">
-            <SelectValue placeholder="Pilih kecamatan" />
+            <SelectValue placeholder="Pilih kecamatan">{value.districtId ? value.districtName : undefined}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {districts.map((d) => (
@@ -197,7 +200,7 @@ export function CascadingWilayah({ value, onChange, labels }: Props) {
           }}
         >
           <SelectTrigger className="h-9 text-xs">
-            <SelectValue placeholder="Pilih desa/kelurahan" />
+            <SelectValue placeholder="Pilih desa/kelurahan">{value.villageId ? value.villageName : undefined}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {villages.map((v) => (

@@ -12,6 +12,10 @@ const BASE_URL = 'https://www.emsifa.com/api-wilayah-indonesia/api';
 // Reverse geocoding (koordinat -> alamat) via OpenStreetMap Nominatim (gratis, tanpa API key)
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
 const NOMINATIM_SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
+// Cadangan kalau Nominatim menolak (429 — IP jaringan kantor/ISP bisa diblokir
+// Nominatim untuk SEMUA permintaan, bukan cuma kebanyakan request). Photon =
+// data OpenStreetMap yang sama, tanpa API key.
+const PHOTON_REVERSE_URL = 'https://photon.komoot.io/reverse';
 
 // emsifa.com (hosting di belakang Cloudflare) tidak mengirim sertifikat
 // intermediate lengkap saat TLS handshake -> Node.js (berbeda dari browser)
@@ -133,6 +137,10 @@ export class WilayahService {
     private prisma: PrismaService,
   ) {}
 
+  // Nominatim membalas 429 -> dilewati sampai waktu ini (ponytail: per proses,
+  // tidak dibagi antar instance — cukup utk 1 server).
+  private nominatimDiblokirSampai = 0;
+
   // --- Reverse geocoding ---
 
   async reverseGeocode(
@@ -154,7 +162,22 @@ export class WilayahService {
     }
     if (cached) return cached;
 
-    const address = await this.fetchNominatimAddress(lat, lng);
+    let address: { raw: Record<string, string>; displayName: string };
+    // Nominatim sedang menolak IP ini -> langsung Photon (hemat ~2 detik).
+    if (Date.now() < this.nominatimDiblokirSampai) {
+      address = await this.fetchPhotonAddress(lat, lng);
+    } else {
+      try {
+        address = await this.fetchNominatimAddress(lat, lng);
+      } catch (err) {
+        console.warn('[wilayah/reverse] Nominatim gagal, coba Photon:', (err as Error).message);
+        if (err instanceof HttpException && err.getStatus() === 429)
+          this.nominatimDiblokirSampai = Date.now() + 30 * 60 * 1000;
+        address = await this.fetchPhotonAddress(lat, lng).catch(() => {
+          throw err;
+        });
+      }
+    }
     console.log('[wilayah/reverse] Alamat mentah dari Nominatim:', address);
 
     const { result, hadError } = await this.matchAddressToWilayah(address);
@@ -209,6 +232,120 @@ export class WilayahService {
     }
   }
 
+  /** Reverse geocode lewat Photon, dipetakan ke bentuk alamat Nominatim
+   * supaya pencocokan wilayah (matchAddressToWilayah) tetap sama. Di
+   * Indonesia Photon mengisi city = kab/kota, county = kecamatan (kota) atau
+   * kabupaten (desa), district/locality = kelurahan/desa — semuanya jadi
+   * kandidat; pencocokan ke data master yang memilih level yang benar. */
+  private async fetchPhotonAddress(
+    lat: number,
+    lng: number,
+  ): Promise<{ raw: Record<string, string>; displayName: string }> {
+    const res = await fetch(`${PHOTON_REVERSE_URL}?lat=${lat}&lon=${lng}&radius=10&limit=1`, {
+      headers: { 'User-Agent': 'ePerencanaan-App/1.0 (internal planning tool)' },
+    });
+    if (!res.ok) throw new HttpException('Gagal reverse geocode lokasi', res.status);
+    const f = (await res.json())?.features?.[0]?.properties ?? {};
+    // Photon kadang mengisi state dengan nama pulau ("Jawa") & city tanpa
+    // jenis ("Jakarta", "Bandung"). Pastikan kab/kota lewat data wilayah
+    // lokal: cari kab/kota yang namanya memuat city/county; kalau lebih dari
+    // satu, pilih yang punya kecamatan bernama district/county Photon.
+    const namaKota = [f.city, f.county].filter((v): v is string => !!v);
+    // state yang memang nama provinsi (bukan pulau) membatasi pencarian.
+    const semuaProv = (await this.getProvinces()) as WilayahMasterItem[];
+    const provState = semuaProv.find(
+      (pv) => this.normalizeName(pv.name) === this.normalizeName(f.state ?? ''),
+    );
+    let kota: { id: string; name: string; provinceId: string } | null = null;
+    // true = kab/kota ketemu dari `city` (wilayah kota: county = kecamatan);
+    // false = dari `county` (county = kabupaten, city = nama desa).
+    let dariCity = false;
+    const kata = (x: string) =>
+      x
+        .toLowerCase()
+        .replace(/^\s*(kabupaten|kota( adm\.?| administrasi)?)\s+/, '')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+    for (const n of namaKota) {
+      const nn = kata(n);
+      // Cocok utuh per kata: "Jakarta" -> "Kota Jakarta Pusat", tapi desa
+      // "Ringin" tidak ikut cocok ke "Kotawaringin Barat".
+      const calon = (
+        await this.prisma.wilayahRegency.findMany({
+          where: {
+            name: { contains: n, mode: 'insensitive' },
+            ...(provState ? { provinceId: provState.id } : {}),
+          },
+          select: { id: true, name: true, provinceId: true },
+        })
+      ).filter((c) => {
+        const nc = kata(c.name);
+        return nc === nn || nc.startsWith(`${nn} `);
+      });
+      if (calon.length > 1) {
+        const kec = [f.district, f.county, f.locality].filter((v): v is string => !!v);
+        const d = kec.length
+          ? await this.prisma.wilayahDistrict.findFirst({
+              where: {
+                regencyId: { in: calon.map((c) => c.id) },
+                OR: kec.map((k) => ({ name: { equals: k, mode: 'insensitive' as const } })),
+              },
+              select: { regencyId: true },
+            })
+          : null;
+        kota =
+          calon.find((c) => c.id === d?.regencyId) ??
+          (f.city ? calon.find((c) => /^kota\s/i.test(c.name)) : undefined) ??
+          calon[0];
+      } else kota = calon[0] ?? null;
+      if (kota) {
+        dariCity = n === f.city;
+        break;
+      }
+    }
+    const provinsi = kota
+      ? await this.prisma.wilayahProvince.findUnique({
+          where: { id: kota.provinceId },
+          select: { name: true },
+        })
+      : null;
+    const raw: Record<string, string> = Object.fromEntries(
+      Object.entries({
+        state: provinsi?.name ?? f.state,
+        city: kota?.name ?? (f.city ? `Kota ${f.city}` : undefined),
+        town: dariCity || !kota ? f.city : undefined,
+        county: f.county,
+        // county = kecamatan cuma kalau kab/kota ketemu dari city.
+        municipality: dariCity ? f.county : undefined,
+        village: f.locality ?? f.district ?? (kota && !dariCity ? f.city : undefined),
+        suburb: f.district,
+        neighbourhood: kota && !dariCity ? f.city : undefined,
+        hamlet: f.name,
+      }).filter(([, v]) => typeof v === 'string' && v),
+    ) as Record<string, string>;
+    const displayName = [f.name, f.district, f.city ?? f.county, f.state]
+      .filter(Boolean)
+      .join(', ');
+    return { raw, displayName };
+  }
+
+  /** Pencarian tempat lewat Photon (cadangan Nominatim), dibatasi Indonesia. */
+  private async searchPhoton(q: string): Promise<LocationSearchResult[]> {
+    const res = await fetch(
+      `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5&bbox=94.9,-11.1,141.1,6.1`,
+      { headers: { 'User-Agent': 'ePerencanaan-App/1.0 (internal planning tool)' } },
+    );
+    if (!res.ok) throw new HttpException('Layanan pencarian lokasi sedang tidak tersedia', 503);
+    const data = await res.json();
+    return (data?.features ?? []).map((f: any) => ({
+      displayName: [f.properties?.name, f.properties?.city ?? f.properties?.county, f.properties?.state]
+        .filter(Boolean)
+        .join(', '),
+      lat: f.geometry.coordinates[1],
+      lng: f.geometry.coordinates[0],
+    }));
+  }
+
   async searchAddress(query: string): Promise<LocationSearchResult[]> {
     const trimmed = query.trim();
     if (!trimmed) return [];
@@ -222,6 +359,12 @@ export class WilayahService {
         '[wilayah/search] Gagal mengakses Redis, lanjut tanpa cache:',
         err,
       );
+    }
+
+    if (Date.now() < this.nominatimDiblokirSampai) {
+      const results = await this.searchPhoton(trimmed);
+      await this.redis.set(cacheKey, results, 60 * 60 * 24).catch(() => {});
+      return results;
     }
 
     const url = `${NOMINATIM_SEARCH_URL}?format=jsonv2&q=${encodeURIComponent(
@@ -238,6 +381,10 @@ export class WilayahService {
         console.error(
           `[wilayah/search] Nominatim membalas status ${res.status} untuk ${url}`,
         );
+        if (res.status === 429) {
+          this.nominatimDiblokirSampai = Date.now() + 30 * 60 * 1000;
+          return this.searchPhoton(trimmed);
+        }
         throw new HttpException('Gagal mencari lokasi', res.status);
       }
       const data = await res.json();
@@ -456,12 +603,17 @@ export class WilayahService {
     const normTarget = this.normalizeName(target);
     let best: WilayahMasterItem | null = null;
     let bestScore = 0;
+    // "Kota Bandung" vs "Kabupaten Bandung" sama setelah normalisasi — kalau
+    // target menyebut jenisnya, yang jenisnya sama menang seri.
+    const jenis = (n: string) =>
+      /^\s*kota\s/i.test(n) ? 'kota' : /^\s*(kabupaten|kab\.?)\s/i.test(n) ? 'kab' : null;
+    const jenisTarget = jenis(target);
 
     for (const c of candidates) {
       const normCandidate = this.normalizeName(c.name);
       let score: number;
       if (normCandidate === normTarget) {
-        score = 1;
+        score = jenisTarget && jenis(c.name) === jenisTarget ? 1.01 : 1;
       } else if (
         normCandidate.includes(normTarget) ||
         normTarget.includes(normCandidate)

@@ -1,6 +1,5 @@
 import {
   Controller,
-  Get,
   Post,
   Body,
   UseGuards,
@@ -41,16 +40,12 @@ export class ImportController {
   @Roles('ADMINISTRATOR', 'SATKER')
   @Post('preview')
   @UseInterceptors(FileInterceptor('file'))
-  async preview(@UploadedFile() file: Express.Multer.File) {
+  async preview(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: any,
+  ) {
     if (!file) throw new BadRequestException('File Excel wajib diupload');
-    return this.importService.preview(file.buffer);
-  }
-
-  @ApiOperation({ summary: 'Daftar kolom template import (wajib/opsional)' })
-  @Roles('ADMINISTRATOR', 'SATKER')
-  @Get('template-columns')
-  getTemplateColumns() {
-    return this.importService.getTemplateColumns();
+    return this.importService.preview(file.buffer, user);
   }
 
   @ApiOperation({
@@ -59,6 +54,6 @@ export class ImportController {
   @Roles('ADMINISTRATOR', 'SATKER')
   @Post('commit')
   async commit(@Body() dto: CommitImportDto, @CurrentUser() user: any) {
-    return this.importService.commit(dto, user.userId, user.username);
+    return this.importService.commit(dto, user);
   }
 }

@@ -33,7 +33,6 @@ export const paketDetailInclude = {
       satuan: true,
     },
   },
-  komponen: true,
   satker: { select: { id: true, name: true } },
   indikatorRo: {
     include: { indikatorRo: { include: { satuanList: { include: { satuan: true } } } } },
@@ -41,7 +40,7 @@ export const paketDetailInclude = {
   },
   formValues: { include: { item: true, option: true } },
   alokasi: {
-    include: { lokasi: true },
+    include: { lokasi: true, komponen: true },
     orderBy: [{ tahun: 'asc' as const }, { status: 'asc' as const }],
   },
   // PKPN/ISP/ISK/Tematik sengaja tidak di-include — pindah ke Proyek (lihat
@@ -49,9 +48,17 @@ export const paketDetailInclude = {
 };
 
 const ringkasInclude = {
-  komponen: { select: { jenis: true } },
-  indikatorRo: { select: { volume: true } },
-  alokasi: { select: { status: true, total: true } },
+  ro: { select: { satuan: { select: { name: true } } } },
+  indikatorRo: { select: { satuan: true } },
+  alokasi: {
+    select: {
+      status: true,
+      total: true,
+      outputTarget: true,
+      outcomeTarget: true,
+      komponen: { select: { jenis: true } },
+    },
+  },
 } satisfies Prisma.PaketInclude;
 
 @Injectable()
@@ -80,7 +87,7 @@ export class PaketService {
       where: { proyekId: proyek.id, deletedAt: null, id: kecualiPaketId ? { not: kecualiPaketId } : undefined },
       include: ringkasInclude,
     });
-    cekSaldo(proyek, [...lain.map(paketRingkasDb), await ringkasIsian(tx, dto as CreatePaketDto)]);
+    cekSaldo(proyek, [...lain.flatMap(paketRingkasDb), ...(await ringkasIsian(tx, dto as CreatePaketDto))]);
   }
 
   async create(dto: CreatePaketDto, user?: any) {
@@ -158,10 +165,8 @@ export class PaketService {
     const lama = {
       name: paket.name,
       roId: paket.roId,
-      komponenId: paket.komponenId ?? undefined,
       satkerId: paket.satkerId ?? undefined,
       lokasiRo: paket.lokasiRo,
-      volumeRo: paket.volumeRo == null ? undefined : Number(paket.volumeRo),
       tahunMulai: paket.tahunMulai ?? undefined,
       tahunSelesai: paket.tahunSelesai ?? undefined,
       lokasiSamaProyek: paket.lokasiSamaProyek,
@@ -186,7 +191,7 @@ export class PaketService {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       isian.satkerId = await satkerPaket(tx, user, paket.proyek.balaiId, isian.satkerId);
-      if (dto.alokasi !== undefined || dto.volumeRo !== undefined || dto.indikatorRo !== undefined)
+      if (dto.alokasi !== undefined)
         await this.cekSaldoProyek(tx, paket.proyek, isian, id);
       await simpanRelasiPaket(tx, id, isian);
       // formValues tidak dikirim = jangan sentuh isian lama.

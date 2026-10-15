@@ -82,7 +82,7 @@ function SelectContent({
         align={align}
         {...props}
       >
-        {searchBox}
+        {searchBox ?? <SelectCariOtomatis />}
         <SelectScrollUpButton />
         <SelectPrimitive.Viewport
           data-position={position}
@@ -134,6 +134,59 @@ function SelectSearchBox({
         placeholder={placeholder}
         className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       />
+    </div>
+  )
+}
+
+/**
+ * Pencarian otomatis (semua dropdown) untuk SelectContent yang tidak
+ * memasang SelectSearchBox sendiri: menyaring opsi yang SUDAH ter-render
+ * (cocokkan teksnya), jadi pemanggil tidak perlu mengubah apa-apa. Opsi
+ * disembunyikan lewat style, bukan dibuang dari daftar, supaya nilai
+ * terpilih tetap dikenali Radix.
+ */
+function SelectCariOtomatis() {
+  const ref = React.useRef<HTMLDivElement>(null)
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const [kata, setKata] = React.useState("")
+  const [kosong, setKosong] = React.useState(false)
+  // Radix memindahkan fokus ke opsi terpilih sesaat setelah dropdown terbuka;
+  // ambil lagi supaya user bisa langsung mengetik.
+  React.useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 30)
+    return () => clearTimeout(t)
+  }, [])
+  const saring = (v: string) => {
+    setKata(v)
+    const k = v.trim().toLowerCase()
+    let cocok = 0
+    const opsi = ref.current?.parentElement?.querySelectorAll<HTMLElement>(
+      "[data-slot=select-item]"
+    )
+    for (const o of opsi ?? []) {
+      const ya = !k || (o.textContent ?? "").toLowerCase().includes(k)
+      o.style.display = ya ? "" : "none"
+      if (ya) cocok++
+    }
+    setKosong(cocok === 0)
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
+  return (
+    <div ref={ref} className="z-10 shrink-0 border-b bg-popover p-1.5">
+      <input
+        ref={inputRef}
+        autoFocus
+        value={kata}
+        onChange={(e) => saring(e.target.value)}
+        onKeyDown={(e) => e.stopPropagation()}
+        placeholder="Cari..."
+        className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      />
+      {kosong && (
+        <p className="px-1 pt-1.5 text-xs text-muted-foreground">
+          Tidak ditemukan
+        </p>
+      )}
     </div>
   )
 }

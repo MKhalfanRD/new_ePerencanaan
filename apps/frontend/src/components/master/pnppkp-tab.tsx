@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { TombolImport } from "@/components/import/tombol-import";
+import type { TemplateExcel } from "@/lib/template-excel";
 import { useForm } from "react-hook-form";
 import * as XLSX from "xlsx";
 import {
@@ -10,7 +12,6 @@ import {
   Pencil,
   Plus,
   Trash2,
-  Upload,
   Download,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -376,10 +377,6 @@ export function PnppkpTab() {
       })),
     );
 
-  const pnFileRef = useRef<HTMLInputElement>(null);
-  const ppFileRef = useRef<HTMLInputElement>(null);
-  const kpFileRef = useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState<"pn" | "pp" | "kp" | null>(null);
 
   const readExcelRows = async (
     file: File,
@@ -401,11 +398,7 @@ export function PnppkpTab() {
   };
   const handleImportFile =
     (level: "pn" | "pp" | "kp") =>
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      e.target.value = "";
-      if (!file) return;
-      setImporting(level);
+    async (file: File) => {
       try {
         if (level === "pn") {
           await onImportPn(
@@ -430,42 +423,24 @@ export function PnppkpTab() {
         }
       } catch (err: any) {
         toast.error(err.message || "Gagal impor file");
-      } finally {
-        setImporting(null);
       }
     };
 
   const ImportExportButtons = ({
     level,
-    fileRef,
     onExport,
   }: {
     level: "pn" | "pp" | "kp";
-    fileRef: React.RefObject<HTMLInputElement | null>;
     onExport: () => void;
   }) => (
     <div className="flex items-center gap-1.5">
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".xlsx,.xls"
-        className="hidden"
-        onChange={handleImportFile(level)}
-      />
-      <Button
-        size="sm"
-        variant="outline"
+      <TombolImport
+        judul={level.toUpperCase()}
+        label="Import"
         className="h-7 text-xs"
-        disabled={importing === level}
-        onClick={() => fileRef.current?.click()}
-      >
-        {importing === level ? (
-          <Loader2 size={12} className="mr-1 animate-spin" />
-        ) : (
-          <Upload size={12} className="mr-1" />
-        )}
-        Import
-      </Button>
+        onFile={handleImportFile(level)}
+        templates={[TEMPLATE_PNPPKP[level]]}
+      />
       <Button
         size="sm"
         variant="outline"
@@ -507,7 +482,6 @@ export function PnppkpTab() {
           </span>
           <ImportExportButtons
             level="pn"
-            fileRef={pnFileRef}
             onExport={exportPn}
           />
         </div>
@@ -517,7 +491,6 @@ export function PnppkpTab() {
           </span>
           <ImportExportButtons
             level="pp"
-            fileRef={ppFileRef}
             onExport={exportPp}
           />
         </div>
@@ -527,7 +500,6 @@ export function PnppkpTab() {
           </span>
           <ImportExportButtons
             level="kp"
-            fileRef={kpFileRef}
             onExport={exportKp}
           />
         </div>
@@ -950,3 +922,30 @@ export function PnppkpTab() {
     </div>
   );
 }
+
+// Kolom template = kolom yang dibaca handleImportFile per level (cocok lewat Kode).
+const TEMPLATE_PNPPKP: Record<"pn" | "pp" | "kp", TemplateExcel> = {
+  pn: {
+    nama: "template-pn",
+    kolom: [
+      { label: "Kode", wajib: true, contoh: "PN01", keterangan: "Kode sudah ada -> diperbarui" },
+      { label: "Nama", wajib: true },
+    ],
+  },
+  pp: {
+    nama: "template-pp",
+    kolom: [
+      { label: "Kode PN", wajib: true, contoh: "PN01", keterangan: "PN induk (harus sudah ada)" },
+      { label: "Kode", wajib: true, contoh: "PP0101" },
+      { label: "Nama", wajib: true },
+    ],
+  },
+  kp: {
+    nama: "template-kp",
+    kolom: [
+      { label: "Kode PP", wajib: true, contoh: "PP0101", keterangan: "PP induk (harus sudah ada)" },
+      { label: "Kode", wajib: true, contoh: "KP010101" },
+      { label: "Nama", wajib: true },
+    ],
+  },
+};

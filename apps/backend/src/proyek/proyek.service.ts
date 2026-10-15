@@ -102,7 +102,11 @@ const proyekInclude = Prisma.validator<Prisma.ProyekInclude>()({
         ],
       },
     },
-    orderBy: { createdAt: Prisma.SortOrder.asc },
+    // Paket urut kode paket (kosong di akhir), lalu urutan dibuat.
+    orderBy: [
+      { kodePaket: { sort: Prisma.SortOrder.asc, nulls: Prisma.NullsOrder.last } },
+      { createdAt: Prisma.SortOrder.asc },
+    ],
   },
   wilayahSungai: true,
   kegiatanPrioritas: {
@@ -533,7 +537,11 @@ export class ProyekService {
       this.prisma.proyek.findMany({
         where,
         include: proyekInclude,
-        orderBy: { createdAt: Prisma.SortOrder.desc },
+        // Urut kode proyek (terkecil dulu); yang belum berkode di akhir.
+        orderBy: [
+          { kodeProyek: { sort: Prisma.SortOrder.asc, nulls: Prisma.NullsOrder.last } },
+          { createdAt: Prisma.SortOrder.desc },
+        ],
         skip,
         take: limit,
       }),

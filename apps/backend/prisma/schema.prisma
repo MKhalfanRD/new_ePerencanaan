@@ -181,7 +181,7 @@ model Satker {
   id      String @id @default(cuid())
   balaiId Int
   balai   Balai  @relation(fields: [balaiId], references: [id], onDelete: Cascade)
-  // Kode otomatis SK0001, SK0002, ... (tidak diisi manual, tidak berubah).
+  // Kode resmi satker (kdbaru, mis. 694120); satker baru otomatis = terbesar + 1.
   kode    String @unique @db.VarChar(20)
   name    String @db.VarChar(255)
 

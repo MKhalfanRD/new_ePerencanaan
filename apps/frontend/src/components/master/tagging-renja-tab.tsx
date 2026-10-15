@@ -133,7 +133,13 @@ export function FlatMasterTable({
         title={title}
         data={m.data}
         loading={m.loading}
-        columns={[{ key: "name", label: "Nama" }]}
+        columns={[
+          {
+            key: "name",
+            label: "Nama",
+            importInfo: { wajib: true, keterangan: "Nama sudah ada -> diperbarui." },
+          },
+        ]}
         onAdd={m.openAdd}
         onEdit={m.openEdit}
         onDelete={m.remove}

@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useForm, FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -398,6 +398,20 @@ export function ProyekFormDialog({
   initialKegiatanId,
 }: Props) {
   const [activeTab, setActiveTab] = useState<string>(TABS[0].value);
+  // Kolom wajib kosong yang sedang disorot (berkedip) setelah user menekan
+  // "Selanjutnya"/"Buat Proyek" — key FormItem.
+  const [sorot, setSorot] = useState<string | null>(null);
+  const tunjukKolom = (key: string) => {
+    setSorot(key);
+    // Tunggu tab/elemen ter-render dulu sebelum digulir ke tengah layar.
+    setTimeout(
+      () =>
+        document
+          .querySelector(`[data-item-key="${key}"]`)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" }),
+      80,
+    );
+  };
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(
     new Set([TABS[0].value]),
   );
@@ -929,12 +943,17 @@ export function ProyekFormDialog({
       return [
         <div
           key={item.id}
+          data-item-key={item.key}
           className={cn(
             "relative grid",
             penuh && "col-span-full",
             depth > 0 && "border-l-2 border-primary/30 pl-4",
+            sorot === item.key && "sorot-kolom",
           )}
           style={depth > 0 ? { marginLeft: (depth - 1) * 16 } : undefined}
+          // Sorotan kolom wajib hilang begitu kolomnya disentuh.
+          onPointerDownCapture={sorot === item.key ? () => setSorot(null) : undefined}
+          onFocusCapture={sorot === item.key ? () => setSorot(null) : undefined}
         >
           {/* Badge skor per field cuma utk admin ("Coba isi form" = previewMode);
               user biasa hanya melihat Total skor tab. */}
@@ -1838,6 +1857,13 @@ export function ProyekFormDialog({
 
   const allTabsVisited = visibleTabs.every((t) => visitedTabs.has(t.value));
   const jumlahTabDibuka = visibleTabs.filter((t) => visitedTabs.has(t.value)).length;
+  // Buat proyek: selama belum di tab terakhir, tombol utama pindah ke tab
+  // berikutnya; "Buat Proyek" baru muncul di tab terakhir (Evaluasi).
+  const idxTab = visibleTabs.findIndex((t) => t.value === activeTab);
+  const tabBerikut = isEdit ? undefined : visibleTabs[idxTab + 1];
+  // Pasangan "Selanjutnya": selain di tab pertama, tombol kiri kembali ke tab
+  // sebelumnya (bukan menutup form). Menutup tetap lewat tombol X.
+  const tabSebelum = isEdit || idxTab <= 0 ? undefined : visibleTabs[idxTab - 1];
   // Buat proyek baru: kegiatan dulu, baru tab-tab form (isinya ikut kegiatan).
   const perluPilihKegiatan = !adminMode && !isEdit && !previewMode && !selectedKegiatanId;
 
@@ -2361,30 +2387,32 @@ export function ProyekFormDialog({
   // `projectName` DIKECUALIKAN — kolomnya NOT NULL di database (lihat
   // model Proyek), jadi wajib-nya dikunci lewat zod `schema` di atas, tidak
   // bisa dibikin opsional dari kanvas admin.
-  const findMissingRequiredItem = () => {
+  // hanyaTab: cek satu tab saja (tombol "Selanjutnya"), termasuk field
+  // baku yang selalu wajib (nama proyek, balai, periode) di tab itu.
+  const findMissingRequiredItem = (hanyaTab?: string) => {
     if (!formTemplate) return null;
     for (const tabNode of formTemplate.tabs) {
       if (tabNode.isActive === false) continue;
       const tabValue = TABS.find(
         (t) => TAB_KEY_MAP[t.value] === tabNode.key,
       )?.value;
-      if (!tabValue) continue;
+      if (!tabValue || (hanyaTab && tabValue !== hanyaTab)) continue;
       for (const section of tabNode.sections) {
         // Bagian per paket dicek di dialog paket.
         if (section.isActive === false || section.perPaket) continue;
         for (const item of section.items) {
           if (item.key === "daftarPaket") {
             if (item.isActive !== false && item.required && !daftarPaket.length)
-              return { tabValue, label: item.label };
+              return { tabValue, label: item.label, key: item.key };
             continue;
           }
-          if (
-            item.isActive === false ||
-            !isItemVisible(item) ||
-            !item.required ||
-            ALWAYS_REQUIRED_BAKU_KEYS.has(item.key)
-          )
+          if (item.isActive === false || !isItemVisible(item)) continue;
+          if (ALWAYS_REQUIRED_BAKU_KEYS.has(item.key)) {
+            if (hanyaTab && isEmptyValue(watch(item.key as keyof FormData)))
+              return { tabValue, label: item.label, key: item.key };
             continue;
+          }
+          if (!item.required) continue;
           const isBaku = BAKU_ITEM_KEYS.has(item.key);
           const isEmpty = isBaku
             ? item.key === "dokumenPendukung"
@@ -2401,12 +2429,15 @@ export function ProyekFormDialog({
               : item.fieldType === "CHECKBOX" && !item.optionSource
                 ? !formValuesMap[item.key]?.value
                 : isEmptyValue(formValuesMap[item.key]?.value);
-          if (isEmpty) return { tabValue, label: item.label };
+          if (isEmpty) return { tabValue, label: item.label, key: item.key };
         }
       }
     }
     return null;
   };
+
+  // Kolom wajib di tab aktif yang masih kosong -> "Selanjutnya" dikunci.
+  const kurangDiTab = tabBerikut ? findMissingRequiredItem(activeTab) : null;
 
   const onInvalid = (errs: FieldErrors<FormData>) => {
     const firstField = Object.keys(errs)[0];
@@ -2879,6 +2910,9 @@ export function ProyekFormDialog({
         </SheetHeader>
 
         {tabsBody}
+        {/* Kedip pelan hanya di kontrol input (bukan label) kolom wajib yang
+            belum diisi — teks, dropdown, checkbox, upload; lihat state `sorot`. */}
+        <style>{`@keyframes kedip-kolom{0%,100%{box-shadow:0 0 0 2px rgb(239 68 68/.9);background-color:rgb(239 68 68/.06)}50%{box-shadow:0 0 0 5px rgb(239 68 68/.15)}}@keyframes kedip-kolom-kecil{0%,100%{outline-color:rgb(239 68 68/.95)}50%{outline-color:rgb(239 68 68/.15)}}.sorot-kolom :is(input:not([type=hidden]):not([type=file]):not([type=checkbox]):not([type=radio]),textarea,[role=combobox],label:has(>input[type=file])){animation:kedip-kolom 1.8s ease-in-out infinite}.sorot-kolom :is(input[type=checkbox],input[type=radio],[role=checkbox],[role=radio],[role=switch]){outline:2px solid;outline-offset:2px;animation:kedip-kolom-kecil 1.8s ease-in-out infinite}.sorot-kolom:not(:has(input:not([type=hidden]):not([type=file]):not([type=checkbox]):not([type=radio]),textarea,[role=combobox],input[type=checkbox],input[type=radio],[role=checkbox],[role=radio],[role=switch],input[type=file])){border-radius:8px;animation:kedip-kolom 1.8s ease-in-out infinite}`}</style>
 
         <SheetFooter className="flex-col items-end gap-1.5 sm:flex-row sm:items-center">
           {previewMode || adminMode ? (
@@ -2894,22 +2928,56 @@ export function ProyekFormDialog({
             </>
           ) : (
             <>
-              {!isEdit && (perluPilihKegiatan || !allTabsVisited) && (
+              {!isEdit && (perluPilihKegiatan || (!tabBerikut && !allTabsVisited)) && (
                 <p className="text-xs text-muted-foreground mr-auto">
                   {perluPilihKegiatan
                     ? "Pilih kegiatan dulu untuk mulai mengisi form"
                     : `Buka semua tab dulu sebelum menyimpan (${jumlahTabDibuka} dari ${visibleTabs.length} sudah dibuka)`}
                 </p>
               )}
-              <Button type="button" variant="outline" onClick={onClose}>
-                Batal
-              </Button>
+              {tabSebelum ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setSorot(null);
+                    setActiveTab(tabSebelum.value);
+                  }}
+                >
+                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  Sebelumnya
+                </Button>
+              ) : (
+                <Button type="button" variant="outline" onClick={onClose}>
+                  Batal
+                </Button>
+              )}
+              {tabBerikut ? (
+                <Button
+                  type="button"
+                  disabled={loadingMaster || perluPilihKegiatan}
+                  // Tampak nonaktif, tapi tetap bisa diklik untuk menunjukkan
+                  // kolom wajib yang masih kosong.
+                  aria-disabled={!!kurangDiTab}
+                  className={cn(kurangDiTab && "opacity-50 cursor-not-allowed")}
+                  onClick={() => {
+                    if (kurangDiTab) return tunjukKolom(kurangDiTab.key);
+                    setSorot(null);
+                    setActiveTab(tabBerikut.value);
+                    setVisitedTabs((prev) => new Set(prev).add(tabBerikut.value));
+                  }}
+                >
+                  Selanjutnya
+                  <ChevronRight className="ml-1 h-4 w-4" />
+                </Button>
+              ) : (
               <Button
                 type="button"
                 onClick={() => {
                   const missing = findMissingRequiredItem();
                   if (missing) {
                     setActiveTab(missing.tabValue);
+                    tunjukKolom(missing.key);
                     toast.error(`Lengkapi field wajib "${missing.label}"`);
                     return;
                   }
@@ -2930,6 +2998,7 @@ export function ProyekFormDialog({
                 )}
                 {isEdit ? "Simpan Perubahan" : "Buat Proyek"}
               </Button>
+              )}
             </>
           )}
         </SheetFooter>

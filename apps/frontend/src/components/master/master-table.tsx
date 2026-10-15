@@ -1,9 +1,10 @@
 "use client";
 
-import { ChevronRight, Plus, Pencil, Trash2, Search, Upload, Download, Loader2 } from "lucide-react";
+import { ChevronRight, Plus, Pencil, Trash2, Search, Download } from "lucide-react";
 import React from "react";
 import { useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import { TombolImport } from "@/components/import/tombol-import";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,8 @@ interface Column<T> {
   /** Kolom ini dilewati saat Import Excel (mis. field turunan/relasi yang
    * cuma informasional, bukan input). Default: ikut diimpor. */
   skipImport?: boolean;
+  /** Keterangan kolom di sheet "Petunjuk" template import. */
+  importInfo?: { wajib?: boolean; contoh?: string | number; keterangan?: string };
 }
 
 interface Props<T extends { id: string | number }> {
@@ -91,8 +94,6 @@ export function MasterTable<T extends { id: string | number }>({
   const [selected, setSelected] = useState<Set<string | number>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExport = () => {
     const rows = data.map((item) =>
@@ -115,11 +116,8 @@ export function MasterTable<T extends { id: string | number }>({
     );
   };
 
-  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || !onImport) return;
-    setImporting(true);
+  const handleImportFile = async (file: File) => {
+    if (!onImport) return;
     try {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
@@ -140,8 +138,6 @@ export function MasterTable<T extends { id: string | number }>({
       await onImport(rows);
     } catch (err: any) {
       toast.error(err.response?.data?.message || err.message || "Gagal impor file");
-    } finally {
-      setImporting(false);
     }
   };
 
@@ -253,28 +249,18 @@ export function MasterTable<T extends { id: string | number }>({
             </Button>
           )}
           {onImport && (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={handleImportFile}
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={importing}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {importing ? (
-                  <Loader2 size={14} className="mr-1.5 animate-spin" />
-                ) : (
-                  <Upload size={14} className="mr-1.5" />
-                )}
-                Import Excel
-              </Button>
-            </>
+            <TombolImport
+              judul={title}
+              onFile={handleImportFile}
+              templates={[
+                {
+                  nama: `template-${title.toLowerCase().replace(/\s+/g, "-")}`,
+                  kolom: columns
+                    .filter((c) => !c.skipImport)
+                    .map((c) => ({ label: c.label, ...c.importInfo })),
+                },
+              ]}
+            />
           )}
           {exportable && (
             <Button size="sm" variant="outline" onClick={handleExport}>

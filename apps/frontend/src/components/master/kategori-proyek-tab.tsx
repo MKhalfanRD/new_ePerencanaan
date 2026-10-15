@@ -135,8 +135,13 @@ export function KategoriProyekTab() {
             label: "Kegiatan",
             render: (k) => `${k.kegiatan.code} · ${k.kegiatan.name}`,
             exportValue: (k) => k.kegiatan.code,
+            importInfo: { wajib: true, contoh: 7691, keterangan: "Kode kegiatan" },
           },
-          { key: "name", label: "Nama Kategori" },
+          {
+            key: "name",
+            label: "Nama Kategori",
+            importInfo: { wajib: true, keterangan: "Kategori yang sudah ada di kegiatan itu dilewati." },
+          },
         ]}
         onAdd={() => {
           setError("");

@@ -672,9 +672,12 @@ export class ImportService {
     const parseErrors: ImportError[] = [];
     const sheetRenstra: string[] = [];
     const sheetDilewati: string[] = [];
+    let sheetData = 0;
 
     // Semua sheet dibaca; yang header-nya tidak dikenali (ringkasan/referensi) dilewati.
     for (const nama of workbook.SheetNames) {
+      // Sheet penjelasan bawaan template import — bukan data, lewati diam-diam.
+      if (nama.trim().toLowerCase() === 'petunjuk') continue;
       const rawRows: any[][] = XLSX.utils.sheet_to_json(workbook.Sheets[nama], {
         header: 1,
         defval: null,
@@ -686,6 +689,7 @@ export class ImportService {
         sheetDilewati.push(nama);
         continue;
       }
+      sheetData++;
       if (str(rawRows[headerIdx][0]).toLowerCase() === 'kodeproyek') {
         parsedRows.push(...this.bacaSheetDb(rawRows, headerIdx, nama, parseErrors));
       } else {
@@ -694,7 +698,7 @@ export class ImportService {
       }
     }
 
-    if (sheetDilewati.length === workbook.SheetNames.length)
+    if (sheetData === 0)
       throw new BadRequestException(
         'Tidak ada sheet data yang dikenali. Header harus diawali "KodeProyek" (format DB.xlsx) atau "TA" (format Renstra).',
       );

@@ -51,6 +51,13 @@ import {
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
 import { Proyek, PaginatedResponse, Periode } from "@/types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ProyekFormDialog } from "@/components/proyek/proyek-form-dialog";
 import { ProyekDetailSheet } from "@/components/proyek/proyek-detail-sheet";
 
@@ -304,20 +311,21 @@ function ProyekPageInner() {
       }
     }
 
+    // Semua opsi urut kode (id = kode/kode berjenjang), terkecil dulu.
+    const byKode = (a: [string | number, unknown], b: [string | number, unknown]) =>
+      urutKode(a[0], b[0]);
     return {
-      balai: [...balaiMap.entries()].sort((a, b) => a[1].localeCompare(b[1])),
-      program: [...programMap.entries()].sort((a, b) =>
-        a[1].localeCompare(b[1]),
-      ),
+      balai: [...balaiMap.entries()].sort(byKode),
+      program: [...programMap.entries()].sort(byKode),
       kegiatan: [...kegiatanMap.entries()]
         .filter(([, v]) => !filterProgram || v.programId === filterProgram)
-        .sort((a, b) => a[1].name.localeCompare(b[1].name)),
+        .sort(byKode),
       kro: [...kroMap.entries()]
         .filter(([, v]) => !filterKegiatan || v.kegiatanId === filterKegiatan)
-        .sort((a, b) => a[1].name.localeCompare(b[1].name)),
+        .sort(byKode),
       ro: [...roMap.entries()]
         .filter(([, v]) => !filterKro || v.kroId === filterKro)
-        .sort((a, b) => a[1].name.localeCompare(b[1].name)),
+        .sort(byKode),
     };
   }, [proyekList, filterProgram, filterKegiatan, filterKro]);
 
@@ -445,11 +453,16 @@ function ProyekPageInner() {
     const balaiGroups: BalaiGroup[] = [...balaiMap.values()]
       .map((bg) => ({
         ...bg,
-        kegiatanGroups: [...bg.kegiatanMap.values()].sort((a, b) =>
-          a.kegiatanCode.localeCompare(b.kegiatanCode),
-        ),
+        kegiatanGroups: [...bg.kegiatanMap.values()]
+          .sort((a, b) => urutKode(a.kegiatanCode, b.kegiatanCode))
+          .map((kg) => ({
+            ...kg,
+            proyekList: [...kg.proyekList].sort((a, b) =>
+              urutKode(a.kodeProyek ?? "", b.kodeProyek ?? ""),
+            ),
+          })),
       }))
-      .sort((a, b) => a.balai.name.localeCompare(b.balai.name));
+      .sort((a, b) => urutKode(a.balai.id, b.balai.id));
 
     return { balaiGroups, years: sortedYears };
   }, [filteredProyek]);
@@ -656,93 +669,57 @@ function ProyekPageInner() {
             Hasil import terakhir{filterImport && " ✕"}
           </button>
         )}
-        <select
+        <FilterSelect
           value={filterPeriode}
           disabled={filterImport}
-          onChange={(e) => {
-            setFilterPeriode(e.target.value);
+          onChange={(v) => {
+            setFilterPeriode(v);
             setPage(1);
           }}
-          className="h-7 w-[160px] rounded-md border bg-background px-2 text-xs"
-        >
-          {periodeList.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-        <select
+          opsi={periodeList.map((p) => [String(p.id), p.label])}
+        />
+        <FilterSelect
           value={filterBalai}
-          onChange={(e) => setFilterBalai(e.target.value)}
-          className="h-7 w-[160px] rounded-md border bg-background px-2 text-xs"
-        >
-          <option value="">Semua Balai</option>
-          {filterOptions.balai.map(([id, name]) => (
-            <option key={id} value={id}>
-              {name}
-            </option>
-          ))}
-        </select>
-        <select
+          onChange={setFilterBalai}
+          semua="Semua Balai"
+          opsi={filterOptions.balai.map(([id, name]) => [String(id), name])}
+        />
+        <FilterSelect
           value={filterProgram}
-          onChange={(e) => {
-            setFilterProgram(e.target.value);
+          onChange={(v) => {
+            setFilterProgram(v);
             setFilterKegiatan("");
             setFilterKro("");
             setFilterRo("");
           }}
-          className="h-7 w-[160px] rounded-md border bg-background px-2 text-xs"
-        >
-          <option value="">Semua Program</option>
-          {filterOptions.program.map(([id, name]) => (
-            <option key={id} value={id}>
-              {name}
-            </option>
-          ))}
-        </select>
-        <select
+          semua="Semua Program"
+          opsi={filterOptions.program.map(([id, name]) => [String(id), name])}
+        />
+        <FilterSelect
           value={filterKegiatan}
-          onChange={(e) => {
-            setFilterKegiatan(e.target.value);
+          onChange={(v) => {
+            setFilterKegiatan(v);
             setFilterKro("");
             setFilterRo("");
           }}
-          className="h-7 w-[160px] rounded-md border bg-background px-2 text-xs"
-        >
-          <option value="">Semua Kegiatan</option>
-          {filterOptions.kegiatan.map(([id, v]) => (
-            <option key={id} value={id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
-        <select
+          semua="Semua Kegiatan"
+          opsi={filterOptions.kegiatan.map(([id, v]) => [String(id), v.name])}
+        />
+        <FilterSelect
           value={filterKro}
-          onChange={(e) => {
-            setFilterKro(e.target.value);
+          onChange={(v) => {
+            setFilterKro(v);
             setFilterRo("");
           }}
-          className="h-7 w-[160px] rounded-md border bg-background px-2 text-xs"
-        >
-          <option value="">Semua KRO</option>
-          {filterOptions.kro.map(([id, v]) => (
-            <option key={id} value={id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
-        <select
+          semua="Semua KRO"
+          opsi={filterOptions.kro.map(([id, v]) => [String(id), v.name])}
+        />
+        <FilterSelect
           value={filterRo}
-          onChange={(e) => setFilterRo(e.target.value)}
-          className="h-7 w-[160px] rounded-md border bg-background px-2 text-xs"
-        >
-          <option value="">Semua RO</option>
-          {filterOptions.ro.map(([id, v]) => (
-            <option key={id} value={id}>
-              {v.code} — {v.name}
-            </option>
-          ))}
-        </select>
+          onChange={setFilterRo}
+          semua="Semua RO"
+          opsi={filterOptions.ro.map(([id, v]) => [String(id), `${v.code} — ${v.name}`])}
+        />
         {(filterBalai || filterProgram || filterKegiatan || filterKro || filterRo) && (
           <button
             type="button"
@@ -1246,4 +1223,51 @@ function ProyekPageInner() {
       </AlertDialog>
     </div>
   );
+}
+
+// Radix Select tidak menerima value "" — opsi "Semua …" memakai penanda ini.
+const SEMUA = "__semua";
+
+/** Dropdown filter daftar proyek (pakai Select sistem, jadi ikut punya pencarian). */
+function FilterSelect({
+  value,
+  onChange,
+  semua,
+  opsi,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  semua?: string;
+  opsi: [string, string][];
+  disabled?: boolean;
+}) {
+  return (
+    <Select
+      value={value || SEMUA}
+      onValueChange={(v) => onChange(v === SEMUA ? "" : v)}
+      disabled={disabled}
+    >
+      <SelectTrigger size="sm" className="h-7 w-[160px] text-xs">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {semua && (
+          <SelectItem value={SEMUA} className="text-xs">
+            {semua}
+          </SelectItem>
+        )}
+        {opsi.map(([v, label]) => (
+          <SelectItem key={v} value={v} className="text-xs">
+            {label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** Urutan kode/nomor terkecil dulu ("2" sebelum "10", "7691.CBR" sebelum "7692"). */
+function urutKode(a: string | number, b: string | number) {
+  return String(a).localeCompare(String(b), "id", { numeric: true });
 }

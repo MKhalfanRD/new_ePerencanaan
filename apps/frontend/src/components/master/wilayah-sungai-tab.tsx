@@ -145,8 +145,12 @@ export function WilayahSungaiTab() {
         data={data}
         loading={loading}
         columns={[
-          { key: "code", label: "Kode" },
-          { key: "name", label: "Nama" },
+          { key: "code", label: "Kode", importInfo: { contoh: "01.09.A2" } },
+          {
+            key: "name",
+            label: "Nama",
+            importInfo: { wajib: true, contoh: "Alas-Singkil", keterangan: "Nama sudah ada -> diperbarui." },
+          },
         ]}
         onAdd={openAdd}
         onEdit={openEdit}

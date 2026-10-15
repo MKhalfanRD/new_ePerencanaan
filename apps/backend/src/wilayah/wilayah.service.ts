@@ -827,7 +827,7 @@ export class WilayahService {
 
   getProvinces() {
     return this.getLocalOrFallback(
-      () => this.prisma.wilayahProvince.findMany({ orderBy: { name: 'asc' } }),
+      () => this.prisma.wilayahProvince.findMany({ orderBy: { id: 'asc' } }),
       () => this.fetchWithCache('/provinces.json', 'wilayah:provinces'),
     );
   }
@@ -837,7 +837,7 @@ export class WilayahService {
       () =>
         this.prisma.wilayahRegency.findMany({
           where: { provinceId },
-          orderBy: { name: 'asc' },
+          orderBy: { id: 'asc' },
         }),
       () =>
         this.fetchWithCache(
@@ -852,7 +852,7 @@ export class WilayahService {
       () =>
         this.prisma.wilayahDistrict.findMany({
           where: { regencyId },
-          orderBy: { name: 'asc' },
+          orderBy: { id: 'asc' },
         }),
       () =>
         this.fetchWithCache(
@@ -867,7 +867,7 @@ export class WilayahService {
       () =>
         this.prisma.wilayahVillage.findMany({
           where: { districtId },
-          orderBy: { name: 'asc' },
+          orderBy: { id: 'asc' },
         }),
       () =>
         this.fetchWithCache(

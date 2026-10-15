@@ -204,6 +204,7 @@ export function BalaiTab() {
         name: row.name,
         shortName: row.shortName || undefined,
         code: row.code || undefined,
+        ...(row.kegiatanId && { kegiatanId: row.kegiatanId }),
         isActive: !/^(tidak|nonaktif|0|false)$/i.test(row.isActive || ""),
       };
       try {
@@ -232,15 +233,24 @@ export function BalaiTab() {
         data={data}
         loading={loading}
         columns={[
-          { key: "id", label: "ID" },
-          { key: "name", label: "Nama Balai" },
-          { key: "shortName", label: "Singkatan" },
-          { key: "code", label: "Kode" },
+          {
+            key: "id",
+            label: "ID",
+            importInfo: { wajib: true, contoh: 1, keterangan: "ID/kode balai (kdbalai). Kalau ID sudah ada, datanya diperbarui." },
+          },
+          {
+            key: "name",
+            label: "Nama Balai",
+            importInfo: { wajib: true, contoh: "BALAI WILAYAH SUNGAI SUMATERA I" },
+          },
+          { key: "shortName", label: "Singkatan", importInfo: { contoh: "BWS Sumatera I" } },
+          { key: "code", label: "Kode", importInfo: { contoh: "BWS1" } },
           {
             key: "kegiatanId",
             label: "Kegiatan",
             render: (item) => item.kegiatan?.code ?? "—",
             exportValue: (item) => item.kegiatan?.code ?? "",
+            importInfo: { contoh: 7691, keterangan: "Kode kegiatan yang ditangani balai" },
           },
           {
             key: "satker",
@@ -256,6 +266,7 @@ export function BalaiTab() {
           {
             key: "isActive",
             label: "Status",
+            importInfo: { contoh: "Aktif", keterangan: "Isi Nonaktif untuk menonaktifkan; kosong = Aktif" },
             render: (item) =>
               item.isActive ? (
                 <Badge variant="outline" className="text-[10px]">
@@ -336,21 +347,9 @@ export function BalaiTab() {
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="min-w-0 space-y-4 py-2">
+            {/* ID balai dibuat otomatis oleh sistem (lanjut dari ID terbesar). */}
             <div className="grid grid-cols-2 gap-4">
-              {!editData && (
-                <div className="space-y-2">
-                  <Label>
-                    ID Balai <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    className="h-10"
-                    type="number"
-                    placeholder="1"
-                    {...register("id", { valueAsNumber: true })}
-                  />
-                </div>
-              )}
-              <div className={`space-y-2 ${editData ? "col-span-2" : ""}`}>
+              <div className="space-y-2 col-span-2">
                 <Label>Kode</Label>
                 <Input
                   className="h-10"

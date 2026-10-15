@@ -27,7 +27,7 @@ const userSelect = {
     select: { id: true, name: true, kegiatanId: true },
   },
   satker: {
-    select: { id: true, name: true },
+    select: { id: true, kode: true, name: true },
   },
 };
 
@@ -38,7 +38,12 @@ export class UsersService {
   async findAll() {
     return this.prisma.user.findMany({
       select: userSelect,
-      orderBy: { createdAt: 'desc' },
+      // Urut balai (kode) lalu satker (kode); akun pusat tanpa balai di akhir.
+      orderBy: [
+        { balaiId: { sort: 'asc', nulls: 'last' } },
+        { satker: { kode: 'asc' } },
+        { username: 'asc' },
+      ],
     });
   }
 

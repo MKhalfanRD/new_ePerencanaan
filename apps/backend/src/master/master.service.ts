@@ -60,14 +60,15 @@ export class MasterService {
   getBalai() {
     return this.prisma.balai.findMany({
       include: { kegiatan: { select: { id: true, code: true, name: true } } },
-      orderBy: { name: 'asc' },
+      // Semua data berkode diurutkan dari kode/nomor terkecil.
+      orderBy: { id: 'asc' },
     });
   }
   getPeriodes() {
     return this.prisma.periode.findMany({ orderBy: { startYear: 'desc' } });
   }
   getPrograms() {
-    return this.prisma.program.findMany({ orderBy: { name: 'asc' } });
+    return this.prisma.program.findMany({ orderBy: { code: 'asc' } });
   }
   getKegiatan() {
     return this.prisma.kegiatan.findMany({
@@ -77,13 +78,14 @@ export class MasterService {
         // (kegiatan punya evaluasi kalau sudah punya FormTemplate).
         formTemplate: { select: { id: true } },
       },
-      orderBy: { name: 'asc' },
+      orderBy: { code: 'asc' },
     });
   }
   getKRO() {
     return this.prisma.kRO.findMany({
       include: { kegiatan: { include: { program: true } } },
-      orderBy: { name: 'asc' },
+      // id = kode berjenjang "7691.CBR" -> urut per kegiatan lalu kode KRO.
+      orderBy: { id: 'asc' },
     });
   }
   getRO() {
@@ -93,19 +95,19 @@ export class MasterService {
         kro: { include: { kegiatan: { include: { program: true } } } },
         satuan: true,
       },
-      orderBy: { name: 'asc' },
+      orderBy: { id: 'asc' },
     });
   }
   getKomponen() {
     return this.prisma.komponen.findMany({
       include: { ro: true, satuan: true },
-      orderBy: { name: 'asc' },
+      orderBy: [{ roId: 'asc' }, { code: 'asc' }],
     });
   }
   getIndikatorRO() {
     return this.prisma.indikatorRO.findMany({
       include: { ro: true, satuanList: { include: { satuan: true } } },
-      orderBy: { nama: 'asc' },
+      orderBy: [{ roId: 'asc' }, { nama: 'asc' }],
     });
   }
 
@@ -548,7 +550,9 @@ export class MasterService {
   }
 
   getWilayahSungai() {
-    return this.prisma.wilayahSungai.findMany({ orderBy: { name: 'asc' } });
+    return this.prisma.wilayahSungai.findMany({
+      orderBy: [{ code: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }],
+    });
   }
   getRoles() {
     return this.prisma.role.findMany({
@@ -657,8 +661,17 @@ export class MasterService {
     if ('kegiatanId' in data) data.kegiatanId = data.kegiatanId || null;
     return data;
   }
-  createBalai(dto: any) {
-    return this.prisma.balai.create({ data: this.dataBalai(dto) });
+  async createBalai(dto: any) {
+    const data = this.dataBalai(dto);
+    // ID balai (= kdbalai) dibuat otomatis: lanjut dari ID terbesar.
+    if (!Number.isInteger(data.id)) {
+      const akhir = await this.prisma.balai.findFirst({
+        orderBy: { id: 'desc' },
+        select: { id: true },
+      });
+      data.id = (akhir?.id ?? 0) + 1;
+    }
+    return this.prisma.balai.create({ data });
   }
   updateBalai(id: number, dto: any) {
     return this.prisma.balai.update({ where: { id }, data: this.dataBalai(dto) });
@@ -810,7 +823,7 @@ export class MasterService {
     return this.prisma.satker.findMany({
       where: balaiId ? { balaiId } : undefined,
       include: { balai: { select: { id: true, name: true } } },
-      orderBy: [{ balai: { name: 'asc' } }, { name: 'asc' }],
+      orderBy: [{ balaiId: 'asc' }, { kode: 'asc' }],
     });
   }
   private async dataSatker(dto: { balaiId?: unknown; name?: unknown }, kecuali?: string) {
@@ -828,15 +841,17 @@ export class MasterService {
     if (sama) throw new BadRequestException(`Satker "${name}" sudah ada di balai ini`);
     return { balaiId, name };
   }
-  /** Kode berikutnya: SK + 4 digit, lanjut dari nomor terbesar. */
+  /**
+   * Kode berikutnya: lanjut dari kode satker resmi (angka, mis. 694120) yang
+   * terbesar + 1. Kode lama berformat lain (huruf) diabaikan.
+   */
   private async kodeSatkerBaru() {
-    const akhir = await this.prisma.satker.findFirst({
-      where: { kode: { startsWith: 'SK' } },
-      orderBy: { kode: 'desc' },
-      select: { kode: true },
-    });
-    const n = Number(akhir?.kode.slice(2)) || 0;
-    return `SK${String(n + 1).padStart(4, '0')}`;
+    const semua = await this.prisma.satker.findMany({ select: { kode: true } });
+    const terbesar = Math.max(
+      0,
+      ...semua.map((s) => s.kode).filter((k) => /^\d+$/.test(k)).map(Number),
+    );
+    return String(terbesar + 1);
   }
   async createSatker(dto: { balaiId?: unknown; name?: unknown }) {
     const data = await this.dataSatker(dto);

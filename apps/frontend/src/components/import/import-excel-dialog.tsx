@@ -38,6 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import api from "@/lib/api";
+import { KolomTemplate, unduhTemplate } from "@/lib/template-excel";
 
 interface MatchedBalai {
   excelName: string;
@@ -560,6 +561,40 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
           {/* STEP: Upload */}
           {step === "upload" && (
             <div className="space-y-4">
+              <div className="rounded-lg border p-3 space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Belum punya file? Unduh template, isi sheet pertama, lalu
+                  upload di bawah. Penjelasan kolom ada di sheet
+                  &quot;Petunjuk&quot;.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={() =>
+                      unduhTemplate({ nama: "template-import-proyek", kolom: KOLOM_DB })
+                    }
+                  >
+                    <Download size={12} className="mr-1.5" /> Template format
+                    lengkap
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={() =>
+                      unduhTemplate({
+                        nama: "template-import-renstra",
+                        kolom: KOLOM_RENSTRA,
+                      })
+                    }
+                  >
+                    <Download size={12} className="mr-1.5" /> Template format
+                    Renstra
+                  </Button>
+                </div>
+              </div>
               <div
                 onClick={() => fileInputRef.current?.click()}
                 onDragOver={(e) => e.preventDefault()}
@@ -1001,3 +1036,90 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
     </Dialog>
   );
 }
+
+// Format lengkap: urutan kolom = posisi yang dibaca backend (COL di
+// import.service.ts), lalu kolom Tahun di paling kanan (dicari lewat nama).
+const W = { wajib: true };
+const KOLOM_DB: KolomTemplate[] = [
+  { label: "KodeProyek", keterangan: "Kosong = dibuat otomatis. Baris lanjutan proyek yang sama: kolom proyek boleh kosong" },
+  { label: "Nama Proyek", ...W, contoh: "Bendungan A" },
+  { label: "KdBalai", ...W, contoh: 1, keterangan: "ID balai (kdbalai)" },
+  { label: "Balai", contoh: "BALAI WILAYAH SUNGAI SUMATERA I" },
+  { label: "Kewenangan", contoh: "PUSAT" },
+  { label: "Pola_Rencana (sebelum studi layak)" },
+  { label: "StudiLayak", contoh: 2020, keterangan: "Tahun" },
+  { label: "DED", contoh: 2022, keterangan: "Tahun" },
+  { label: "LARAP", contoh: 2025, keterangan: "Tahun" },
+  { label: "ButuhTanah", contoh: "Tidak memerlukan lahan" },
+  { label: "Sumber Usulan Proyek", contoh: "Pemerintah Daerah" },
+  { label: "Keterangan" },
+  { label: "KodePaket", keterangan: "Kosong = dikenali lewat nama paket" },
+  { label: "KdKegiatan", ...W, contoh: 7693 },
+  { label: "KdKRO", ...W, contoh: "CBR" },
+  { label: "namaRO. Nomenklatur", keterangan: "Tidak dibaca" },
+  { label: "kdRO", ...W, contoh: "001" },
+  { label: "namaRO" },
+  { label: "KdKomponen", contoh: 103 },
+  { label: "NmKomponen", contoh: "Konstruksi Pembangunan" },
+  { label: "NamaPaket", ...W, contoh: "Pembangunan Bendungan A Paket I" },
+  { label: "Jenis Paket (F/NF)", ...W, contoh: "F" },
+  { label: "MasaLaksana", ...W, contoh: "Single Year", keterangan: "Single Year / Multi Year" },
+  { label: "VolOutput", contoh: 1 },
+  { label: "OutputSatuan", contoh: "Unit" },
+  { label: "VolOutcome", contoh: 1 },
+  { label: "OutcomeSatuan", contoh: "Unit" },
+  { label: "KotaKabupaten" },
+  { label: "DokLing" },
+  { label: "Catatan Pembina" },
+  { label: "Catatan SSPSDA" },
+  { label: "PN" },
+  { label: "PP" },
+  { label: "KP" },
+  { label: "PKPN" },
+  { label: "SP" },
+  { label: "ISP" },
+  { label: "Satuan ISP" },
+  { label: "SK" },
+  { label: "ISK" },
+  { label: "Satuan ISK" },
+  { label: "IRO" },
+  { label: "Satuan IRO" },
+  { label: "Tematik RENJA" },
+  { label: "FKB", keterangan: "Isi apa saja = ya" },
+  { label: "FKW", keterangan: "Isi apa saja = ya" },
+  { label: "MPA", keterangan: "Isi apa saja = ya" },
+  { label: "KodeWS", contoh: "01.09.A2" },
+  { label: "NamaWilayahSungai", contoh: "Alas-Singkil" },
+  { label: "kab/kota" },
+  { label: "kecamatan" },
+  { label: "Long", contoh: 95.3363 },
+  { label: "Lat", contoh: 5.5408 },
+  { label: "SumberDana_RM", contoh: 2500000000 },
+  { label: "SumberDana_RMP" },
+  { label: "SumberDana_PLN" },
+  { label: "SumberDana_SBSN" },
+  { label: "SumberDana_KPBU" },
+  { label: "SumberDanaAll", keterangan: "Total; kosong = dijumlah otomatis" },
+  { label: "Tahun", ...W, contoh: 2026, keterangan: "Tahun alokasi" },
+];
+
+// Format Renstra: kolom dicari lewat nama header; tanpa kolom paket
+// (1 proyek = 1 paket bernama sama, Jumlah dicatat sebagai RM).
+const KOLOM_RENSTRA: KolomTemplate[] = [
+  { label: "TA", ...W, contoh: 2026, keterangan: "Tahun anggaran" },
+  { label: "BALAI", ...W, contoh: "BALAI WILAYAH SUNGAI SUMATERA I" },
+  { label: "kdgiat", ...W, contoh: 7692 },
+  { label: "kdKRO", ...W, contoh: "CBS" },
+  { label: "kdRO", ...W, contoh: 3 },
+  { label: "Nama Proyek", ...W, contoh: "Pembangunan Prasarana Pengaman Pantai" },
+  { label: "Provinsi", contoh: "Aceh" },
+  { label: "V OUTPUT", contoh: 0.5 },
+  { label: "Sat RO", contoh: "Km" },
+  { label: "IRO", contoh: 5.66 },
+  { label: "Sat IRO", contoh: "Ha" },
+  { label: "Jumlah", ...W, contoh: 25000000000, keterangan: "Dicatat sebagai sumber dana RM" },
+  { label: "SK" },
+  { label: "ISK" },
+  { label: "SP" },
+  { label: "ISP" },
+];

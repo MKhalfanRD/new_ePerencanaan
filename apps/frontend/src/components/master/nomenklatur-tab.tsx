@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { TombolImport } from "@/components/import/tombol-import";
+import type { TemplateExcel } from "@/lib/template-excel";
 import { useForm } from "react-hook-form";
 import {
   ChevronDown,
@@ -10,7 +12,6 @@ import {
   Plus,
   Search,
   Trash2,
-  Upload,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -105,7 +106,6 @@ export function NomenklaturTab() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkMenghapus, setBulkMenghapus] = useState(false);
   const [importing, setImporting] = useState(false);
-  const importInputRef = useRef<HTMLInputElement>(null);
 
   const keyOf = (level: Level, id: string | number) => `${level}::${id}`;
   const togglePilih = (level: Level, id: string | number) =>
@@ -172,12 +172,7 @@ export function NomenklaturTab() {
   // Program/Kegiatan/KRO/RO id-nya manual (= kodenya) jadi tinggal dicek ke
   // list yang sudah dimuat; Komponen id-nya cuid, dicocokkan lewat
   // (roId, code).
-  const handleImportFile = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  const handleImportFile = async (file: File) => {
     setImporting(true);
     let programCount = 0;
     let kegiatanCount = 0;
@@ -505,25 +500,13 @@ export function NomenklaturTab() {
         <Button onClick={() => bukaTambah("Program")}>
           <Plus size={14} className="mr-1.5" /> Program
         </Button>
-        <input
-          ref={importInputRef}
-          type="file"
-          accept=".xlsx,.xls"
-          className="hidden"
-          onChange={handleImportFile}
+        <TombolImport
+          judul="Nomenklatur"
+          size="default"
+          className={importing ? "pointer-events-none opacity-60" : undefined}
+          onFile={handleImportFile}
+          templates={[TEMPLATE_NOMENKLATUR]}
         />
-        <Button
-          variant="outline"
-          disabled={importing}
-          onClick={() => importInputRef.current?.click()}
-        >
-          {importing ? (
-            <Loader2 size={14} className="mr-1.5 animate-spin" />
-          ) : (
-            <Upload size={14} className="mr-1.5" />
-          )}
-          Import Excel
-        </Button>
         <Button
           onClick={() =>
             exportMasterToExcel({
@@ -1081,3 +1064,23 @@ export function NomenklaturTab() {
     </div>
   );
 }
+
+// Format outline (sama dengan Export): kolom induk cukup diisi di baris
+// pertama kemunculannya, baris berikutnya boleh kosong.
+const TEMPLATE_NOMENKLATUR: TemplateExcel = {
+  nama: "template-nomenklatur",
+  sheet: "Nomenklatur",
+  kolom: [
+    { label: "Kode Program", wajib: true, contoh: "FC", keterangan: "Cukup di baris pertama program" },
+    { label: "Program", wajib: true, contoh: "Ketahanan Sumber Daya Air" },
+    { label: "Kode Kegiatan", wajib: true, contoh: 7691 },
+    { label: "Kegiatan", wajib: true, contoh: "Pengembangan dan Rehabilitasi Jaringan Irigasi" },
+    { label: "Kode KRO", wajib: true, contoh: "CBR" },
+    { label: "KRO", wajib: true, contoh: "Dukungan Teknis" },
+    { label: "Kode RO", wajib: true, contoh: "001" },
+    { label: "RO", wajib: true, contoh: "Dokumen Teknis" },
+    { label: "Satuan RO", contoh: "Dokumen" },
+    { label: "Kode Komponen", contoh: 101 },
+    { label: "Komponen", contoh: "Perencanaan" },
+  ],
+};

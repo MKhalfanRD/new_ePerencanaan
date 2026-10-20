@@ -46,6 +46,14 @@ const navItems: {
   },
 ];
 
+// Kode role -> label: "SUPER_ADMIN" -> "Super Admin", "OPERATOR_7691" -> "Operator 7691".
+const labelRole = (kode?: string) =>
+  (kode ?? "")
+    .toLowerCase()
+    .split("_")
+    .map((k) => k.charAt(0).toUpperCase() + k.slice(1))
+    .join(" ");
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -119,7 +127,7 @@ export function Sidebar() {
             <div className="hidden lg:block min-w-0">
               <p className="text-sm font-medium truncate">{user?.name}</p>
               <p className="text-xs text-muted-foreground truncate">
-                {user?.role}
+                {labelRole(user?.role)}
               </p>
             </div>
           </div>

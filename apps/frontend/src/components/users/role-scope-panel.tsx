@@ -214,10 +214,11 @@ export function RoleScopePanel() {
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+    <div className="overflow-hidden rounded-xl border bg-card">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2.5 bg-muted/50 px-4 py-3 text-left hover:bg-muted"
+        aria-expanded={open}
+        className="flex w-full items-center gap-2.5 bg-tier-1 px-4 py-3 text-left hover:bg-accent"
       >
         <ChevronDown
           size={14}
@@ -226,7 +227,7 @@ export function RoleScopePanel() {
             !open && "-rotate-90",
           )}
         />
-        <span className="text-sm font-semibold">Role &amp; Cakupan Kegiatan</span>
+        <span className="text-sm font-semibold">Role &amp; cakupan kegiatan</span>
         <span className="text-xs text-muted-foreground">
           Batasi role agar hanya menangani satu kegiatan
         </span>

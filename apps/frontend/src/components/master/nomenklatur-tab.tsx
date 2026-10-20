@@ -831,7 +831,7 @@ export function NomenklaturTab() {
                   {p.startYear}–{p.endYear}
                 </span>
                 {p.isActive && (
-                  <Badge variant="outline" className="text-[9px]">
+                  <Badge variant="dot" dotColor="emerald" className="text-[11px]">
                     Aktif
                   </Badge>
                 )}

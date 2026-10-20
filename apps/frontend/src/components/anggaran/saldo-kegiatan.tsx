@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Lock } from "lucide-react";
+import { Lock, Wallet } from "lucide-react";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { formatRupiah, formatRupiahShort } from "@/lib/format-rupiah";
@@ -201,6 +201,47 @@ export function RingkasSaldoProyek({
           <Lock size={12} aria-hidden />
           Saldo {belum.join(", ")} belum ditetapkan admin. Alokasi tahun itu belum bisa diisi.
         </p>
+      )}
+    </div>
+  );
+}
+
+/** Kotak info saldo 1 tahun (hi-fi HfForm00/HfForm01): saldo, tersedia, atau belum ditetapkan. */
+export function InfoSaldoKegiatan({
+  kegiatanId,
+  tahun,
+  kecualiProyek,
+  aksen,
+}: {
+  kegiatanId: string;
+  tahun: number;
+  kecualiProyek?: string;
+  /** Latar oranye lembut (di dalam form); default netral. */
+  aksen?: boolean;
+}) {
+  const data = useSaldoKegiatan(kegiatanId, tahun, tahun, kecualiProyek);
+  if (!data) return null;
+  const s = data[0];
+  const tersedia = s?.saldo ? s.saldo.total - s.terpakai.total : null;
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex items-center gap-2.5 rounded-lg px-3.5 py-3 text-[13.5px]",
+        aksen ? "bg-primary-soft text-primary-ink" : "bg-tier-1",
+      )}
+    >
+      <Wallet size={16} aria-hidden className="shrink-0" />
+      {s?.saldo ? (
+        <span>
+          Saldo kegiatan {kegiatanId} · {tahun} tersedia{" "}
+          <b className={cn(tersedia! < 0 && "text-destructive")}>{formatRupiahShort(tersedia!)}</b> dari{" "}
+          {formatRupiahShort(s.saldo.total)}
+        </span>
+      ) : (
+        <span>
+          Saldo kegiatan {kegiatanId} · {tahun} belum ditetapkan admin. Alokasi paket tahun itu belum bisa diisi.
+        </span>
       )}
     </div>
   );

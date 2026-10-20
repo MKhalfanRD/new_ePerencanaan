@@ -269,14 +269,11 @@ export function BalaiTab() {
             importInfo: { contoh: "Aktif", keterangan: "Isi Nonaktif untuk menonaktifkan; kosong = Aktif" },
             render: (item) =>
               item.isActive ? (
-                <Badge variant="outline" className="text-[10px]">
+                <Badge variant="dot" dotColor="emerald">
                   Aktif
                 </Badge>
               ) : (
-                <Badge
-                  variant="outline"
-                  className="text-[10px] text-destructive border-destructive/40"
-                >
+                <Badge variant="dot" dotColor="slate">
                   Nonaktif
                 </Badge>
               ),

@@ -159,7 +159,7 @@ function Switch({
       }}
       className={cn(
         "relative inline-flex h-5.5 w-10 shrink-0 items-center rounded-full transition-colors",
-        checked ? "bg-ok" : "bg-muted-foreground/25",
+        checked ? "bg-primary" : "bg-muted-foreground/25",
         disabled && "cursor-not-allowed opacity-50",
       )}
     >
@@ -2104,7 +2104,7 @@ export function FormProyekTab({
         <div
           role="group"
           aria-label="Mode kanvas"
-          className="flex rounded-lg border border-input bg-tier-1 p-1"
+          className="order-last flex overflow-hidden rounded-lg border border-input bg-card"
         >
           {(
             [
@@ -2118,10 +2118,10 @@ export function FormProyekTab({
               aria-pressed={mode === m}
               onClick={() => setMode(m)}
               className={cn(
-                "h-8 rounded-md px-3 text-sm",
+                "h-9 px-3.5 text-sm transition-colors",
                 mode === m
-                  ? "bg-white font-semibold shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "bg-foreground font-medium text-background"
+                  : "text-foreground hover:bg-accent",
               )}
             >
               {label}

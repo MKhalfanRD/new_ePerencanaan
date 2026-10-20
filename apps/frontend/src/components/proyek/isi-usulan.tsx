@@ -36,9 +36,9 @@ const IKON: Record<string, typeof MapPin> = {
   identitas: MapPin,
   dasar: FileText,
   lokasi: MapPin,
-  kriteria: ListChecks,
+  kesiapan: ListChecks,
   pemaketan: Layers,
-  tagging: Tag,
+  tematik: Tag,
   valuasi: BarChart3,
   kinerja: ClipboardCheck,
   dokumen: FileText,
@@ -77,7 +77,16 @@ function Berkas({ d }: { d: { fileName: string; filePath: string } }) {
   );
 }
 
-export function IsiUsulan({ proyek, kegiatanId }: { proyek: Proyek; kegiatanId: string | null }) {
+export function IsiUsulan({
+  proyek,
+  kegiatanId,
+  judul,
+}: {
+  proyek: Proyek;
+  kegiatanId: string | null;
+  /** Judul bagian, sebaris dengan tombol Buka/Tutup semua. */
+  judul?: React.ReactNode;
+}) {
   const [tabs, setTabs] = useState<FormTabNode[] | null>(null);
   const [skor, setSkor] = useState<{ skorEvaluasi: number | null; rincian: Rincian[] } | null>(null);
   const [buka, setBuka] = useState<Set<string>>(new Set());
@@ -305,7 +314,8 @@ export function IsiUsulan({ proyek, kegiatanId }: { proyek: Proyek; kegiatanId: 
 
   return (
     <div className="space-y-2.5">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-3">
+        {judul}
         <button
           type="button"
           className="text-xs font-medium text-muted-foreground hover:text-foreground"

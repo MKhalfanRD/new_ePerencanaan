@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { History, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
@@ -48,14 +48,11 @@ export function RiwayatPerubahan({ entity, entityId }: Props) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <History size={14} className="text-muted-foreground" />
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Riwayat Perubahan
-        </p>
-        <div className="flex-1 h-px bg-border" />
+        <h3 className="flex-1 text-sm font-semibold">Riwayat proyek</h3>
+        <span className="rounded-full bg-tier-1 px-2 py-0.5 text-[11px] text-muted-foreground">hanya admin</span>
       </div>
 
-      <div className="rounded-lg border divide-y">
+      <div className="divide-y border-t">
         {loading ? (
           <div className="flex items-center justify-center py-6">
             <Loader2 className="animate-spin text-muted-foreground" size={18} />
@@ -73,25 +70,31 @@ export function RiwayatPerubahan({ entity, entityId }: Props) {
                 role={canOpen ? "button" : undefined}
                 tabIndex={canOpen ? 0 : undefined}
                 onClick={() => canOpen && setDetailRow(r)}
-                className={`px-3 py-2.5 text-xs ${
-                  canOpen ? "cursor-pointer hover:bg-accent/30" : ""
+                className={`flex gap-2.5 py-2.5 text-[13px] ${
+                  canOpen ? "cursor-pointer hover:bg-accent/40" : ""
                 }`}
               >
-                <p className="text-foreground">
+                <span aria-hidden className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-st-draft" />
+                <div className="min-w-0">
+                <p className="font-semibold">
+                  {r.user?.name ?? r.username}{" "}
+                  <span className="font-normal text-muted-foreground">
+                    ·{" "}
+                    {new Date(r.createdAt).toLocaleString("id-ID", {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                    })}
+                  </span>
+                </p>
+                <p className="text-muted-foreground">
                   {ceritakanAktivitas(r)}
                   {canOpen && (
-                    <span className="ml-1.5 text-primary underline">
+                    <span className="ml-1.5 text-primary-ink underline">
                       lihat detail
                     </span>
                   )}
                 </p>
-                <p className="mt-0.5 text-muted-foreground">
-                  {r.user?.name ?? r.username} ·{" "}
-                  {new Date(r.createdAt).toLocaleString("id-ID", {
-                    dateStyle: "short",
-                    timeStyle: "short",
-                  })}
-                </p>
+                </div>
               </div>
             );
           })

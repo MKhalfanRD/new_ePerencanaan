@@ -291,7 +291,7 @@ export function MasterTable<T extends { id: string | number }>({
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b bg-muted/40">
+                  <tr className="border-b bg-card">
                     {renderExpanded && <th className="w-8" />}
                     {onBulkDelete && (
                       <th className="px-4 py-2.5 w-10">
@@ -306,7 +306,7 @@ export function MasterTable<T extends { id: string | number }>({
                     {columns.map((col) => (
                       <th
                         key={col.key}
-                        className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide"
+                        className="px-4 py-2.5 text-left text-[13px] font-semibold text-muted-foreground"
                       >
                         {col.label}
                       </th>

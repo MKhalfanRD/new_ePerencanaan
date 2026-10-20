@@ -52,7 +52,7 @@ import {
   type PaketIsian,
 } from "./paket-template";
 import { AngkaInput, PaketDialog, statusSaldo, teksAngka } from "./paket-dialog";
-import { RingkasSaldoProyek } from "@/components/anggaran/saldo-kegiatan";
+import { InfoSaldoKegiatan, RingkasSaldoProyek } from "@/components/anggaran/saldo-kegiatan";
 import { formatRupiah } from "@/lib/format-rupiah";
 import { useAuthStore } from "@/store/auth";
 import { cn } from "@/lib/utils";
@@ -382,6 +382,36 @@ function SectionHeader({
   );
 }
 
+function CincinSkor({ nilai, memuat }: { nilai: number; memuat?: boolean }) {
+  const r = 62;
+  const keliling = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, nilai));
+  return (
+    <div className="relative grid h-[140px] w-[140px] shrink-0 place-items-center">
+      <svg width="140" height="140" viewBox="0 0 140 140" className="absolute inset-0 -rotate-90" aria-hidden>
+        <circle cx="70" cy="70" r={r} fill="none" strokeWidth="13" className="stroke-border" />
+        <circle
+          cx="70"
+          cy="70"
+          r={r}
+          fill="none"
+          strokeWidth="13"
+          strokeLinecap="round"
+          className="stroke-sd-rm transition-[stroke-dasharray] duration-300"
+          strokeDasharray={`${(keliling * pct) / 100} ${keliling}`}
+        />
+      </svg>
+      <div className="text-center" role="img" aria-label={`Skor evaluasi ${fmtSkor(nilai)} dari 100`}>
+        <p className="flex items-center justify-center gap-1.5 text-[30px] font-bold leading-none tabular-nums">
+          {memuat && <Loader2 size={16} className="animate-spin text-muted-foreground" />}
+          {Math.round(pct)}%
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">skor {fmtSkor(nilai)} / 100</p>
+      </div>
+    </div>
+  );
+}
+
 export function ProyekFormDialog({
   open,
   onClose,
@@ -435,6 +465,8 @@ export function ProyekFormDialog({
   const [wsSearch, setWsSearch] = useState("");
   const [kegiatanList, setKegiatanList] = useState<KegiatanOpt[]>([]);
   const [selectedKegiatanId, setSelectedKegiatanId] = useState("");
+  // Buat proyek: kegiatan + saldonya dilihat dulu, baru "Selanjutnya" ke tab form.
+  const [kegiatanSiap, setKegiatanSiap] = useState(false);
 
   const [formTemplate, setFormTemplate] = useState<FormTemplateTree | null>(
     null,
@@ -643,6 +675,7 @@ export function ProyekFormDialog({
       setSelectedPnId("");
       setSelectedPpId("");
       setSelectedKegiatanId(akunKegiatanId ?? "");
+      setKegiatanSiap(false);
       setPaketServer([]);
       setSelectedSpId("");
       setSelectedSkId("");
@@ -1867,11 +1900,12 @@ export function ProyekFormDialog({
   const tabSebelum = isEdit || idxTab <= 0 ? undefined : visibleTabs[idxTab - 1];
   // Buat proyek baru: kegiatan dulu, baru tab-tab form (isinya ikut kegiatan).
   // Kegiatan yang form-nya belum disusun admin tidak bisa dipakai membuat proyek.
+  const kegiatanTerpilih = kegiatanList.find((k) => k.id === selectedKegiatanId);
   const formKegiatanKosong =
     !adminMode && !previewMode && !isEdit && !!selectedKegiatanId &&
     formTemplate !== null && formTemplate.tabs.length === 0;
   const perluPilihKegiatan =
-    !adminMode && !isEdit && !previewMode && (!selectedKegiatanId || formKegiatanKosong);
+    !adminMode && !isEdit && !previewMode && (!selectedKegiatanId || formKegiatanKosong || !kegiatanSiap);
 
   useEffect(() => {
     onActiveTabChange?.(TAB_KEY_MAP[activeTab as (typeof TABS)[number]["value"]]);
@@ -1907,6 +1941,13 @@ export function ProyekFormDialog({
       .catch(() => setSatkerNama({}));
   }, [open, balaiForm]);
   const periodeForm = periodeList.find((pr) => pr.id === watch("periodeId"));
+  const periodeSaldo = periodeForm ?? periodeList.find((pr) => pr.isActive) ?? periodeList[0];
+  const tahunIni = new Date().getFullYear();
+  const tahunSaldo = periodeSaldo
+    ? tahunIni >= periodeSaldo.startYear && tahunIni <= periodeSaldo.endYear
+      ? tahunIni
+      : periodeSaldo.startYear
+    : undefined;
 
   const simpanPaket = async (pk: PaketIsian) => {
     const idx = paketEdit?.idx ?? null;
@@ -2468,12 +2509,12 @@ export function ProyekFormDialog({
             </span>
           </div>
         ) : perluPilihKegiatan ? (
-          <div className="px-6 py-10">
-            <div className="mx-auto max-w-lg space-y-4 rounded-[14px] border border-input bg-white p-6">
+          <div className="px-6 py-5">
+            <div className="space-y-4">
               <div className="space-y-1">
-                <p className="text-base font-bold">Pilih kegiatan untuk memulai</p>
+                <p className="text-[15px] font-semibold">Pilih kegiatan untuk memulai</p>
                 <p className="text-sm text-muted-foreground">
-                  Isian form menyesuaikan kegiatan yang dipilih.
+                  Isian form menyesuaikan kegiatan yang dipilih. Saldo kegiatan langsung terlihat.
                 </p>
               </div>
               <div className="space-y-2">
@@ -2499,6 +2540,9 @@ export function ProyekFormDialog({
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedKegiatanId && tahunSaldo && !formKegiatanKosong && (
+                  <InfoSaldoKegiatan kegiatanId={selectedKegiatanId} tahun={tahunSaldo} />
+                )}
                 {formKegiatanKosong && (
                   <p role="alert" className="text-sm text-destructive">
                     Form kegiatan ini belum disusun admin (Master Data › Form Proyek).
@@ -2517,14 +2561,14 @@ export function ProyekFormDialog({
             }}
             className={cn("flex-1 min-h-0", embedded && "flex-none")}
           >
-            <div className={cn("pt-2", adminMode ? "px-0" : "px-6")}>
-              <TabsList className="h-auto w-full flex-wrap justify-start gap-0 rounded-[12px] border border-input bg-white p-0 px-2">
+            <div className={cn("pt-1", adminMode ? "px-0" : "px-6")}>
+              <TabsList className="h-auto w-full flex-wrap justify-start gap-x-1 gap-y-0 rounded-none border-0 border-b bg-transparent p-0">
                 {visibleTabs.map((t) => (
                   <TabsTrigger
                     key={t.value}
                     value={t.value}
                     className={cn(
-                      "h-11 flex-none gap-1.5 rounded-none border-0 border-b-[3px] border-transparent px-3.5 text-sm font-medium text-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:font-bold data-[state=active]:text-primary data-[state=active]:shadow-none",
+                      "-mb-px h-11 flex-none gap-1.5 rounded-none border-0 border-b-2 border-transparent px-2.5 text-sm font-medium text-muted-foreground shadow-none hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none",
                       adminMode && !isTabActive(t.value) && "opacity-50",
                     )}
                   >
@@ -2584,6 +2628,14 @@ export function ProyekFormDialog({
                   "identitas",
                   identitasRenderers,
                   TAB_GRID_CLASS.identitas!,
+                )}
+                {!adminMode && selectedKegiatanId && tahunSaldo && (
+                  <InfoSaldoKegiatan
+                    aksen
+                    kegiatanId={selectedKegiatanId}
+                    tahun={tahunSaldo}
+                    kecualiProyek={editData?.id}
+                  />
                 )}
               </TabsContent>
 
@@ -2846,42 +2898,45 @@ export function ProyekFormDialog({
                 {adminMode && adminHandlers ? (
                   adminHandlers.note("evaluasi")
                 ) : (
-                <div className="pl-12 space-y-4">
+                <div className="space-y-4 sm:pl-12">
                   {!kegiatanPreview ? (
                     <div className="rounded-xl border-2 border-dashed p-6 text-center text-muted-foreground text-xs">
                       Pilih kegiatan dulu — skor evaluasi mengikuti form kegiatan proyek.
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {(preview?.rincian?.length ?? 0) > 0 && (
-                        <div className="rounded-lg border bg-white">
-                          <div className="flex justify-between border-b px-4 py-2 text-[11px] font-semibold text-muted-foreground">
-                            <span>Tab</span>
-                            <span>Skor / bobot</span>
-                          </div>
-                          {preview!.rincian!.map((r) => (
+                    // Hi-fi HfForm10: cincin skor besar + bar per tab dinilai (bobot 0 tidak ditampilkan).
+                    <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-center">
+                      <CincinSkor nilai={(preview?.skorEvaluasi ?? 0) * 100} memuat={previewLoading} />
+                      <div className="w-full min-w-0 flex-1 overflow-hidden rounded-xl border bg-card">
+                        <div className="grid grid-cols-[minmax(0,1.6fr)_4.5rem_3rem_minmax(0,1.4fr)] gap-3 border-b px-4 py-2.5 text-xs font-semibold text-muted-foreground">
+                          <span>Tab dinilai</span>
+                          <span className="text-right">Didapat</span>
+                          <span className="text-right">Bobot</span>
+                          <span />
+                        </div>
+                        {(preview?.rincian ?? [])
+                          .filter((r) => r.bobot > 0)
+                          .map((r) => (
                             <div
                               key={r.key ?? r.label}
-                              className="flex justify-between border-b px-4 py-2 text-sm last:border-b-0"
+                              className="grid grid-cols-[minmax(0,1.6fr)_4.5rem_3rem_minmax(0,1.4fr)] items-center gap-3 border-b px-4 py-2.5 text-sm last:border-b-0"
                             >
-                              <span>{r.label}</span>
-                              <span className="tabular-nums">
-                                {fmtSkor(r.dapat)} / {fmtSkor(r.bobot)}
+                              <span className="truncate">{r.label}</span>
+                              <span className="text-right tabular-nums">{fmtSkor(r.dapat)}</span>
+                              <span className="text-right tabular-nums text-muted-foreground">{fmtSkor(r.bobot)}</span>
+                              <span className="h-1.5 overflow-hidden rounded-full bg-border">
+                                <span
+                                  className="block h-full rounded-full bg-sd-rm"
+                                  style={{ width: `${Math.min(100, (r.dapat / r.bobot) * 100)}%` }}
+                                />
                               </span>
                             </div>
                           ))}
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-3">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Skor Evaluasi
-                        </span>
-                        <span className="text-2xl font-bold text-primary flex items-center gap-2">
-                          {previewLoading && (
-                            <Loader2 size={16} className="animate-spin" />
-                          )}
-                          {fmtSkor((preview?.skorEvaluasi ?? 0) * 100)} / 100
-                        </span>
+                        {!(preview?.rincian ?? []).some((r) => r.bobot > 0) && (
+                          <p className="px-4 py-6 text-center text-xs text-muted-foreground">
+                            Belum ada tab berbobot di form kegiatan ini (atur bobot di Master Data › Form Proyek).
+                          </p>
+                        )}
                       </div>
                     </div>
                   )}
@@ -2915,19 +2970,24 @@ export function ProyekFormDialog({
     >
       <SheetContent
         layer="1"
-        className="!p-0"
+        className={cn("!p-0", perluPilihKegiatan && "w-[38.75rem] max-w-[38.75rem]")}
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <SheetHeader className="gap-2 pb-4">
-          <SheetTitle className="text-lg leading-snug">
+        <SheetHeader className="flex-row items-center gap-3 pb-4 pl-6">
+          <SheetTitle className="flex-1 text-lg leading-snug">
             {previewMode
               ? "Pratinjau Form Proyek"
               : adminMode
                 ? "Kelola Form Proyek"
                 : isEdit
                   ? "Edit Proyek"
-                  : "Buat Proyek"}
+                  : "Buat proyek"}
           </SheetTitle>
+          {!perluPilihKegiatan && kegiatanTerpilih && (
+            <span className="hidden min-w-0 truncate text-[13.5px] text-muted-foreground sm:block">
+              Kegiatan {kegiatanTerpilih.code} · {kegiatanTerpilih.name}
+            </span>
+          )}
         </SheetHeader>
 
         {tabsBody}
@@ -2947,13 +3007,25 @@ export function ProyekFormDialog({
                 Tutup
               </Button>
             </>
+          ) : perluPilihKegiatan ? (
+            <>
+              <Button type="button" variant="outline" onClick={onClose}>
+                Batal
+              </Button>
+              <Button
+                type="button"
+                disabled={loadingMaster || !selectedKegiatanId || formKegiatanKosong || !formTemplate}
+                onClick={() => setKegiatanSiap(true)}
+              >
+                Selanjutnya
+                <ChevronRight className="ml-1 h-4 w-4" />
+              </Button>
+            </>
           ) : (
             <>
-              {!isEdit && (perluPilihKegiatan || (!tabBerikut && !allTabsVisited)) && (
+              {!isEdit && !tabBerikut && !allTabsVisited && (
                 <p className="text-xs text-muted-foreground mr-auto">
-                  {perluPilihKegiatan
-                    ? "Pilih kegiatan dulu untuk mulai mengisi form"
-                    : `Buka semua tab dulu sebelum menyimpan (${jumlahTabDibuka} dari ${visibleTabs.length} sudah dibuka)`}
+                  {`Buka semua tab dulu sebelum menyimpan (${jumlahTabDibuka} dari ${visibleTabs.length} sudah dibuka)`}
                 </p>
               )}
               {tabSebelum ? (

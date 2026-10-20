@@ -2,17 +2,6 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  Building2,
-  FolderTree,
-  Droplets,
-  ClipboardCheck,
-  Target,
-  Tags,
-  Flag,
-  MapPin,
-  Shapes,
-} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { BalaiTab } from "@/components/master/balai-tab";
@@ -29,15 +18,15 @@ import { KategoriProyekTab } from "@/components/master/kategori-proyek-tab";
 // ("Nomenklatur") — tab "Periode" lama dilebur ke sana sebagai bagian
 // "Tahun" supaya seluruh hierarki terbaca sekaligus.
 const tabs = [
-  { id: "nomenklatur", label: "Nomenklatur", icon: FolderTree },
-  { id: "balai", label: "Balai", icon: Building2 },
-  { id: "wilayah-sungai", label: "Wilayah Sungai", icon: Droplets },
-  { id: "provinsi", label: "Provinsi", icon: MapPin },
-  { id: "kategori-proyek", label: "Kategori Proyek", icon: Shapes },
-  { id: "form-proyek", label: "Form Proyek", icon: ClipboardCheck },
-  { id: "pnppkp", label: "PN / PP / KP", icon: Target },
-  { id: "tagging-renja", label: "Tagging RENJA", icon: Tags },
-  { id: "sasaran", label: "Sasaran SP / SK", icon: Flag },
+  { id: "nomenklatur", label: "Nomenklatur" },
+  { id: "balai", label: "Balai" },
+  { id: "wilayah-sungai", label: "Wilayah Sungai" },
+  { id: "provinsi", label: "Provinsi" },
+  { id: "kategori-proyek", label: "Kategori Proyek" },
+  { id: "form-proyek", label: "Form Proyek" },
+  { id: "pnppkp", label: "PN / PP / KP" },
+  { id: "tagging-renja", label: "Tagging RENJA" },
+  { id: "sasaran", label: "Sasaran SP / SK" },
 ];
 
 const TAB_IDS = tabs.map((t) => t.id);
@@ -61,12 +50,14 @@ function MasterPageInner() {
   const initialKegiatanId = searchParams.get("kegiatanId") ?? undefined;
 
   return (
-    <div className="space-y-6">
-      {/* Kepala halaman: strip putih selebar konten (menembus padding layout)
-          dengan menu bergaris bawah, seperti prototipe builder. */}
-      <div className="-mx-6 -mt-6 border-b border-input bg-white px-6 pt-5">
-        <h1 className="text-2xl font-bold tracking-tight">Master Data</h1>
-        <nav aria-label="Menu Master Data" className="mt-3 flex flex-wrap gap-1">
+    <div className="space-y-5">
+      {/* Kepala halaman: judul + menu teks bergaris bawah (hi-fi HfMasterTabel). */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Master data</h1>
+        <nav
+          aria-label="Menu Master Data"
+          className="mt-3 flex gap-1 overflow-x-auto border-b [scrollbar-width:none]"
+        >
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -74,13 +65,12 @@ function MasterPageInner() {
               aria-current={activeTab === tab.id ? "page" : undefined}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                "flex h-12 items-center gap-2 border-b-[3px] px-3 text-sm transition-colors",
+                "-mb-px flex h-11 shrink-0 items-center whitespace-nowrap border-b-2 px-2.5 text-[14.5px] transition-colors",
                 activeTab === tab.id
-                  ? "border-primary font-bold text-primary"
-                  : "border-transparent font-medium text-foreground hover:text-foreground",
+                  ? "border-primary font-medium text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
               )}
             >
-              <tab.icon size={15} />
               {tab.label}
             </button>
           ))}

@@ -8,8 +8,9 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
-  ArrowRight,
-  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
   X,
   AlertTriangle,
   Download,
@@ -38,6 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import api from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { KolomTemplate, unduhTemplate } from "@/lib/template-excel";
 
 interface MatchedBalai {
@@ -199,35 +201,46 @@ function TabelBanding({ d }: { d: Duplikat }) {
   );
 }
 
+function Angka({ n, label, warna }: { n: number; label: string; warna?: string }) {
+  return (
+    <div className="rounded-xl border bg-card px-4 py-3.5">
+      <p className={cn("text-2xl font-bold tabular-nums", warna)}>{n.toLocaleString("id-ID")}</p>
+      <p className="text-[13px] text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
 function RencanaPanel({ items }: { items: RencanaProyek[] }) {
   const [batas, setBatas] = useState(30);
   return (
-    <div className="rounded-lg border overflow-hidden">
-      <div className="p-3 bg-muted/40">
-        <p className="text-sm font-medium">Rencana import ({items.length} proyek)</p>
+    <div className="overflow-hidden rounded-xl border bg-card">
+      <div className="px-4 py-3">
+        <p className="text-sm font-semibold">Rencana import ({items.length.toLocaleString("id-ID")} proyek)</p>
         <p className="text-xs text-muted-foreground">
-          Belum ada data tersimpan. Periksa daftar ini, lalu klik Import Sekarang
+          Belum ada data tersimpan. Periksa daftar ini, lalu klik Import sekarang
           untuk menyetujui.
         </p>
       </div>
       <ul className="divide-y border-t max-h-80 overflow-y-auto">
         {items.slice(0, batas).map((r, i) => (
-          <li key={i} className="p-2.5 text-xs space-y-1">
-            <div className="flex items-start gap-2">
-              <Badge
-                variant={r.aksi === "baru" ? "default" : "secondary"}
-                className="text-[10px] shrink-0"
+          <li key={i} className="space-y-1 px-4 py-3 text-[13px]">
+            <div className="flex items-start gap-2.5">
+              <span
+                className={cn(
+                  "shrink-0 rounded-full px-2.5 py-0.5 text-xs",
+                  r.aksi === "baru" ? "bg-ok/10 text-ok" : "bg-info/10 text-info",
+                )}
               >
-                {r.aksi === "baru" ? "Proyek baru" : "Ditambah"}
-              </Badge>
+                {r.aksi === "baru" ? "Proyek baru" : "Tambah tahun"}
+              </span>
               <div className="min-w-0">
-                <p className="font-medium truncate">{r.namaProyek}</p>
+                <p className="truncate font-semibold">{r.namaProyek}</p>
                 <p className="text-muted-foreground truncate">
                   {r.balaiName} · kegiatan {r.kegiatan}
                 </p>
               </div>
             </div>
-            <ul className="pl-3 space-y-0.5 text-muted-foreground">
+            <ul className="space-y-0.5 pl-24 text-muted-foreground">
               {r.paket.map((pk, j) => (
                 <li key={j} className="truncate">
                   {pk.baru ? "Paket baru" : "Tambah tahun"}: {pk.nama} ·{" "}
@@ -546,25 +559,30 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
         className="!max-w-3xl !w-[92vw] max-h-[88vh] flex flex-col p-0 gap-0 overflow-hidden"
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <DialogHeader className="px-8 pt-6 pb-4 border-b shrink-0">
-          <DialogTitle className="flex items-center gap-2">
-            <FileSpreadsheet size={20} className="text-primary" />
-            Import Proyek dari Excel
-          </DialogTitle>
-          <p className="text-sm text-muted-foreground mt-1">
-            {step === "upload" &&
-              "Upload file Excel rekapitulasi rencana anggaran"}
-            {step === "balai" && "Periksa balai & alokasi duplikat"}
-            {step === "done" && "Import telah selesai diproses"}
-          </p>
+        <DialogHeader className="shrink-0 border-b px-6 py-5">
+          <div className="flex items-start gap-3 pr-8">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary-soft text-primary">
+              <FileText size={18} />
+            </span>
+            <div className="min-w-0">
+              <DialogTitle className="text-lg font-semibold">Import proyek dari Excel</DialogTitle>
+              <p className="text-[13.5px] text-muted-foreground">
+                {step === "upload" && "Upload file Excel rekapitulasi rencana anggaran"}
+                {step === "balai" && "Periksa balai & alokasi duplikat"}
+                {step === "done" && "Import selesai"}
+              </p>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex-1 overflow-y-auto px-6 py-5">
           {/* STEP: Upload */}
           {step === "upload" && (
             <div className="space-y-4">
-              <div className="rounded-lg border p-3 space-y-2">
-                <p className="text-xs text-muted-foreground">
+              <div className="flex gap-2.5 rounded-xl bg-tier-1 px-4 py-3">
+                <Info size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
+                <div className="space-y-2.5">
+                <p className="text-[13.5px]">
                   Belum punya file? Unduh template, isi sheet pertama, lalu
                   upload di bawah. Penjelasan kolom ada di sheet
                   &quot;Petunjuk&quot;.
@@ -596,6 +614,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                     Renstra
                   </Button>
                 </div>
+                </div>
               </div>
               <div
                 onClick={() => fileInputRef.current?.click()}
@@ -605,7 +624,15 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   const f = e.dataTransfer.files[0];
                   if (f) handleFileSelect(f);
                 }}
-                className="border-2 border-dashed rounded-xl p-12 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors"
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+                className="cursor-pointer rounded-xl border-[1.5px] border-dashed border-input p-12 text-center transition-colors outline-none hover:border-primary hover:bg-primary-soft/40 focus-visible:border-primary"
               >
                 <input
                   ref={fileInputRef}
@@ -617,15 +644,14 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                     if (s) handleFileSelect(s);
                   }}
                 />
-                <Upload
-                  size={32}
-                  className="mx-auto mb-3 text-muted-foreground"
-                />
-                <p className="text-sm font-medium">
+                <span className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-xl bg-primary-soft text-primary">
+                  <Upload size={20} />
+                </span>
+                <p className="text-sm font-semibold">
                   {file ? file.name : "Klik atau seret file Excel ke sini"}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Format DB.xlsx (+ kolom Tahun) atau Kertas Kerja Renstra
+                  Format DB.xlsx (+ kolom Tahun) atau Kertas Kerja Renstra · .xlsx
                 </p>
               </div>
 
@@ -657,39 +683,11 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
           {/* STEP: Balai resolution */}
           {step === "balai" && preview && (
             <div className="space-y-5">
-              <div className="grid grid-cols-4 gap-3">
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold">
-                    {preview.summary.totalProyek}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Total Proyek
-                  </p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold text-ok">
-                    {preview.summary.totalProyekBaru}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Proyek Baru
-                  </p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold">
-                    {preview.summary.totalAlokasiBaru}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Alokasi Masuk
-                  </p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold text-warn-ink">
-                    {preview.summary.totalDuplikat}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Duplikat
-                  </p>
-                </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Angka n={preview.summary.totalProyek} label="Total proyek" />
+                <Angka n={preview.summary.totalProyekBaru} label="Proyek baru" warna="text-ok" />
+                <Angka n={preview.summary.totalAlokasiBaru} label="Alokasi masuk" />
+                <Angka n={preview.summary.totalDuplikat} label="Duplikat" warna="text-warn-ink" />
               </div>
 
               {preview.info.length > 0 && (
@@ -774,7 +772,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   <div className="flex items-center gap-2 mb-2">
                     <CheckCircle2 size={14} className="text-ok" />
                     <p className="text-sm font-medium">
-                      {preview.matched.length} Balai Cocok Otomatis
+                      {preview.matched.length} balai cocok otomatis
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -796,7 +794,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   <div className="flex items-center gap-2 mb-3">
                     <AlertCircle size={14} className="text-warn-ink" />
                     <p className="text-sm font-medium">
-                      {preview.unmatched.length} Balai Perlu Konfirmasi
+                      {preview.unmatched.length} balai perlu konfirmasi
                     </p>
                   </div>
                   <div className="space-y-2.5">
@@ -852,102 +850,60 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
           {/* STEP: Done */}
           {step === "done" && result && (
             <div className="space-y-5">
-              <div className="text-center py-4 space-y-3">
-                <div
-                  className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto ${
-                    result.skipped > 0 ? "bg-warn/12" : "bg-ok/10"
-                  }`}
-                >
-                  {result.skipped > 0 ? (
-                    <AlertTriangle size={32} className="text-warn-ink" />
-                  ) : (
-                    <CheckCircle2 size={32} className="text-ok" />
-                  )}
-                </div>
-                <div>
-                  <p className="text-lg font-semibold">
-                    {result.skipped > 0
-                      ? "Import Selesai (dengan beberapa error)"
-                      : "Import Berhasil!"}
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {result.createdPaket} paket baru, {result.createdAlokasi}{" "}
-                    alokasi masuk
-                  </p>
-                </div>
+              <div
+                role="status"
+                className={cn(
+                  "flex items-start gap-2.5 rounded-xl px-4 py-3 text-[13.5px]",
+                  result.skipped > 0 ? "bg-warn/12 text-warn-ink" : "bg-ok/10 text-ok",
+                )}
+              >
+                {result.skipped > 0 ? (
+                  <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                ) : (
+                  <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+                )}
+                <p>
+                  <b>{result.skipped > 0 ? "Import selesai dengan beberapa error." : "Import berhasil."}</b>{" "}
+                  <span className="text-foreground">
+                    {result.createdPaket.toLocaleString("id-ID")} paket baru,{" "}
+                    {result.createdAlokasi.toLocaleString("id-ID")} alokasi masuk.
+                  </span>
+                </p>
               </div>
 
-              <div className="grid grid-cols-4 gap-2.5">
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-xl font-bold text-ok">
-                    {result.createdProyek}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Proyek Baru</p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-xl font-bold text-primary-ink">
-                    {result.updatedProyek}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Proyek Ditambah
-                  </p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-xl font-bold text-warn-ink">
-                    {result.skippedDuplikat}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Duplikat Dilewati
-                  </p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p
-                    className={`text-xl font-bold ${result.skipped > 0 ? "text-destructive" : "text-muted-foreground"}`}
-                  >
-                    {result.skipped}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Error</p>
-                </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Angka n={result.createdProyek} label="Proyek dibuat" warna="text-ok" />
+                <Angka n={result.updatedProyek} label="Proyek diperbarui" />
+                <Angka n={result.createdAlokasi} label="Alokasi baru" />
+                <Angka n={result.skippedDuplikat} label="Duplikat dilewati" />
               </div>
 
               {result.hasil.length > 0 && (
-                <div className="rounded-lg border overflow-hidden">
-                  <div className="flex items-center justify-between gap-2 p-3 bg-muted/40">
-                    <p className="text-sm font-medium">
-                      Proyek hasil import ({result.hasil.length})
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs"
-                      onClick={() => handleFinish(true)}
-                    >
-                      Lihat di daftar proyek
-                    </Button>
+                <div className="overflow-hidden rounded-xl border bg-card">
+                  <div className="flex items-center justify-between gap-2 px-4 py-3">
+                    <p className="text-sm font-semibold">Hasil import</p>
+                    <span className="text-xs text-muted-foreground">
+                      {result.hasil.length.toLocaleString("id-ID")} proyek
+                    </span>
                   </div>
                   <ul className="divide-y border-t max-h-64 overflow-y-auto">
                     {result.hasil.slice(0, 200).map((h) => (
                       <li
                         key={h.proyekId}
-                        className="flex items-center gap-2 p-2.5 text-xs"
+                        className="flex items-center gap-3 px-4 py-2.5 text-[13px]"
                       >
-                        <Badge
-                          variant={h.aksi === "baru" ? "default" : "secondary"}
-                          className="text-[10px] shrink-0"
-                        >
-                          {h.aksi === "baru" ? "Baru" : "Ditambah"}
-                        </Badge>
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium truncate">{h.namaProyek}</p>
-                          <p className="text-muted-foreground">
-                            {h.kodeProyek} · {h.paketBaru} paket baru ·{" "}
+                          <p className="truncate font-semibold">{h.namaProyek}</p>
+                          <p className="text-xs text-muted-foreground">
+                            <span className="font-mono">{h.kodeProyek}</span> ·{" "}
+                            {h.aksi === "baru" ? "dibuat" : "diperbarui"} · {h.paketBaru} paket baru ·{" "}
                             {h.alokasiBaru} alokasi
                           </p>
                         </div>
                         <Button
                           size="sm"
-                          variant="ghost"
-                          className="h-7 text-xs shrink-0"
+                          variant="outline"
+                          className="h-8 shrink-0 text-xs"
                           onClick={() => bukaProyek(h.proyekId)}
                         >
                           <ExternalLink size={12} className="mr-1" /> Buka
@@ -1007,7 +963,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
           )}
         </div>
 
-        <DialogFooter className="px-8 py-5 border-t shrink-0 bg-background">
+        <DialogFooter className="shrink-0 border-t bg-background px-6 py-4">
           {step === "upload" && (
             <>
               <Button variant="outline" onClick={handleClose}>
@@ -1017,19 +973,16 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                 onClick={handleUpload}
                 disabled={!file || uploading}
               >
-                {uploading ? (
-                  <Loader2 size={15} className="mr-2 animate-spin" />
-                ) : (
-                  <ArrowRight size={15} className="mr-2" />
-                )}
-                {uploading ? "Memproses..." : "Lanjutkan"}
+                {uploading && <Loader2 size={15} className="mr-2 animate-spin" />}
+                {uploading ? "Memproses…" : "Lanjutkan"}
+                {!uploading && <ChevronRight size={15} className="ml-1" />}
               </Button>
             </>
           )}
           {step === "balai" && (
             <>
               <Button variant="outline" onClick={() => setStep("upload")}>
-                <ArrowLeft size={15} className="mr-2" /> Kembali
+                <ChevronLeft size={15} className="mr-1" /> Kembali
               </Button>
               <Button
                 onClick={handleCommit}
@@ -1038,14 +991,22 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                 {committing && (
                   <Loader2 size={15} className="mr-2 animate-spin" />
                 )}
-                {committing ? "Mengimpor..." : "Import Sekarang"}
+                {committing ? "Mengimpor…" : "Import sekarang"}
               </Button>
             </>
           )}
           {step === "done" && (
-            <Button onClick={() => handleFinish()} className="w-full">
-              Selesai
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => handleFinish()}>
+                Tutup
+              </Button>
+              {!!result?.hasil.length && (
+                <Button onClick={() => handleFinish(true)}>
+                  Lihat di daftar proyek
+                  <ChevronRight size={15} className="ml-1" />
+                </Button>
+              )}
+            </>
           )}
         </DialogFooter>
       </DialogContent>

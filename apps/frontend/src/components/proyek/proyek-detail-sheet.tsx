@@ -6,15 +6,11 @@ import {
   CheckCheck,
   RotateCcw,
   Loader2,
-  Calendar,
-  Building2,
-  FileText,
   ChevronDown,
   FileDown,
   FileSpreadsheet,
   Plus,
   Trash2,
-  Package,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -73,6 +69,8 @@ import type { FormTabNode } from "./proyek-form-dialog";
 import { statusConfig } from "@/components/shared/status-config";
 
 import { formatRupiah, formatRupiahShort } from "@/lib/format-rupiah";
+import { cn } from "@/lib/utils";
+import { LABEL_SD, WARNA_SD } from "@/components/anggaran/saldo-kegiatan";
 
 // Kode identitas ringkas per proyek (mis. "BWS.07.7755") — logic sama
 // persis dengan `getProyekKode` di proyekList/page.tsx, supaya kode yang
@@ -95,25 +93,11 @@ function InfoStat({
   valueClassName?: string;
 }) {
   return (
-    <div>
-      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
-        {label}
-      </p>
-      <p className={`text-sm font-semibold mt-0.5 ${valueClassName ?? ""}`}>
+    <div className="min-w-0">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={cn("truncate font-semibold", valueClassName)} title={value}>
         {value}
       </p>
-    </div>
-  );
-}
-
-function SectionHeader({ icon: Icon, title }: { icon?: any; title: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      {Icon && <Icon size={14} className="text-muted-foreground" />}
-      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        {title}
-      </p>
-      <div className="flex-1 h-px bg-border" />
     </div>
   );
 }
@@ -243,6 +227,8 @@ export function ProyekDetailSheet({
 
 
   const cfg = statusConfig[proyek.status];
+  // Riwayat proyek hanya untuk admin (log aktivitas memang khusus Super Admin).
+  const panelRiwayat = user?.role === "SUPER_ADMIN";
   // Backend selalu balikin array, tapi dijaga di sini juga — dipakai berulang di bawah.
   const paket = proyek.paket ?? [];
   const firstRo = paket[0]?.ro;
@@ -250,15 +236,20 @@ export function ProyekDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent layer="1" className="!p-0">
-        <SheetHeader className="gap-2 pb-4">
-          <SheetBreadcrumb
-            items={[
-              { label: "Daftar Proyek", onClick: onClose },
-              { label: proyek.projectName },
-            ]}
-          />
-          <div className="flex items-center justify-end gap-2">
+      <SheetContent
+        layer="1"
+        className="!p-0 h-[92vh] max-h-[92vh] w-[min(94vw,80rem)] max-w-[80rem]"
+      >
+        <SheetHeader className="gap-2 pb-4 pl-6 pr-14 pt-5">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <SheetBreadcrumb
+                items={[
+                  { label: "Daftar proyek", onClick: onClose },
+                  { label: proyek.projectName },
+                ]}
+              />
+            </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline">
@@ -266,25 +257,17 @@ export function ProyekDetailSheet({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={() => exportProyekDetailToExcel(proyek)}
-                >
+                <DropdownMenuItem onClick={() => exportProyekDetailToExcel(proyek)}>
                   <FileSpreadsheet size={14} className="mr-2" /> Export ke Excel
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => exportProyekDetailToPDF(proyek)}
-                >
+                <DropdownMenuItem onClick={() => exportProyekDetailToPDF(proyek)}>
                   <FileDown size={14} className="mr-2" /> Export ke PDF
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             {canEdit && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onEdit(proyek)}
-              >
-                <Edit size={13} className="mr-1.5" /> Edit Proyek
+              <Button size="sm" variant="outline" onClick={() => onEdit(proyek)}>
+                <Edit size={13} className="mr-1.5" /> Edit proyek
               </Button>
             )}
             {punyaRole(user, "ADMINISTRATOR") && proyek.status === "DRAFT" && (
@@ -297,109 +280,61 @@ export function ProyekDetailSheet({
                 Setujui
               </Button>
             )}
-            {punyaRole(user, "ADMINISTRATOR") &&
-              proyek.status === "APPROVED" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleUnapprove}
-                  disabled={approving}
-                >
-                  {approving ? (
-                    <Loader2 size={13} className="mr-1.5 animate-spin" />
-                  ) : (
-                    <RotateCcw size={13} className="mr-1.5" />
-                  )}
-                  Kembalikan ke Draft
-                </Button>
-              )}
+            {punyaRole(user, "ADMINISTRATOR") && proyek.status === "APPROVED" && (
+              <Button size="sm" variant="outline" onClick={handleUnapprove} disabled={approving}>
+                {approving ? (
+                  <Loader2 size={13} className="mr-1.5 animate-spin" />
+                ) : (
+                  <RotateCcw size={13} className="mr-1.5" />
+                )}
+                Kembalikan ke draft
+              </Button>
+            )}
           </div>
 
-          <SheetTitle className="text-lg leading-snug">
-            {proyek.projectName}
-          </SheetTitle>
-
-          {/* Meta line: balai · kode · status (dot inline) — sesuai
-              mockup, bukan badge kotak terpisah seperti sebelumnya. */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Building2 size={12} />{" "}
-              {proyek.balai.shortName ?? proyek.balai.name}
-            </span>
-            <span className="text-xs font-mono text-muted-foreground">
-              {getProyekKode(proyek)}
-            </span>
-            <Badge variant="dot" dotColor={cfg.dotColor} className="text-xs">
+          <div className="flex flex-wrap items-center gap-3">
+            <SheetTitle className="text-[22px] leading-tight">{proyek.projectName}</SheetTitle>
+            <Badge variant="dot" dotColor={cfg.dotColor}>
               {cfg.label}
             </Badge>
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Calendar size={12} /> {proyek.periode.label}
-            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[13.5px] text-muted-foreground">
+            <span>{proyek.balai.shortName ?? proyek.balai.name}</span>
+            <span className="font-mono text-[12.5px]">{proyek.kodeProyek ?? getProyekKode(proyek)}</span>
+            {kegiatanInfo && <span>Kegiatan {kegiatanInfo.code}</span>}
+            <span>{proyek.periode.label}</span>
           </div>
         </SheetHeader>
 
-        <SheetBody className="px-6 py-6 space-y-6">
-          {/* Info Proyek — Program/Kegiatan milik proyek (data lama tanpa
-              kegiatan: dari paket pertama). KRO/RO melekat di tiap Paket. */}
-          <div className="space-y-2">
-            <SectionHeader title="Info Proyek" icon={FileText} />
-            <div className="rounded-lg border p-4 grid grid-cols-2 gap-x-4 gap-y-4">
-              <InfoStat label="Kode Proyek" value={proyek.kodeProyek || "—"} />
+        <SheetBody
+          className={cn(
+            "grid content-start md:min-h-full",
+            panelRiwayat && "md:grid-cols-[minmax(0,1fr)_19rem]",
+          )}
+        >
+          <div className="min-w-0 space-y-5 px-6 py-5">
+          {/* Info proyek (hi-fi HfDetailIsiTutup) — sisanya ada di Isi usulan. */}
+          <div className="rounded-xl border bg-card p-4">
+            <h3 className="mb-2.5 text-sm font-semibold">Info proyek</h3>
+            <div className="grid grid-cols-2 gap-3 text-[13.5px] sm:grid-cols-4">
+              <InfoStat label="Kode proyek" value={proyek.kodeProyek || "—"} valueClassName="font-mono text-[13px]" />
               <InfoStat
-                label="Program / Kegiatan"
+                label="Skor evaluasi"
                 value={
-                  kegiatanInfo
-                    ? `${kegiatanInfo.program.code} ${kegiatanInfo.program.name} · ${kegiatanInfo.code}`
-                    : "—"
-                }
-              />
-              <InfoStat
-                label="Kegiatan"
-                value={
-                  kegiatanInfo
-                    ? `${kegiatanInfo.code} · ${kegiatanInfo.name}`
-                    : "—"
-                }
-              />
-              <InfoStat
-                label="Kegiatan Prioritas (PN.PP.KP)"
-                value={proyek.kegiatanPrioritas?.name ?? "Tidak"}
-              />
-              <InfoStat
-                label="Skor Evaluasi"
-                value={
-                  proyek.skorEvaluasi
-                    ? `${(Number(proyek.skorEvaluasi) * 100).toFixed(1)}%`
+                  proyek.skorEvaluasi != null
+                    ? `${(Number(proyek.skorEvaluasi) * 100).toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 100`
                     : "Belum dievaluasi"
                 }
               />
-              <InfoStat
-                label="Diajukan oleh"
-                value={`${proyek.createdBy.name} (${proyek.createdBy.role.name})`}
-              />
-              <InfoStat
-                label="Sumber Usulan"
-                value={
-                  proyek.sumberUsulanProyek
-                    ? [
-                        "PEMERINTAH_DAERAH",
-                        "KEMENTERIAN_LEMBAGA",
-                        "LAINNYA",
-                      ].includes(proyek.sumberUsulanProyek) &&
-                      proyek.sumberUsulanLainnya
-                      ? `${proyek.sumberUsulanProyek.replaceAll("_", " ")} — ${proyek.sumberUsulanLainnya}`
-                      : proyek.sumberUsulanProyek.replaceAll("_", " ")
-                    : "—"
-                }
-              />
-              <InfoStat label="Jumlah Paket" value={String(paket.length)} />
+              <InfoStat label="Diajukan oleh" value={proyek.createdBy.name} />
+              <InfoStat label="Jumlah paket" value={String(paket.length)} />
             </div>
           </div>
 
           {/* Daftar Paket — level baru di antara Proyek & Alokasi. */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <SectionHeader title="Paket" icon={Package} />
+              <h2 className="text-base font-semibold">Paket</h2>
               {canManagePaket && (
                 <Button
                   size="sm"
@@ -420,7 +355,7 @@ export function ProyekDetailSheet({
                 Belum ada paket untuk proyek ini
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="overflow-hidden rounded-xl border bg-card">
                 {paket.map((pk) => {
                   const isPaketExpanded = expandedPaket.has(pk.id);
                   const rencanaPaket = pk.alokasi
@@ -435,10 +370,7 @@ export function ProyekDetailSheet({
                     .reduce((s, a) => s + Number(a.total), 0);
 
                   return (
-                    <div
-                      key={pk.id}
-                      className="rounded-lg border overflow-hidden"
-                    >
+                    <div key={pk.id} className="border-b last:border-b-0">
                       <div
                         role="button"
                         tabIndex={0}
@@ -449,18 +381,20 @@ export function ProyekDetailSheet({
                             togglePaket(pk.id);
                           }
                         }}
-                        className="flex items-center gap-3 px-3.5 py-3 bg-muted/40 cursor-pointer hover:bg-muted/60 transition-colors outline-none focus-visible:bg-accent/40"
+                        aria-expanded={isPaketExpanded}
+                        className={cn(
+                          "flex cursor-pointer items-center gap-3 px-4 py-3 outline-none transition-colors hover:bg-accent/60 focus-visible:bg-accent",
+                          isPaketExpanded && "border-b bg-tier-2",
+                        )}
                       >
                         <ChevronDown
                           size={14}
                           className={`shrink-0 text-muted-foreground transition-transform ${isPaketExpanded ? "" : "-rotate-90"}`}
                         />
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-semibold truncate">
-                            {pk.name}
-                          </p>
-                          <p className="text-[10.5px] font-mono text-muted-foreground truncate">
-                            {pk.ro.kro.kegiatan.code} · {pk.ro.name}
+                          <p className="truncate text-sm font-semibold">{pk.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            <span className="font-mono">RO {pk.ro.code}</span> · {pk.ro.name}
                           </p>
                         </div>
                         {proyek.kegiatanId &&
@@ -482,7 +416,7 @@ export function ProyekDetailSheet({
                           </Badge>
                         )}
                         <span
-                          className="text-xs font-bold shrink-0 w-28 text-right"
+                          className="w-28 shrink-0 text-right text-sm font-semibold tabular-nums"
                           title={formatRupiah(totalPaket)}
                         >
                           {formatRupiahShort(totalPaket)}
@@ -498,13 +432,14 @@ export function ProyekDetailSheet({
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-6 w-6"
+                                    className="h-7 w-7"
+                                    aria-label={`Edit paket ${pk.name}`}
                                     onClick={() => {
                                       setEditPaket(pk);
                                       setShowPaketForm(true);
                                     }}
                                   >
-                                    <Edit size={11} />
+                                    <Edit size={14} />
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent>Edit Paket</TooltipContent>
@@ -516,10 +451,11 @@ export function ProyekDetailSheet({
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    aria-label={`Hapus paket ${pk.name}`}
                                     onClick={() => setDeletePaketId(pk.id)}
                                   >
-                                    <Trash2 size={11} />
+                                    <Trash2 size={14} />
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent>Hapus Paket</TooltipContent>
@@ -530,8 +466,8 @@ export function ProyekDetailSheet({
                       </div>
 
                       {isPaketExpanded && (
-                        <div className="p-3.5 space-y-3 text-xs">
-                          <dl className="grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-y-1.5 [&>dd]:mb-1.5 sm:[&>dd]:mb-0">
+                        <div className="space-y-3 px-4 py-3.5 text-[13px]">
+                          <dl className="grid grid-cols-1 gap-x-4 gap-y-0.5 sm:grid-cols-[7rem_minmax(0,1fr)_7rem_minmax(0,1fr)] sm:gap-y-2 [&>dd]:mb-1.5 sm:[&>dd]:mb-0 [&>dt]:text-muted-foreground">
                             <dt className="text-muted-foreground">Satker</dt>
                             <dd>{pk.satker?.name ?? "—"}</dd>
                             <dt className="text-muted-foreground">KRO / RO</dt>
@@ -573,29 +509,31 @@ export function ProyekDetailSheet({
                               Belum ada alokasi anggaran
                             </div>
                           ) : (
-                            <div className="overflow-hidden rounded-lg border">
+                            <div className="overflow-hidden rounded-lg border bg-card">
                               {rencanaPaket.map((a) => (
                                 <div
                                   key={a.id}
-                                  className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b px-3 py-2 last:border-b-0"
+                                  className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-3.5 py-2.5 last:border-b-0"
                                 >
                                   <span className="w-12 font-semibold">{a.tahun}</span>
-                                  <span className="order-last w-full text-muted-foreground sm:order-none sm:w-auto sm:flex-1">
-                                    {a.komponen
-                                      ? `${a.komponen.code} ${a.komponen.name} (${a.komponen.jenis === "PENDUKUNG" ? "pendukung" : "utama"})`
-                                      : "Komponen —"}
-                                    {" · "}
-                                    {[
-                                      a.outputTarget != null &&
-                                        `RO ${Number(a.outputTarget).toLocaleString("id-ID")} ${pk.ro.satuan?.name ?? ""}`,
-                                      a.outcomeTarget != null &&
-                                        `IRO ${Number(a.outcomeTarget).toLocaleString("id-ID")} ${pk.indikatorRo?.[0]?.satuan ?? ""}`,
-                                      ...SUMBER_DANA.filter((k) => Number(a[k]) > 0).map(
-                                        (k) => `${k.toUpperCase()} ${formatRupiahShort(Number(a[k]))}`,
-                                      ),
-                                    ]
-                                      .filter(Boolean)
-                                      .join(" · ")}
+                                  <span className="order-last w-full space-y-1 sm:order-none sm:w-auto sm:flex-1">
+                                    <span className="block text-muted-foreground">
+                                      {a.komponen
+                                        ? `Komponen ${a.komponen.code} ${a.komponen.name} (${a.komponen.jenis === "PENDUKUNG" ? "pendukung" : "utama"})`
+                                        : "Komponen —"}
+                                      {a.outputTarget != null &&
+                                        ` · Vol RO ${Number(a.outputTarget).toLocaleString("id-ID")} ${pk.ro.satuan?.name ?? ""}`}
+                                      {a.outcomeTarget != null &&
+                                        ` · Vol IRO ${Number(a.outcomeTarget).toLocaleString("id-ID")} ${pk.indikatorRo?.[0]?.satuan ?? ""}`}
+                                    </span>
+                                    <span className="flex flex-wrap gap-x-3">
+                                      {SUMBER_DANA.filter((k) => Number(a[k]) > 0).map((k) => (
+                                        <span key={k} className="inline-flex items-center gap-1.5">
+                                          <i aria-hidden className={cn("h-2 w-2 rounded-[2px]", WARNA_SD[k])} />
+                                          {LABEL_SD[k]} <b className="tabular-nums">{formatRupiahShort(Number(a[k]))}</b>
+                                        </span>
+                                      ))}
+                                    </span>
                                   </span>
                                   <span className="ml-auto font-semibold" title={formatRupiah(Number(a.total))}>
                                     {formatRupiahShort(Number(a.total))}
@@ -614,12 +552,27 @@ export function ProyekDetailSheet({
           </div>
 
           {/* Isi usulan — dibangkitkan dari template form kegiatan proyek. */}
-          <div className="space-y-2">
-            <SectionHeader title="Isi Usulan" icon={FileText} />
-            <IsiUsulan proyek={proyek} kegiatanId={kegiatanPaket} />
+          <IsiUsulan
+            proyek={proyek}
+            kegiatanId={kegiatanPaket}
+            judul={
+              <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2.5">
+                <h2 className="text-base font-semibold">Isi usulan</h2>
+                {kegiatanPaket && (
+                  <span className="text-xs text-muted-foreground">
+                    Mengikuti form kegiatan {kegiatanPaket} · Master Data › Form Proyek
+                  </span>
+                )}
+              </span>
+            }
+          />
           </div>
 
-          <RiwayatPerubahan entity="proyek" entityId={proyek.id} />
+          {panelRiwayat && (
+            <aside className="border-t bg-tier-2 px-5 py-5 md:border-l md:border-t-0">
+              <RiwayatPerubahan entity="proyek" entityId={proyek.id} />
+            </aside>
+          )}
         </SheetBody>
       </SheetContent>
 

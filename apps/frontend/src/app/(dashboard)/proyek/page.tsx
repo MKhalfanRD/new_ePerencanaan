@@ -76,6 +76,8 @@ const formatRupiahShort = (val: number) => {
 // `paket` selalu array dari backend, tapi dijaga di sini juga karena dipakai
 // berulang lintas fungsi di file ini.
 const paketOf = (p: Proyek) => p.paket ?? [];
+/** Kegiatan proyek; data lama tanpa kegiatan jatuh ke RO paket pertama. */
+const kegiatanProyek = (p: Proyek) => p.kegiatan ?? paketOf(p)[0]?.ro?.kro?.kegiatan;
 const alokasiOf = (p: Proyek) => paketOf(p).flatMap((pk) => pk.alokasi);
 
 // Penanda cepat di luar tabel: proyek ini sudah punya titik lokasi di peta
@@ -222,6 +224,16 @@ function ProyekPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  // Data baris daftar bisa tertinggal (cache 60 dtk, skor ikut form terbaru) —
+  // tampilkan dulu, lalu segarkan dari detail.
+  const bukaDetail = (p: Proyek) => {
+    setDetailData(p);
+    api
+      .get<Proyek>(`/proyek/${p.id}`)
+      .then((res) => setDetailData((cur) => (cur?.id === p.id ? res.data : cur)))
+      .catch(() => {});
+  };
+
   const handleDelete = async () => {
     if (!deleteId) return;
     setDeleting(true);
@@ -292,6 +304,14 @@ function ProyekPageInner() {
 
     for (const p of proyekList) {
       balaiMap.set(p.balai.id, p.balai.name);
+      if (p.kegiatan) {
+        const prog = p.kegiatan.program;
+        programMap.set(prog.id, `${prog.code} — ${prog.name}`);
+        kegiatanMap.set(p.kegiatan.id, {
+          name: `${p.kegiatan.code} — ${p.kegiatan.name}`,
+          programId: prog.id,
+        });
+      }
       for (const pk of paketOf(p)) {
         const ro = pk.ro;
         if (!ro) continue;
@@ -335,17 +355,14 @@ function ProyekPageInner() {
   const filteredProyek = useMemo(() => {
     return proyekList.filter((p) => {
       if (filterBalai && String(p.balai.id) !== filterBalai) return false;
-      if (!filterProgram && !filterKegiatan && !filterKro && !filterRo)
-        return true;
-      return paketOf(p).some((pk) => {
-        const ro = pk.ro;
-        if (!ro) return false;
-        if (filterRo) return ro.id === filterRo;
-        if (filterKro) return ro.kro.id === filterKro;
-        if (filterKegiatan) return ro.kro.kegiatan.id === filterKegiatan;
-        if (filterProgram) return ro.kro.kegiatan.program.id === filterProgram;
-        return true;
-      });
+      // Program & kegiatan milik proyek; KRO/RO dari paketnya.
+      const keg = kegiatanProyek(p);
+      if (filterProgram && keg?.program.id !== filterProgram) return false;
+      if (filterKegiatan && keg?.id !== filterKegiatan) return false;
+      if (!filterKro && !filterRo) return true;
+      return paketOf(p).some((pk) =>
+        filterRo ? pk.ro?.id === filterRo : pk.ro?.kro.id === filterKro,
+      );
     });
   }, [
     proyekList,
@@ -411,10 +428,10 @@ function ProyekPageInner() {
       for (let y = p.periode.startYear; y <= p.periode.endYear; y++)
         years.add(y);
 
-      const firstRo = paketOf(p)[0]?.ro;
-      const kegiatanCode = firstRo?.kro?.kegiatan?.code || "LAINNYA";
-      const kegiatanName = firstRo?.kro?.kegiatan?.name || "Belum ada paket";
-      const programCode = firstRo?.kro?.kegiatan?.program?.code || "-";
+      const keg = kegiatanProyek(p);
+      const kegiatanCode = keg?.code || "LAINNYA";
+      const kegiatanName = keg?.name || "Kegiatan belum ditentukan";
+      const programCode = keg?.program?.code || "-";
 
       if (!balaiMap.has(p.balai.id)) {
         balaiMap.set(p.balai.id, {
@@ -509,10 +526,10 @@ function ProyekPageInner() {
   // Program.Kegiatan pada alokasi pertamanya. Ditampilkan langsung di baris
   // list supaya user tidak perlu buka detail hanya untuk mengenali proyek.
   const getProyekKode = (p: Proyek) => {
-    const ro = paketOf(p)[0]?.ro;
+    const keg = kegiatanProyek(p);
     const balaiCode = p.balai.code || p.balai.shortName || "-";
-    const programCode = ro?.kro?.kegiatan?.program?.code || "-";
-    const kegiatanCode = ro?.kro?.kegiatan?.code || "-";
+    const programCode = keg?.program?.code || "-";
+    const kegiatanCode = keg?.code || "-";
     return `${balaiCode}.${programCode}.${kegiatanCode}`;
   };
 
@@ -1068,14 +1085,14 @@ function ProyekPageInner() {
                                                 key={pk.id}
                                                 role="button"
                                                 tabIndex={0}
-                                                onClick={() => setDetailData(p)}
+                                                onClick={() => bukaDetail(p)}
                                                 onKeyDown={(e) => {
                                                   if (
                                                     e.key === "Enter" ||
                                                     e.key === " "
                                                   ) {
                                                     e.preventDefault();
-                                                    setDetailData(p);
+                                                    bukaDetail(p);
                                                   }
                                                 }}
                                                 className="flex items-center gap-3 pl-20 pr-5 py-2.5 hover:bg-accent/30 transition-colors cursor-pointer outline-none focus-visible:bg-accent/40"

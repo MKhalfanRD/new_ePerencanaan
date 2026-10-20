@@ -27,6 +27,10 @@ export class CreateProyekDto {
   @IsInt()
   balaiId: number;
 
+  @ApiProperty({ example: '7691', description: 'Kegiatan proyek — dikunci setelah proyek dibuat' })
+  @IsString()
+  kegiatanId: string;
+
   @ApiProperty({ example: 1 })
   @IsInt()
   periodeId: number;

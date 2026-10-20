@@ -67,9 +67,22 @@ export class ProyekController {
     return this.proyekService.findAll(user, query);
   }
 
+  @ApiOperation({ summary: 'Ringkasan angka dashboard (semua proyek yang boleh dilihat)' })
+  @Roles('SATKER', 'VERIFICATOR', 'ADMINISTRATOR')
+  @Get('ringkasan')
+  ringkasan(@CurrentUser() user: any) {
+    return this.proyekService.ringkasan(user);
+  }
+
   @ApiOperation({ summary: 'Detail proyek' })
   @ApiParam({ name: 'id' })
   @Roles('SATKER', 'VERIFICATOR', 'ADMINISTRATOR')
+  @Get(':id/skor')
+  @ApiOperation({ summary: 'Skor evaluasi & rincian per tab proyek tersimpan' })
+  skor(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.proyekService.skor(id, user);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: any) {
     return this.proyekService.findOne(id, user);

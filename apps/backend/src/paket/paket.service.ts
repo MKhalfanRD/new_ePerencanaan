@@ -17,6 +17,7 @@ import { paketRingkasDb } from '../proyek/form-skor';
 import {
   cekAksesPaket,
   cekIsianPaket,
+  cekRoKegiatan,
   cekSaldo,
   kolomPaket,
   relasiPaketBaru,
@@ -107,6 +108,7 @@ export class PaketService {
     cekIsianPaket(dto);
 
     const result = await this.prisma.$transaction(async (tx) => {
+      await cekRoKegiatan(tx, proyek.kegiatanId, [dto.roId]);
       dto.satkerId = await satkerPaket(tx, user, proyek.balaiId, dto.satkerId);
       await this.cekSaldoProyek(tx, proyek, dto);
       // Kode Proyek seharusnya sudah ada dari saat proyek dibuat — fallback
@@ -190,6 +192,7 @@ export class PaketService {
     cekIsianPaket(isian);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await cekRoKegiatan(tx, paket.proyek.kegiatanId, [isian.roId]);
       isian.satkerId = await satkerPaket(tx, user, paket.proyek.balaiId, isian.satkerId);
       if (dto.alokasi !== undefined)
         await this.cekSaldoProyek(tx, paket.proyek, isian, id);

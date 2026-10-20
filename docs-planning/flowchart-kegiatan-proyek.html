@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Flowchart: kegiatan disimpan di proyek</title>
+<style>
+body{font-family:'Segoe UI',system-ui,sans-serif;margin:28px 36px;color:#231f1c;background:#fff}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:26px 0 8px}
+.mut{color:#6b655f;font-size:13px}
+.box{border:1px solid #e3ddd8;border-radius:10px;padding:12px 16px;margin:10px 0;font-size:13.5px}
+.q{background:#fff4ec;border-color:#f0c9ad}
+table{border-collapse:collapse;font-size:13px;width:100%}td,th{border:1px solid #e3ddd8;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f6f3f0}
+.page{page-break-after:always}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+<div class="page">
+<h1>Kegiatan disimpan di proyek</h1>
+<div class="mut">Usulan perbaikan no. 1 · 19 Okt 2026 · revisi 2: kegiatan dikunci · paket beda kegiatan = data salah, dibuat ulang</div>
+<div class="box"><b>Masalah sekarang.</b> Proyek tidak punya kolom kegiatan. Kegiatan diambil dari RO paket pertama, atau dari kegiatan balai kalau belum ada paket. Paket dalam satu proyek boleh beda kegiatan. Akibatnya template form, skor, dan saldo kegiatan bisa berpindah sendiri.</div>
+
+<h2>A. Membuat &amp; mengubah proyek</h2>
+<pre class="mermaid">
+flowchart TD
+  A(["Buat proyek"]) --> B{"Akun balai/satker\npunya kegiatan?"}
+  B -- Ya --> C["Kegiatan terisi otomatis\n& terkunci"]
+  B -- Tidak --> D["Pengisi pilih kegiatan"]
+  C --> E{"Kegiatan punya\ntemplate form?"}
+  D --> E
+  E -- Tidak --> F["Tidak bisa lanjut:\n'Form kegiatan ini belum disusun admin'"]
+  E -- Ya --> G["Form tampil sesuai template kegiatan\n+ saldo kegiatan terlihat"]
+  G --> H["Simpan: proyek.kegiatanId = kegiatan terpilih"]
+  H --> I(["Proyek tersimpan (Draft)"])
+  I --> J["Edit proyek: kegiatan TERKUNCI\n(form, SK/ISK, kategori, paket, saldo,\nskor, dan akses terikat kegiatan)"]
+  J --> K["Salah pilih kegiatan?\nHapus proyek Draft, buat ulang"]
+</pre>
+
+<h2>B. Menambah / mengubah paket</h2>
+<pre class="mermaid">
+flowchart TD
+  P(["Tambah / edit paket"]) --> Q["Pilihan KRO/RO hanya dari\nkegiatan proyek"]
+  Q --> R["Isi alokasi per tahun"]
+  R --> S{"Server: RO milik\nkegiatan proyek?"}
+  S -- Tidak --> T["Ditolak:\n'RO bukan bagian kegiatan proyek'"]
+  S -- Ya --> U{"Total semua paket di kegiatan itu\nper tahun ≤ saldo kegiatan?"}
+  U -- Tidak --> V["Ditolak: 'Melebihi saldo kegiatan\n[kode] tahun [t]: sisa Rp ...'"]
+  U -- Ya --> W(["Paket tersimpan"])
+</pre>
+</div>
+
+<div class="page">
+<h2>C. Import Excel</h2>
+<pre class="mermaid">
+flowchart TD
+  X(["Baris Excel"]) --> Y["Kegiatan dari kolom KdKegiatan"]
+  Y --> Z{"Proyek sudah ada?"}
+  Z -- Belum --> Z1["Proyek baru: kegiatanId = KdKegiatan"]
+  Z -- Ada --> Z2{"KdKegiatan = kegiatan proyek?"}
+  Z2 -- Ya --> Z3["Paket/alokasi masuk ke proyek itu"]
+  Z2 -- Tidak --> Z4["Baris error: 'Kegiatan berbeda\ndengan proyek yang ada'"]
+  Z1 --> Z5{"RO baris milik KdKegiatan?"}
+  Z3 --> Z5
+  Z5 -- Tidak --> Z6["Baris error"]
+  Z5 -- Ya --> Z7(["Masuk rencana import"])
+</pre>
+
+<h2>D. Data proyek lama (sekali jalan saat migrasi)</h2>
+<div class="box"><b>Aturan:</b> Kegiatan → Proyek → Paket satu jalur. Semua paket dalam satu proyek pasti di kegiatan proyek itu. Paket untuk kegiatan lain = proyek lain (mulai dari pilih kegiatan).</div>
+<pre class="mermaid">
+flowchart TD
+  M(["Setiap proyek lama"]) --> M1{"Punya paket?"}
+  M1 -- Ya --> M2["kegiatanId = kegiatan RO paket pertama"]
+  M1 -- Tidak --> M3["kegiatanId = kegiatan balai"]
+  M2 --> M4{"Ada paket dengan RO<br>dari kegiatan lain?"}
+  M4 -- Tidak --> M5(["Selesai"])
+  M4 -- Ya --> M6["Paket itu ditandai 'Harus dibuat ulang'<br>(data lama yang salah)"]
+  M6 --> M7["Pengisi buat dari awal:<br>pilih kegiatan → proyek → paket"]
+  M7 --> M8["Paket lama dihapus"]
+</pre>
+<div class="box">Data lokal: <b>PR260001</b> → 7695, Paket II (RO 7691) harus dibuat ulang. <b>PR260002</b> → 7693, Paket II (RO 7686) harus dibuat ulang. PR260003 (7693) dan PR260004 (7691) tidak ada masalah.</div>
+
+<h2>Yang ikut berubah</h2>
+<table>
+<tr><th>Bagian</th><th>Perubahan</th></tr>
+<tr><td>Database</td><td>Kolom <code>proyek.kegiatanId</code> (wajib untuk proyek baru), migrasi data lama seperti alur D</td></tr>
+<tr><td>Form proyek</td><td>Template diambil dari <code>proyek.kegiatanId</code>, bukan dari paket pertama</td></tr>
+<tr><td>Dialog paket</td><td>KRO/RO disaring ke kegiatan proyek; server menolak RO di luar kegiatan</td></tr>
+<tr><td>Daftar proyek</td><td>Kelompok Balai › Kegiatan memakai <code>proyek.kegiatanId</code></td></tr>
+<tr><td>Import</td><td>Seperti alur C</td></tr>
+<tr><td>Saldo (tahap berikutnya)</td><td>Pemakaian saldo dihitung per <code>proyek.kegiatanId</code> per tahun</td></tr>
+</table>
+
+<h2>Keputusan</h2>
+<div class="box"><b>Kegiatan dikunci setelah proyek disimpan</b> (disetujui 19 Okt 2026). Yang terikat kegiatan: template form &amp; isian kolomnya, kategori proyek (valuasi &amp; kinerja), Sasaran Kegiatan/ISK, KRO/RO/komponen paket, saldo, skor evaluasi, cakupan akses role.</div>
+<div class="box"><b>Kenapa ada proyek "campuran":</b> proyek belum menyimpan kegiatan (ditebak dari paket pertama/balai); saat tebakan kosong, dialog paket menampilkan semua RO; server tidak memeriksa; penyaring RO baru ada sejak 15 Okt. Perbaikan ini menutup ketiganya.</div>
+</div>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral', flowchart: { curve: 'basis', htmlLabels: true } });</script>
+</body>
+</html>

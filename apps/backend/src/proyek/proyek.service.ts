@@ -35,6 +35,7 @@ import {
 import { LINTAS_KEGIATAN, roleEfektif } from '../auth/role';
 import {
   cekIsianPaket,
+  cekRoKegiatan,
   cekSaldo,
   kolomPaket,
   relasiPaketBaru,
@@ -69,6 +70,7 @@ const izinSatker = (user: any, nilai?: boolean) =>
 const proyekInclude = Prisma.validator<Prisma.ProyekInclude>()({
   balai: true,
   periode: true,
+  kegiatan: { include: { program: true } },
   createdBy: {
     select: {
       id: true,
@@ -184,19 +186,21 @@ type FormTabScoring = Prisma.FormTabGetPayload<{
 /**
  * Batas kegiatan yang boleh dilihat/diubah seorang user. SUPER_ADMIN &
  * ADMINISTRATOR lintas kegiatan; role lain WAJIB terikat satu kegiatan
- * (Role.kegiatanId) dan cuma melihat proyek yang punya paket di kegiatan itu.
+ * (Role.kegiatanId) dan cuma melihat proyek di kegiatan itu.
  */
 function filterKegiatan(user: any): Prisma.ProyekWhereInput | null {
   if (LINTAS_KEGIATAN.includes(user?.role)) return null;
   if (!user?.kegiatanId) return null;
-  return {
-    paket: {
-      some: {
-        deletedAt: null,
-        ro: { kro: { kegiatanId: user.kegiatanId } },
-      },
-    },
-  };
+  return { kegiatanId: user.kegiatanId };
+}
+
+/** Kegiatan yang boleh dipakai akun ini untuk proyek baru. */
+function kegiatanAkun(user: any, kegiatanId?: string): string | undefined {
+  if (LINTAS_KEGIATAN.includes(user?.role)) return kegiatanId;
+  const terkunci = user?.kegiatanId ?? user?.balaiKegiatanId;
+  if (terkunci && kegiatanId && kegiatanId !== terkunci)
+    throw new ForbiddenException(`Akun ini hanya boleh membuat proyek di kegiatan ${terkunci}`);
+  return terkunci ?? kegiatanId;
 }
 
 @Injectable()
@@ -208,7 +212,7 @@ export class ProyekService {
 
   /**
    * Skor evaluasi dihitung dari struktur Form Proyek (Master Data) kegiatan
-   * paket pertama, bukan lagi checklist tetap (lihat form-skor.ts). Item
+   * proyek, bukan lagi checklist tetap (lihat form-skor.ts). Item
    * yang dibackup kolom Proyek tetap (Dasar Pelaksanaan/Kesiapan
    * Teknis/Tematik) nilainya diambil dari `input`; item Valuasi dari rasio
    * dana/output/outcome; sisanya (Kategori Proyek, Kinerja) dari
@@ -217,7 +221,7 @@ export class ProyekService {
   private async hitungEvaluasi(
     tx: Prisma.TransactionClient,
     input: any,
-    roIdPaketPertama: string | undefined,
+    kegiatanId: string | null | undefined,
     // Total semua paket (alokasi RENCANA) utk field RASIO — lihat
     // ringkasPaket() di form-skor.ts.
     paketSekarang?: RingkasPaket,
@@ -232,14 +236,6 @@ export class ProyekService {
     formValueCreates: Prisma.ProyekFormValueCreateManyProyekInput[];
     rincian?: RincianTab[];
   }> {
-    if (!roIdPaketPertama) {
-      return { skorEvaluasi: null, formValueCreates: [] };
-    }
-    const ro = await tx.rO.findUnique({
-      where: { id: roIdPaketPertama },
-      select: { kro: { select: { kegiatanId: true } } },
-    });
-    const kegiatanId = ro?.kro.kegiatanId;
     if (!kegiatanId) {
       return { skorEvaluasi: null, formValueCreates: [] };
     }
@@ -364,10 +360,15 @@ export class ProyekService {
       satuanC: dto.outcomeUnits ?? [],
     };
 
+    const kegiatanId =
+      dto.kegiatanId ??
+      (dto.roId
+        ? (await this.prisma.rO.findUnique({ where: { id: dto.roId }, select: { kro: { select: { kegiatanId: true } } } }))?.kro.kegiatanId
+        : undefined);
     const { skorEvaluasi, rincian } = await this.hitungEvaluasi(
       this.prisma,
       dto,
-      dto.roId,
+      kegiatanId,
       paketSekarang,
       dto.formValues,
       dto.proyekId,
@@ -380,6 +381,15 @@ export class ProyekService {
     const userId: string = user?.userId;
     const userRole: string | undefined = user?.role;
     dto.balaiId = balaiAkun(user, dto.balaiId);
+    const kegiatanId = kegiatanAkun(user, dto.kegiatanId);
+    if (!kegiatanId) throw new BadRequestException('Kegiatan proyek wajib dipilih');
+    const tabForm = await this.prisma.formTab.count({
+      where: { template: { kegiatanId }, isActive: true },
+    });
+    if (!tabForm)
+      throw new BadRequestException(
+        `Form kegiatan ${kegiatanId} belum disusun admin (Master Data › Form Proyek)`,
+      );
     for (const p of dto.paket ?? []) cekIsianPaket(p);
     if (dto.paket?.length && userRole !== 'ADMINISTRATOR') {
       const balai = await this.prisma.balai.findUnique({
@@ -399,7 +409,7 @@ export class ProyekService {
       const kodeProyek = await generateKodeProyek(tx);
       const proyekPart = kodeProyek.slice(2);
 
-      const paket0 = dto.paket?.[0];
+      await cekRoKegiatan(tx, kegiatanId, (dto.paket ?? []).map((p) => p.roId));
       for (const p of dto.paket ?? [])
         p.satkerId = await satkerPaket(tx, user, dto.balaiId, p.satkerId);
       // Anggaran semua paket, volume paket UTAMA — rasio Valuasi & saldo.
@@ -409,7 +419,7 @@ export class ProyekService {
       const { skorEvaluasi, formValueCreates } = await this.hitungEvaluasi(
         tx,
         dto,
-        paket0?.roId,
+        kegiatanId,
         paketSekarang,
         dto.formValues,
       );
@@ -423,6 +433,7 @@ export class ProyekService {
       return tx.proyek.create({
         data: {
           balaiId: dto.balaiId,
+          kegiatanId,
           periodeId: dto.periodeId,
           kodeProyek,
           projectName: dto.projectName,
@@ -505,17 +516,9 @@ export class ProyekService {
     return log.map((l) => l.entityId).filter((id): id is string => !!id);
   }
 
-  async findAll(user: any, query: QueryProyekDto) {
-    const { status, page = 1, limit = 10, search, periodeId, importTerakhir } =
-      query;
-    const skip = (page - 1) * limit;
-
-    const cacheKey = `proyek:list:${user.userId}:${user.role}:${user.kegiatanId ?? ''}:${status ?? ''}:${page}:${limit}:${search ?? ''}:${periodeId ?? ''}:${importTerakhir ?? ''}`;
-    const cached = await this.redis.get(cacheKey);
-    if (cached) return cached;
-
+  /** Proyek yang boleh dilihat user (dipakai daftar proyek & ringkasan dashboard). */
+  private whereAkses(user: any): Prisma.ProyekWhereInput {
     const where: Prisma.ProyekWhereInput = {};
-
     // Verifikator (termasuk role turunannya, mis. VERIFIKATOR_7691) melihat
     // semua proyek dalam cakupannya, bukan cuma buatannya sendiri.
     if (
@@ -528,6 +531,74 @@ export class ProyekService {
     // proyek kegiatan lain, termasuk VERIFICATOR.
     const scope = filterKegiatan(user);
     if (scope) Object.assign(where, scope);
+    return where;
+  }
+
+  /**
+   * Angka dashboard dihitung di database atas SEMUA proyek yang boleh
+   * dilihat user (bukan halaman pertama daftar proyek): jumlah per status,
+   * alokasi per tahun & status (paket terhapus tidak ikut), titik lokasi,
+   * dan 6 proyek yang terakhir diubah.
+   */
+  async ringkasan(user: any) {
+    const where = this.whereAkses(user);
+    const whereAlokasi: Prisma.AlokasiWhereInput = {
+      paket: { deletedAt: null, proyek: where },
+    };
+    const [jumlahProyek, perStatus, alokasi, totalLokasi, terbaru, periodeAktif] =
+      await Promise.all([
+        this.prisma.proyek.count({ where }),
+        this.prisma.proyek.groupBy({ by: ['status'], where, _count: true }),
+        this.prisma.alokasi.groupBy({
+          by: ['tahun', 'status'],
+          where: whereAlokasi,
+          _sum: { total: true, rm: true, rmp: true, pln: true, sbsn: true, kpbu: true },
+          orderBy: { tahun: 'asc' },
+        }),
+        this.prisma.lokasiAlokasi.count({ where: { alokasi: whereAlokasi } }),
+        this.prisma.proyek.findMany({
+          where,
+          orderBy: { updatedAt: 'desc' },
+          take: 6,
+          select: {
+            id: true,
+            projectName: true,
+            status: true,
+            balai: { select: { name: true, shortName: true } },
+            periode: { select: { label: true } },
+          },
+        }),
+        this.prisma.periode.findFirst({ where: { isActive: true }, select: { label: true } }),
+      ]);
+    return {
+      jumlahProyek,
+      perStatus: Object.fromEntries(perStatus.map((s) => [s.status, s._count])),
+      alokasi: alokasi.map((a) => ({
+        tahun: a.tahun,
+        status: a.status,
+        total: Number(a._sum.total ?? 0),
+        rm: Number(a._sum.rm ?? 0),
+        rmp: Number(a._sum.rmp ?? 0),
+        pln: Number(a._sum.pln ?? 0),
+        sbsn: Number(a._sum.sbsn ?? 0),
+        kpbu: Number(a._sum.kpbu ?? 0),
+      })),
+      totalLokasi,
+      terbaru,
+      periodeAktif: periodeAktif?.label ?? null,
+    };
+  }
+
+  async findAll(user: any, query: QueryProyekDto) {
+    const { status, page = 1, limit = 10, search, periodeId, importTerakhir } =
+      query;
+    const skip = (page - 1) * limit;
+
+    const cacheKey = `proyek:list:${user.userId}:${user.role}:${user.kegiatanId ?? ''}:${status ?? ''}:${page}:${limit}:${search ?? ''}:${periodeId ?? ''}:${importTerakhir ?? ''}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return cached;
+
+    const where = this.whereAkses(user);
     if (status) where.status = status as any;
     if (periodeId) where.periodeId = Number(periodeId);
     if (search) where.projectName = { contains: search, mode: 'insensitive' };
@@ -583,11 +654,21 @@ export class ProyekService {
     if (
       !LINTAS_KEGIATAN.includes(user.role) &&
       user.kegiatanId &&
-      !proyek.paket.some((pk) => pk.ro.kro.kegiatanId === user.kegiatanId)
+      proyek.kegiatanId !== user.kegiatanId
     ) {
       throw new ForbiddenException(
         'Proyek ini di luar kegiatan yang Anda tangani',
       );
+    }
+
+    // Form kegiatan bisa diubah admin kapan saja — skor selalu mengikuti
+    // form yang sekarang; kalau beda dari yang tersimpan, simpan yang baru.
+    const hasil = await this.hitungTersimpan(id);
+    const tersimpan = proyek.skorEvaluasi == null ? null : Number(proyek.skorEvaluasi);
+    if (hasil && hasil.skorEvaluasi !== tersimpan) {
+      await this.prisma.proyek.update({ where: { id }, data: { skorEvaluasi: hasil.skorEvaluasi } });
+      proyek.skorEvaluasi = hasil.skorEvaluasi;
+      await this.invalidateCache(id);
     }
 
     await this.redis.set(cacheKey, proyek, 300);
@@ -652,7 +733,8 @@ export class ProyekService {
     )
       throw new ForbiddenException('Bukan proyek milik anda');
 
-    const paket0 = proyek.paket?.[0];
+    // Kegiatan terkunci setelah proyek dibuat; data lama tanpa kegiatan boleh diisi sekali.
+    const kegiatanId = proyek.kegiatanId ?? kegiatanAkun(user, dto.kegiatanId) ?? null;
     // Total SEMUA paket & tahun (alokasi RENCANA) — rasio Valuasi.
     const paketSekarang = ringkasPaket(proyek.paket.flatMap(paketRingkasDb));
     cekSaldo({ ...proyek, ...dto }, proyek.paket.flatMap(paketRingkasDb));
@@ -663,7 +745,7 @@ export class ProyekService {
     const { skorEvaluasi, formValueCreates } = await this.hitungEvaluasi(
       this.prisma,
       { ...proyek, ...dto },
-      paket0?.roId,
+      kegiatanId,
       paketSekarang,
       dto.formValues,
       id,
@@ -679,6 +761,7 @@ export class ProyekService {
           create: formValueCreates,
         },
         balaiId: balaiAkun(user, dto.balaiId),
+        kegiatanId: proyek.kegiatanId ? undefined : kegiatanId,
         periodeId: dto.periodeId,
         projectName: dto.projectName,
         kewenangan: dto.kewenangan as any,
@@ -787,7 +870,24 @@ export class ProyekService {
    * ProyekFormValue + DokumenPendukung) — dipakai setelah upload file ke
    * field UPLOAD, karena skor awal saat create/update belum tahu file itu
    * (di-upload belakangan, lihat pola staging di proyek-form-dialog.tsx). */
+  /** Skor & rincian per tab proyek tersimpan — ditampilkan di tab Evaluasi detail proyek. */
+  async skor(id: string, user: any) {
+    await this.findOne(id, user); // otorisasi sama dengan membuka detail
+    const hasil = await this.hitungTersimpan(id);
+    return { skorEvaluasi: hasil?.skorEvaluasi ?? null, rincian: hasil?.rincian ?? [] };
+  }
+
   private async recalcSkorEvaluasi(proyekId: string) {
+    const hasil = await this.hitungTersimpan(proyekId);
+    if (!hasil) return;
+    await this.prisma.proyek.update({
+      where: { id: proyekId },
+      data: { skorEvaluasi: hasil.skorEvaluasi },
+    });
+  }
+
+  /** Hitung skor dari data yang SUDAH tersimpan (paket + ProyekFormValue + DokumenPendukung). */
+  private async hitungTersimpan(proyekId: string) {
     const proyek = await this.prisma.proyek.findUnique({
       where: { id: proyekId },
       include: {
@@ -801,7 +901,6 @@ export class ProyekService {
     });
     if (!proyek) return;
 
-    const paket0 = proyek.paket?.[0];
     // Total SEMUA paket & tahun (alokasi RENCANA) — rasio Valuasi.
     const paketSekarang = ringkasPaket(proyek.paket.flatMap(paketRingkasDb));
 
@@ -810,19 +909,14 @@ export class ProyekService {
       value: storedValue(fv) as FormValueDto['value'],
     }));
 
-    const { skorEvaluasi } = await this.hitungEvaluasi(
+    return this.hitungEvaluasi(
       this.prisma,
       proyek,
-      paket0?.roId,
+      proyek.kegiatanId,
       paketSekarang,
       formValues,
       proyekId,
     );
-
-    await this.prisma.proyek.update({
-      where: { id: proyekId },
-      data: { skorEvaluasi },
-    });
   }
 
   async hapusDokumen(docId: string) {

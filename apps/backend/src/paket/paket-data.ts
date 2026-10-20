@@ -40,6 +40,25 @@ export function kolomPaket(dto: PaketInputDto) {
   };
 }
 
+/** Kegiatan -> Proyek -> Paket satu jalur: RO paket wajib milik kegiatan proyek. */
+export async function cekRoKegiatan(
+  tx: Prisma.TransactionClient,
+  kegiatanId: string | null | undefined,
+  roIds: (string | undefined)[],
+) {
+  if (!kegiatanId) return;
+  const ids = [...new Set(roIds.filter((x): x is string => !!x))];
+  if (!ids.length) return;
+  const salah = await tx.rO.findMany({
+    where: { id: { in: ids }, kro: { kegiatanId: { not: kegiatanId } } },
+    select: { code: true, name: true, kro: { select: { code: true, kegiatanId: true } } },
+  });
+  if (salah.length)
+    throw new BadRequestException(
+      `RO ${salah.map((r) => `${r.kro.code}.${r.code} (kegiatan ${r.kro.kegiatanId})`).join(', ')} bukan bagian kegiatan ${kegiatanId}. Paket untuk kegiatan lain harus dibuat di proyek lain.`,
+    );
+}
+
 /** Rentang tahun & tahun alokasi harus masuk akal. */
 export function cekIsianPaket(dto: PaketInputDto) {
   const { tahunMulai: mulai, tahunSelesai: selesai } = dto;

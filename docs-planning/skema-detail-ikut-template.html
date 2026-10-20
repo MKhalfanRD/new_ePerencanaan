@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Skema: detail proyek mengikuti template form</title>
+<style>
+body{font-family:'Segoe UI',system-ui,sans-serif;margin:28px 36px;color:#231f1c;background:#fff;font-size:13.5px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px}
+.mut{color:#6b655f;font-size:13px}
+.box{border:1px solid #e3ddd8;border-radius:10px;padding:12px 16px;margin:10px 0}
+.q{background:#fff4ec;border-color:#f0c9ad}
+table{border-collapse:collapse;width:100%;font-size:12.5px}td,th{border:1px solid #e3ddd8;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f6f3f0}
+.page{page-break-after:always}
+.mock{border:1px solid #d9d2cb;border-radius:10px;padding:12px 14px;font-size:12.5px;background:#fcfbfa}
+.mock .tab{font-weight:600;margin:8px 0 4px}.mock .kv{display:grid;grid-template-columns:200px 1fr;gap:3px 10px;padding-left:14px}.mock .kv span:nth-child(odd){color:#6b655f}
+.kosong{color:#a39d98;font-style:italic}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+<div class="page">
+<h1>Detail proyek mengikuti template form</h1>
+<div class="mut">Perbaikan no. 2 · 20 Okt 2026 · menunggu persetujuan</div>
+<div class="box"><b>Masalah sekarang.</b> Detail proyek ditulis tangan: hanya sebagian kolom yang tampil (kode, kegiatan, sumber usulan, sebagian tagging, catatan, dokumen, paket). Lokasi proyek, Kesiapan Teknis, kategori, Valuasi, Kinerja, rincian skor, wilayah sungai, dan <b>semua kolom tambahan buatan admin</b> tidak tampil. Setiap admin menambah kolom di Master, detail tidak ikut.</div>
+<div class="box"><b>Prinsip.</b> Detail = <b>form yang sama dalam mode baca</b>. Strukturnya dibaca dari template aktif kegiatan proyek, jadi apa pun yang diubah admin di Master Data › Form Proyek otomatis ikut tampil di detail, dengan urutan, label, dan syarat tampil yang sama dengan form.</div>
+
+<h2>Alur menampilkan detail</h2>
+<pre class="mermaid">
+flowchart TD
+  A(["Buka detail proyek"]) --> B["Ambil data proyek + template aktif<br>kegiatan proyek (proyek.kegiatanId)"]
+  B --> C["Untuk setiap TAB aktif (urutan master)"]
+  C --> D{"Bagian/kolom memenuhi<br>syarat 'Tampil jika'?"}
+  D -- Tidak --> E["Tidak ditampilkan<br>(sama seperti di form)"]
+  D -- Ya --> F{"Jenis kolom"}
+  F -- "Bawaan" --> G["Nilai dari kolom proyek<br>(periode, lokasi, DED, PKPN, ...)"]
+  F -- "Tambahan admin" --> H["Nilai isian per kolom<br>(teks, angka, tanggal, pilihan, centang)"]
+  F -- "Upload" --> I["Nama berkas + tautan unduh"]
+  F -- "Rasio" --> J["Dihitung dari paket<br>(sama dengan form)"]
+  G --> K["Label : nilai"]
+  H --> K
+  I --> K
+  J --> K
+  K --> L{"Nilai kosong?"}
+  L -- Ya --> M["'Belum diisi' (abu-abu)"]
+  L -- Tidak --> N["Tampil apa adanya, format Indonesia"]
+</pre>
+</div>
+
+<div class="page">
+<h2>Isi per tab</h2>
+<table>
+<tr><th>Tab (urutan master)</th><th>Yang tampil di detail</th><th>Sekarang</th></tr>
+<tr><td>Identitas Proyek</td><td>Kegiatan, periode, nama, balai, wilayah sungai, tahun pelaksanaan + kolom tambahan</td><td>Sebagian</td></tr>
+<tr><td>Dasar Pelaksanaan</td><td>Sumber usulan, sumber lainnya, justifikasi + tambahan</td><td>Ya</td></tr>
+<tr><td>Lokasi Proyek</td><td>Provinsi › kab/kota › kecamatan › desa, tipe & koordinat, peta kecil (hanya baca)</td><td>Tidak</td></tr>
+<tr><td>Kesiapan Teknis</td><td>DED, Dok. Lingkungan, LARAP, Studi Kelayakan (status + tahun), kewenangan, kebutuhan tanah, Peta IGT + berkas</td><td>Tidak</td></tr>
+<tr><td>Pemaketan</td><td>Kategori proyek, saldo volume RO/IRO, izin satker, <b>daftar paket</b> (tetap seperti sekarang + kolom tambahan per paket)</td><td>Sebagian</td></tr>
+<tr><td>Tagging</td><td>PN/PP/KP, SP/ISP, SK/ISK, Tematik, PKPN, FKB/FKW/MPA, tagging dinamis + tambahan</td><td>Sebagian</td></tr>
+<tr><td>Valuasi Proyek</td><td>A/B/C (anggaran, volume RO/IRO) + rasio & hasil per kriteria kategori</td><td>Tidak</td></tr>
+<tr><td>Kinerja Proyek</td><td>Kriteria yang dicentang / tidak, sesuai kategori</td><td>Tidak</td></tr>
+<tr><td>Dokumen dan Catatan</td><td>Berkas pendukung, catatan pembina, catatan SSPSDA + tambahan</td><td>Ya</td></tr>
+<tr><td>Evaluasi Proyek</td><td>Skor total + rincian per tab (didapat / bobot)</td><td>Hanya total</td></tr>
+</table>
+
+<h2>Contoh tampilan (susunan, bukan desain akhir)</h2>
+<div class="mock">
+<b>Info proyek</b> (ringkas di atas, tetap) · <b>Paket</b> (tetap)<br>
+<div class="tab">▾ Identitas Proyek</div><div class="kv"><span>Kegiatan</span><span>7691 · Pengembangan dan Rehabilitasi Jaringan Irigasi…</span><span>Periode</span><span>2025–2029</span><span>Wilayah sungai</span><span class="kosong">Belum diisi</span><span>[kolom tambahan admin]</span><span>[nilainya]</span></div>
+<div class="tab">▾ Kesiapan Teknis</div><div class="kv"><span>DED</span><span>Ada · 2025</span><span>LARAP</span><span>Rencana</span><span>Kewenangan</span><span>Pusat</span><span>Peta IGT / LBS</span><span>Ada · peta_igt.pdf ↓</span></div>
+<div class="tab">▸ Lokasi Proyek · ▸ Tagging · ▸ Valuasi · ▸ Kinerja · …</div>
+<div class="tab">▾ Evaluasi Proyek</div><div class="kv"><span>Skor total</span><span>73,54 / 100</span><span>Dasar Pelaksanaan</span><span>30,00 / 30</span><span>Kesiapan Teknis</span><span>17,85 / 25</span></div>
+</div>
+
+<h2>Yang dikerjakan</h2>
+<table>
+<tr><th>Bagian</th><th>Perubahan</th></tr>
+<tr><td>Tampilan detail</td><td>Bagian baru "Isi usulan": tab dibuka-tutup, isinya dibangkitkan dari template (komponen baca baru, memakai aturan syarat tampil yang sama dengan form)</td></tr>
+<tr><td>Kolom bawaan</td><td>Satu daftar format per kunci (mis. <code>statusDed</code> + <code>tahunDed</code> → "Ada · 2025", <code>kegiatanPrioritasId</code> → "PN 2 › PP 2.4 › KP 2.4.1")</td></tr>
+<tr><td>Kolom tambahan</td><td>Format per jenis kolom: teks, angka, tanggal, dropdown (label opsi), centang, upload, rasio</td></tr>
+<tr><td>Server</td><td>Skor + rincian per tab untuk proyek tersimpan (memakai hitungan skor yang sudah ada); data proyek ikut membawa isian kolom tambahan</td></tr>
+<tr><td>Tetap</td><td>Info proyek di atas, daftar paket, riwayat perubahan, tombol Export/Edit</td></tr>
+</table>
+
+<h2>Perlu keputusan Anda</h2>
+<div class="box q"><b>1.</b> Kolom yang belum diisi: tampil dengan tulisan <b>"Belum diisi"</b> (usul saya, supaya kelihatan apa yang kurang), atau disembunyikan?</div>
+<div class="box q"><b>2.</b> Saat detail dibuka: semua tab <b>tertutup</b> dulu dan dibuka satu per satu (usul saya, karena isinya panjang), atau semua langsung terbuka?</div>
+</div>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral', flowchart: { curve: 'basis', htmlLabels: true } });</script>
+</body>
+</html>

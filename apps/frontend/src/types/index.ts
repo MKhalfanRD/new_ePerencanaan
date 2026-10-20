@@ -237,6 +237,10 @@ export interface Proyek {
   satkerBolehUbahPaket?: boolean;
   catatan?: string;
   balai: Balai;
+  /** Kegiatan proyek — dikunci setelah dibuat; semua paket wajib RO kegiatan ini.
+   * null hanya untuk data lama yang belum bisa ditentukan. */
+  kegiatanId?: string | null;
+  kegiatan?: RO["kro"]["kegiatan"] | null;
   periode: Periode;
   kebutuhanTanah: boolean;
   wilayahSungaiId?: string;

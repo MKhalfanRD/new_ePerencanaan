@@ -264,7 +264,8 @@ export function PaketDialog({
 
   const set = (patch: Partial<PaketIsian>) => setP((cur) => ({ ...cur, ...patch }));
   const roKegiatan = useMemo(
-    () => roList.filter((r) => !kegiatanId || r.kro.kegiatan.id === kegiatanId),
+    // Tanpa kegiatan proyek tidak ada RO yang boleh dipilih (bukan semua RO).
+    () => roList.filter((r) => !!kegiatanId && r.kro.kegiatan.id === kegiatanId),
     [roList, kegiatanId],
   );
   const kroList = useMemo(() => {

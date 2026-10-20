@@ -621,7 +621,10 @@ export function ProyekFormDialog({
       setSelectedPpId(editData.kegiatanPrioritas?.programPrioritas.id ?? "");
       setPaketServer((editData.paket ?? []).map(paketDariServer));
       setSelectedKegiatanId(
-        editData.paket?.[0]?.ro?.kro?.kegiatan?.id ?? editData.balai.kegiatanId ?? "",
+        editData.kegiatanId ??
+          editData.paket?.[0]?.ro?.kro?.kegiatan?.id ??
+          editData.balai.kegiatanId ??
+          "",
       );
       setSelectedSpId(
         editData.indikatorSasaranProgram?.sasaranProgram.id ?? "",
@@ -1865,7 +1868,12 @@ export function ProyekFormDialog({
   // sebelumnya (bukan menutup form). Menutup tetap lewat tombol X.
   const tabSebelum = isEdit || idxTab <= 0 ? undefined : visibleTabs[idxTab - 1];
   // Buat proyek baru: kegiatan dulu, baru tab-tab form (isinya ikut kegiatan).
-  const perluPilihKegiatan = !adminMode && !isEdit && !previewMode && !selectedKegiatanId;
+  // Kegiatan yang form-nya belum disusun admin tidak bisa dipakai membuat proyek.
+  const formKegiatanKosong =
+    !adminMode && !previewMode && !isEdit && !!selectedKegiatanId &&
+    formTemplate !== null && formTemplate.tabs.length === 0;
+  const perluPilihKegiatan =
+    !adminMode && !isEdit && !previewMode && (!selectedKegiatanId || formKegiatanKosong);
 
   useEffect(() => {
     onActiveTabChange?.(TAB_KEY_MAP[activeTab as (typeof TABS)[number]["value"]]);
@@ -2243,9 +2251,9 @@ export function ProyekFormDialog({
   // A/B/C rasio Valuasi: anggaran semua paket, volume paket utama — sama
   // dgn backend ringkasPaket().
   const ringkasForm = ringkasPaket(ringkasDaftar);
-  const roIdPreview = daftarPaket[0]?.roId;
+  const kegiatanPreview = selectedKegiatanId;
   const previewKey = JSON.stringify({
-    roIdPreview,
+    kegiatanPreview,
     formValuesMap,
     sumberUsulanProyek: watchedForPreview.sumberUsulanProyek,
     sumberUsulanLainnya: watchedForPreview.sumberUsulanLainnya,
@@ -2269,7 +2277,7 @@ export function ProyekFormDialog({
   });
 
   useEffect(() => {
-    if (!open || !roIdPreview) {
+    if (!open || !kegiatanPreview) {
       setPreview(null);
       return;
     }
@@ -2277,7 +2285,7 @@ export function ProyekFormDialog({
       setPreviewLoading(true);
       api
         .post("/proyek/preview-skor", {
-          roId: roIdPreview,
+          kegiatanId: kegiatanPreview,
           sumberUsulanProyek: watchedForPreview.sumberUsulanProyek,
           sumberUsulanLainnya: watchedForPreview.sumberUsulanLainnya || undefined,
           justifikasiProyek: watchedForPreview.justifikasiProyek || undefined,
@@ -2347,6 +2355,7 @@ export function ProyekFormDialog({
         const { paket, ...rest } = data;
         const payload = {
           ...bersihkanFkKosong(rest),
+          kegiatanId: selectedKegiatanId,
           formValues: buildFormValues(),
           paket: paket.map(paketKePayload),
         };
@@ -2494,6 +2503,12 @@ export function ProyekFormDialog({
                     ))}
                   </SelectContent>
                 </Select>
+                {formKegiatanKosong && (
+                  <p role="alert" className="text-sm text-destructive">
+                    Form kegiatan ini belum disusun admin (Master Data › Form Proyek).
+                    Pilih kegiatan lain atau hubungi admin.
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -2825,10 +2840,9 @@ export function ProyekFormDialog({
                   adminHandlers.note("evaluasi")
                 ) : (
                 <div className="pl-12 space-y-4">
-                  {!roIdPreview ? (
+                  {!kegiatanPreview ? (
                     <div className="rounded-xl border-2 border-dashed p-6 text-center text-muted-foreground text-xs">
-                      Pilih RO di tab Pemaketan dulu — skor evaluasi mengikuti
-                      kegiatan dari RO paket pertama.
+                      Pilih kegiatan dulu — skor evaluasi mengikuti form kegiatan proyek.
                     </div>
                   ) : (
                     <div className="space-y-3">

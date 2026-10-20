@@ -702,6 +702,26 @@ export class ImportService {
       throw new BadRequestException(
         'Tidak ada sheet data yang dikenali. Header harus diawali "KodeProyek" (format DB.xlsx) atau "TA" (format Renstra).',
       );
+    // Kegiatan -> Proyek -> Paket satu jalur: KodeProyek yang barisnya
+    // beda kegiatan ditolak seluruhnya (paket kegiatan lain = proyek lain).
+    const kegiatanPerKode = new Map<string, Set<string>>();
+    for (const r of parsedRows)
+      if (r.kodeProyek)
+        kegiatanPerKode.set(r.kodeProyek, (kegiatanPerKode.get(r.kodeProyek) ?? new Set()).add(r.kdKegiatan));
+    for (let i = parsedRows.length - 1; i >= 0; i--) {
+      const r = parsedRows[i];
+      const keg = r.kodeProyek ? kegiatanPerKode.get(r.kodeProyek) : undefined;
+      if (keg && keg.size > 1) {
+        parseErrors.push({
+          excelRowNumber: r.excelRowNumber,
+          sheet: r.sheet,
+          namaProyek: r.namaProyek,
+          balaiName: r.balaiName,
+          reason: `Proyek ${r.kodeProyek} berisi lebih dari satu kegiatan (${[...keg].join(', ')}); satu proyek hanya boleh satu kegiatan`,
+        });
+        parsedRows.splice(i, 1);
+      }
+    }
     if (parsedRows.length === 0) {
       throw new BadRequestException(
         'Tidak ada baris valid ditemukan di file Excel.',
@@ -940,7 +960,9 @@ export class ImportService {
           (p) =>
             p.balaiId === balaiId &&
             rendah(p.projectName) === rendah(first.namaProyek) &&
-            p.paket.some((pk) => kegiatan.has(pk.ro.kro.kegiatanId)),
+            (p.kegiatanId
+              ? kegiatan.has(p.kegiatanId)
+              : p.paket.some((pk) => kegiatan.has(pk.ro.kro.kegiatanId))),
         ) ?? null
       );
     };
@@ -1327,6 +1349,16 @@ export class ImportService {
       }
 
       try {
+        if (existing?.kegiatanId && existing.kegiatanId !== first.kdKegiatan) {
+          commitErrors.push({
+            excelRowNumber: first.excelRowNumber,
+            sheet: first.sheet,
+            namaProyek: first.namaProyek,
+            balaiName: first.balaiName,
+            reason: `Kegiatan ${first.kdKegiatan} berbeda dengan proyek ${existing.kodeProyek ?? ''} (kegiatan ${existing.kegiatanId}); buat sebagai proyek lain`,
+          });
+          continue;
+        }
         if (existing) {
           // Proyek sudah ada: data proyek tidak ditimpa, hanya ditambah paket
           // baru atau tahun baru di paket lama.
@@ -1418,6 +1450,7 @@ export class ImportService {
             kodeProyek,
             projectName: first.namaProyek,
             balaiId,
+            kegiatanId: first.kdKegiatan,
             periodeId: await this.resolvePeriodeId(
               Math.min(...grup.map((r) => r.tahun)),
             ),

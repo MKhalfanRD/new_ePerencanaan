@@ -242,6 +242,7 @@ model Kegiatan {
   formTemplate    FormTemplate?
   kategoriProyek  KategoriProyek[]
   balai           Balai[]
+  proyek          Proyek[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -823,6 +824,12 @@ model Proyek {
   balaiId Int
   balai   Balai @relation(fields: [balaiId], references: [id])
 
+  // Kegiatan proyek: dipilih saat dibuat lalu dikunci. Semua paket wajib
+  // memakai RO dari kegiatan ini; template form, skor & saldo mengikutinya.
+  // Nullable hanya untuk data lama yang belum bisa ditentukan.
+  kegiatanId String?   @db.VarChar(10)
+  kegiatan   Kegiatan? @relation(fields: [kegiatanId], references: [id])
+
   periodeId Int
   periode   Periode @relation(fields: [periodeId], references: [id])
 
@@ -932,6 +939,7 @@ model Proyek {
   @@index([status])
   @@index([createdById])
   @@index([periodeId])
+  @@index([kegiatanId])
   @@map("proyek")
 }
 

@@ -60,6 +60,7 @@ import {
 } from "@/lib/export-utils";
 import { RiwayatPerubahan } from "@/components/activity-log/riwayat-panel";
 import { PaketDialog } from "./paket-dialog";
+import { IsiUsulan } from "./isi-usulan";
 import {
   paketDariServer,
   paketKePayload,
@@ -159,10 +160,13 @@ export function ProyekDetailSheet({
   const bisaUbahPaket = (pk: Paket) =>
     canManagePaket && (!akunSatker || pk.satkerId === akunSatker);
 
-  // Template tab Pemaketan (bagian per paket) — kegiatan paket pertama,
-  // atau kegiatan balai kalau belum ada paket.
+  // Template tab Pemaketan (bagian per paket) & pilihan RO mengikuti
+  // kegiatan proyek (data lama: paket pertama / balai).
   const kegiatanPaket =
-    proyek.paket?.[0]?.ro?.kro?.kegiatan?.id ?? proyek.balai?.kegiatanId ?? null;
+    proyek.kegiatanId ??
+    proyek.paket?.[0]?.ro?.kro?.kegiatan?.id ??
+    proyek.balai?.kegiatanId ??
+    null;
   const [templateTabs, setTemplateTabs] = useState<FormTabNode[] | undefined>();
   useEffect(() => {
     if (!open || !kegiatanPaket) return setTemplateTabs(undefined);
@@ -242,6 +246,7 @@ export function ProyekDetailSheet({
   // Backend selalu balikin array, tapi dijaga di sini juga — dipakai berulang di bawah.
   const paket = proyek.paket ?? [];
   const firstRo = paket[0]?.ro;
+  const kegiatanInfo = proyek.kegiatan ?? firstRo?.kro.kegiatan;
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
@@ -334,9 +339,8 @@ export function ProyekDetailSheet({
         </SheetHeader>
 
         <SheetBody className="px-6 py-6 space-y-6">
-          {/* Info Proyek — kartu ringkas, field detail nomenklatur diambil
-              dari paket pertama (Proyek sendiri tidak lagi menyimpan
-              Program/Kegiatan/KRO/RO — itu melekat di tiap Paket). */}
+          {/* Info Proyek — Program/Kegiatan milik proyek (data lama tanpa
+              kegiatan: dari paket pertama). KRO/RO melekat di tiap Paket. */}
           <div className="space-y-2">
             <SectionHeader title="Info Proyek" icon={FileText} />
             <div className="rounded-lg border p-4 grid grid-cols-2 gap-x-4 gap-y-4">
@@ -344,16 +348,16 @@ export function ProyekDetailSheet({
               <InfoStat
                 label="Program / Kegiatan"
                 value={
-                  firstRo
-                    ? `${firstRo.kro.kegiatan.program.code} ${firstRo.kro.kegiatan.program.name} · ${firstRo.kro.kegiatan.code}`
+                  kegiatanInfo
+                    ? `${kegiatanInfo.program.code} ${kegiatanInfo.program.name} · ${kegiatanInfo.code}`
                     : "—"
                 }
               />
               <InfoStat
                 label="Kegiatan"
                 value={
-                  firstRo
-                    ? `${firstRo.kro.kegiatan.code} · ${firstRo.kro.kegiatan.name}`
+                  kegiatanInfo
+                    ? `${kegiatanInfo.code} · ${kegiatanInfo.name}`
                     : "—"
                 }
               />
@@ -391,114 +395,6 @@ export function ProyekDetailSheet({
               <InfoStat label="Jumlah Paket" value={String(paket.length)} />
             </div>
           </div>
-
-          {/* Tagging & Dokumen — 1 proyek = 1 set tagging (RPJMN/RENSTRA/
-              RENJA/tagging dinamis), lihat proyek-form-dialog.tsx tab
-              Tagging & Dokumen. */}
-          {(proyek.justifikasiProyek ||
-            proyek.pkpn ||
-            proyek.indikatorSasaranProgram ||
-            proyek.indikatorSasaranKegiatan ||
-            proyek.tematikRenja ||
-            proyek.fkb ||
-            proyek.fkw ||
-            proyek.mpa ||
-            proyek.taggingDinamis?.length ||
-            proyek.catatanPembina ||
-            proyek.catatanSspsda ||
-            proyek.dokumenPendukung?.length) && (
-            <div className="space-y-2">
-              <SectionHeader title="Tagging & Dokumen" icon={FileText} />
-              <div className="rounded-lg border p-4 space-y-3">
-                {proyek.justifikasiProyek && (
-                  <InfoStat
-                    label="Justifikasi Proyek"
-                    value={proyek.justifikasiProyek}
-                  />
-                )}
-                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                  {proyek.pkpn && (
-                    <InfoStat label="PKPN" value={proyek.pkpn.name} />
-                  )}
-                  {proyek.tematikRenja && (
-                    <InfoStat
-                      label="Tematik RENJA"
-                      value={proyek.tematikRenja.name}
-                    />
-                  )}
-                  {proyek.indikatorSasaranProgram && (
-                    <InfoStat
-                      label="Indikator Sasaran Program (ISP)"
-                      value={proyek.indikatorSasaranProgram.name}
-                    />
-                  )}
-                  {proyek.indikatorSasaranKegiatan && (
-                    <InfoStat
-                      label="Indikator Sasaran Kegiatan (ISK)"
-                      value={proyek.indikatorSasaranKegiatan.name}
-                    />
-                  )}
-                </div>
-                {(proyek.fkb ||
-                  proyek.fkw ||
-                  proyek.mpa ||
-                  !!proyek.taggingDinamis?.length) && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {proyek.fkb && <Badge variant="secondary">FKB</Badge>}
-                    {proyek.fkw && <Badge variant="secondary">FKW</Badge>}
-                    {proyek.mpa && <Badge variant="secondary">MPA</Badge>}
-                    {proyek.taggingDinamis?.map((t) => (
-                      <Badge key={t} variant="outline">
-                        {t}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-                {(proyek.catatanPembina || proyek.catatanSspsda) && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {proyek.catatanPembina && (
-                      <div className="rounded-lg border bg-muted/30 p-3">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-                          Catatan Pembina
-                        </p>
-                        <p className="text-xs whitespace-pre-wrap">
-                          {proyek.catatanPembina}
-                        </p>
-                      </div>
-                    )}
-                    {proyek.catatanSspsda && (
-                      <div className="rounded-lg border bg-muted/30 p-3">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-                          Catatan SSPSDA
-                        </p>
-                        <p className="text-xs whitespace-pre-wrap">
-                          {proyek.catatanSspsda}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {!!proyek.dokumenPendukung?.length && (
-                  <div className="space-y-1.5">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      Dokumen Pendukung
-                    </p>
-                    {proyek.dokumenPendukung.map((d) => (
-                      <a
-                        key={d.id}
-                        href={`${api.defaults.baseURL}/uploads/${d.filePath}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block rounded-lg border px-3 py-2 text-xs hover:bg-accent/40 truncate"
-                      >
-                        {d.fileName}
-                      </a>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Daftar Paket — level baru di antara Proyek & Alokasi. */}
           <div className="space-y-3">
@@ -567,6 +463,16 @@ export function ProyekDetailSheet({
                             {pk.ro.kro.kegiatan.code} · {pk.ro.name}
                           </p>
                         </div>
+                        {proyek.kegiatanId &&
+                          pk.ro.kro.kegiatan.id !== proyek.kegiatanId && (
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 border-destructive/40 text-destructive text-[10px]"
+                              title={`RO paket ini milik kegiatan ${pk.ro.kro.kegiatan.code}, bukan kegiatan proyek (${proyek.kegiatan?.code ?? proyek.kegiatanId}). Buat paket ini di proyek kegiatan ${pk.ro.kro.kegiatan.code}, lalu hapus dari sini.`}
+                            >
+                              Harus dibuat ulang
+                            </Badge>
+                          )}
                         {pk.satker && (
                           <Badge
                             variant="outline"
@@ -705,6 +611,12 @@ export function ProyekDetailSheet({
                 })}
               </div>
             )}
+          </div>
+
+          {/* Isi usulan — dibangkitkan dari template form kegiatan proyek. */}
+          <div className="space-y-2">
+            <SectionHeader title="Isi Usulan" icon={FileText} />
+            <IsiUsulan proyek={proyek} kegiatanId={kegiatanPaket} />
           </div>
 
           <RiwayatPerubahan entity="proyek" entityId={proyek.id} />

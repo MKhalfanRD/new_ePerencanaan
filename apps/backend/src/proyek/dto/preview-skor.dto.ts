@@ -35,11 +35,15 @@ export class FormValueDto {
  * live selagi user mengisi tab lain (lihat evaluasi-deteksi.ts).
  */
 export class PreviewSkorDto {
-  @ApiProperty({
-    description: 'RO paket pertama — dipakai menentukan kegiatan',
-  })
+  @ApiPropertyOptional({ description: 'Kegiatan proyek (template & bobot skor)' })
+  @IsOptional()
   @IsString()
-  roId: string;
+  kegiatanId?: string;
+
+  @ApiPropertyOptional({ description: 'Data lama: kegiatan ditebak dari RO paket pertama bila kegiatanId kosong' })
+  @IsOptional()
+  @IsString()
+  roId?: string;
 
   @ApiPropertyOptional({ description: 'Nama dari master data Sumber Usulan Proyek' })
   @IsOptional()

@@ -583,37 +583,18 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                 <Info size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
                 <div className="space-y-2.5">
                 <p className="text-[13.5px]">
-                  Belum punya file? Unduh template, isi sheet pertama, lalu
+                  Belum punya file? Unduh Template Excel, isi sheet pertama, lalu
                   upload di bawah. Penjelasan kolom ada di sheet
                   &quot;Petunjuk&quot;.
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs"
-                    onClick={() =>
-                      unduhTemplate({ nama: "template-import-proyek", kolom: KOLOM_DB })
-                    }
-                  >
-                    <Download size={12} className="mr-1.5" /> Template format
-                    lengkap
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs"
-                    onClick={() =>
-                      unduhTemplate({
-                        nama: "template-import-renstra",
-                        kolom: KOLOM_RENSTRA,
-                      })
-                    }
-                  >
-                    <Download size={12} className="mr-1.5" /> Template format
-                    Renstra
-                  </Button>
-                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs"
+                  onClick={() => unduhTemplate({ nama: "template-excel", kolom: KOLOM_DB })}
+                >
+                  <Download size={12} className="mr-1.5" /> Template Excel
+                </Button>
                 </div>
               </div>
               <div
@@ -1062,9 +1043,9 @@ const KOLOM_DB: KolomTemplate[] = [
   { label: "IRO" },
   { label: "Satuan IRO" },
   { label: "Tematik RENJA" },
-  { label: "FKB", keterangan: "Isi apa saja = ya" },
-  { label: "FKW", keterangan: "Isi apa saja = ya" },
-  { label: "MPA", keterangan: "Isi apa saja = ya" },
+  { label: "FKB", keterangan: "Isi apa saja = ya, untuk tahun di baris ini" },
+  { label: "FKW", keterangan: "Isi apa saja = ya, untuk tahun di baris ini" },
+  { label: "MPA", keterangan: "Isi apa saja = ya, untuk tahun di baris ini" },
   { label: "KodeWS", contoh: "01.09.A2" },
   { label: "NamaWilayahSungai", contoh: "Alas-Singkil" },
   { label: "kab/kota" },
@@ -1078,25 +1059,4 @@ const KOLOM_DB: KolomTemplate[] = [
   { label: "SumberDana_KPBU" },
   { label: "SumberDanaAll", keterangan: "Total; kosong = dijumlah otomatis" },
   { label: "Tahun", ...W, contoh: 2026, keterangan: "Tahun alokasi" },
-];
-
-// Format Renstra: kolom dicari lewat nama header; tanpa kolom paket
-// (1 proyek = 1 paket bernama sama, Jumlah dicatat sebagai RM).
-const KOLOM_RENSTRA: KolomTemplate[] = [
-  { label: "TA", ...W, contoh: 2026, keterangan: "Tahun anggaran" },
-  { label: "BALAI", ...W, contoh: "BALAI WILAYAH SUNGAI SUMATERA I" },
-  { label: "kdgiat", ...W, contoh: 7692 },
-  { label: "kdKRO", ...W, contoh: "CBS" },
-  { label: "kdRO", ...W, contoh: 3 },
-  { label: "Nama Proyek", ...W, contoh: "Pembangunan Prasarana Pengaman Pantai" },
-  { label: "Provinsi", contoh: "Aceh" },
-  { label: "V OUTPUT", contoh: 0.5 },
-  { label: "Sat RO", contoh: "Km" },
-  { label: "IRO", contoh: 5.66 },
-  { label: "Sat IRO", contoh: "Ha" },
-  { label: "Jumlah", ...W, contoh: 25000000000, keterangan: "Dicatat sebagai sumber dana RM" },
-  { label: "SK" },
-  { label: "ISK" },
-  { label: "SP" },
-  { label: "ISP" },
 ];

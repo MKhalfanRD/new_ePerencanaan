@@ -707,7 +707,7 @@ export function FormProyekTab({
         </div>
         <div className={cn("h-2 overflow-hidden rounded-full", merah ? "bg-white" : "bg-muted")}>
           <div
-            className={cn("h-full rounded-full transition-[width]", lebih ? "bg-destructive" : "bg-primary")}
+            className={cn("grafik-lebar h-full rounded-full", lebih ? "bg-destructive" : "bg-primary")}
             style={{ width: `${batas > 0 ? Math.min(100, (pakai / batas) * 100) : 0}%` }}
           />
         </div>

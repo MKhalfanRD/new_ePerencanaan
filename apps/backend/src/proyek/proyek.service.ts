@@ -550,7 +550,7 @@ export class ProyekService {
     const whereAlokasi: Prisma.AlokasiWhereInput = {
       paket: { deletedAt: null, proyek: where },
     };
-    const [jumlahProyek, perStatus, alokasi, totalLokasi, terbaru, periodeAktif] =
+    const [jumlahProyek, perStatus, alokasi, lokasi, terbaru, periodeAktif] =
       await Promise.all([
         this.prisma.proyek.count({ where }),
         this.prisma.proyek.groupBy({ by: ['status'], where, _count: true }),
@@ -560,7 +560,25 @@ export class ProyekService {
           _sum: { total: true, rm: true, rmp: true, pln: true, sbsn: true, kpbu: true },
           orderBy: { tahun: 'asc' },
         }),
-        this.prisma.lokasiAlokasi.count({ where: { alokasi: whereAlokasi } }),
+        // Peta mini Dashboard: proyek yang sudah punya titik/garis/poligon.
+        this.prisma.proyek.findMany({
+          where: {
+            ...where,
+            OR: [
+              { latitude: { not: null }, longitude: { not: null } },
+              { coordinates: { not: Prisma.AnyNull } },
+            ],
+          },
+          select: {
+            id: true,
+            projectName: true,
+            status: true,
+            tipeKoordinat: true,
+            latitude: true,
+            longitude: true,
+            coordinates: true,
+          },
+        }),
         this.prisma.proyek.findMany({
           where,
           orderBy: { updatedAt: 'desc' },
@@ -603,7 +621,7 @@ export class ProyekService {
         sbsn: Number(a._sum.sbsn ?? 0),
         kpbu: Number(a._sum.kpbu ?? 0),
       })),
-      totalLokasi,
+      lokasi,
       terbaru,
       realisasiBelum,
       periodeAktif: periodeAktif?.label ?? null,

@@ -391,7 +391,7 @@ function PanelProyek({ d, tab, admin, onSelesai }: { d: Baris; tab: Tab; admin: 
             <div className="h-2 overflow-hidden rounded-full bg-border">
               <div
                 className={cn(
-                  "h-full rounded-full",
+                  "grafik-lebar h-full rounded-full",
                   s.terpakai.total > s.saldo.total ? "bg-destructive" : "bg-primary",
                 )}
                 style={{ width: `${Math.min(100, (s.terpakai.total / s.saldo.total) * 100)}%` }}

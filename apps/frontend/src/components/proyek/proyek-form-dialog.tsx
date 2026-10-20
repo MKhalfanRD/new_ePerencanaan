@@ -403,7 +403,7 @@ function PenandaTahun({
       className="col-span-full flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border px-4 py-3"
     >
       <legend className="sr-only">{label} per tahun</legend>
-      <span className="min-w-[14rem] flex-1 text-sm font-medium">{label}</span>
+      <span className="min-w-[8rem] flex-1 text-sm font-medium">{label}</span>
       {tahun.map((t) => (
         <label key={t} className="flex cursor-pointer items-center gap-1.5 text-[13px]">
           <input
@@ -436,7 +436,7 @@ function CincinSkor({ nilai, memuat }: { nilai: number; memuat?: boolean }) {
           fill="none"
           strokeWidth="13"
           strokeLinecap="round"
-          className="stroke-sd-rm transition-[stroke-dasharray] duration-300"
+          className="grafik-cincin stroke-sd-rm"
           strokeDasharray={`${(keliling * pct) / 100} ${keliling}`}
         />
       </svg>
@@ -1018,7 +1018,8 @@ export function ProyekFormDialog({
           key={item.id}
           data-item-key={item.key}
           className={cn(
-            "relative grid",
+            // grid-cols-1 + min-w-0: isian panjang (mis. Sasaran Kegiatan) dipotong, tidak menimpa kolom sebelah.
+            "relative grid min-w-0 grid-cols-1 gap-3",
             penuh && "col-span-full",
             depth > 0 && "border-l-2 border-primary/30 pl-4",
             sorot === item.key && "sorot-kolom",
@@ -2058,7 +2059,7 @@ export function ProyekFormDialog({
             <>
               <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
-                  className={cn("h-full rounded-full", lebih ? "bg-destructive" : "bg-primary")}
+                  className={cn("grafik-lebar h-full rounded-full", lebih ? "bg-destructive" : "bg-primary")}
                   style={{ width: `${lebih ? 100 : pct}%` }}
                 />
               </div>
@@ -2958,7 +2959,7 @@ export function ProyekFormDialog({
                               <span className="text-right tabular-nums text-muted-foreground">{fmtSkor(r.bobot)}</span>
                               <span className="h-1.5 overflow-hidden rounded-full bg-border">
                                 <span
-                                  className="block h-full rounded-full bg-sd-rm"
+                                  className="grafik-lebar block h-full rounded-full bg-sd-rm"
                                   style={{ width: `${Math.min(100, (r.dapat / r.bobot) * 100)}%` }}
                                 />
                               </span>

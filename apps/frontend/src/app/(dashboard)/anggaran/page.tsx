@@ -31,7 +31,7 @@ function Bar({ pct, lebih, redup }: { pct: number; lebih?: boolean; redup?: bool
   return (
     <div className="h-2 flex-1 overflow-hidden rounded-full bg-border">
       <div
-        className={cn("h-full rounded-full", lebih ? "bg-destructive" : redup ? "bg-primary/40" : "bg-primary")}
+        className={cn("grafik-lebar h-full rounded-full", lebih ? "bg-destructive" : redup ? "bg-primary/40" : "bg-primary")}
         style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
       />
     </div>

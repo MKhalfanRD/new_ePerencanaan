@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, ChevronRight, MapPin } from "lucide-react";
+import { ArrowRight, ChevronRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { statusConfig } from "@/components/shared/status-config";
 import type { Dana, SaldoNilai } from "@/components/anggaran/saldo-kegiatan";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { PetaMini, type LokasiRingkas } from "@/components/map/peta-mini";
 import { punyaRole } from "@/lib/role";
 import { formatRupiah, formatRupiahShort } from "@/lib/format-rupiah";
 import { useAuthStore } from "@/store/auth";
@@ -19,7 +20,7 @@ interface Ringkasan {
   jumlahProyek: number;
   perStatus: Partial<Record<Proyek["status"], number>>;
   alokasi: ({ tahun: number; status: "RENCANA" | "REALISASI" } & Dana)[];
-  totalLokasi: number;
+  lokasi: LokasiRingkas[];
   terbaru: {
     id: string;
     projectName: string;
@@ -92,6 +93,7 @@ function Cincin({
             fill="none"
             strokeWidth={tebal}
             strokeLinecap="round"
+            className="grafik-cincin"
             stroke={pct > 100 ? "var(--color-destructive)" : warna}
             strokeDasharray={`${(k * isi) / 100} ${k}`}
           />
@@ -130,6 +132,8 @@ function Donat({ bagian, ukuran = 140, tengah, bawah }: { bagian: { nilai: numbe
                 fill="none"
                 strokeWidth={tebal}
                 stroke={b.warna}
+                className="grafik-cincin"
+                style={{ animationDelay: `${i * 120}ms` }}
                 strokeDasharray={`${Math.max(0, panjang - 2)} ${k}`}
                 strokeDashoffset={-lewat}
               />
@@ -149,7 +153,7 @@ function Donat({ bagian, ukuran = 140, tengah, bawah }: { bagian: { nilai: numbe
 function Bar({ pct, warna = "bg-sd-rm" }: { pct: number; warna?: string }) {
   return (
     <div className="h-1.5 overflow-hidden rounded-full bg-border">
-      <div className={cn("h-full rounded-full", pct > 100 ? "bg-destructive" : warna)} style={{ width: `${Math.min(100, pct)}%` }} />
+      <div className={cn("grafik-lebar h-full rounded-full", pct > 100 ? "bg-destructive" : warna)} style={{ width: `${Math.min(100, pct)}%` }} />
     </div>
   );
 }
@@ -529,17 +533,20 @@ export default function DashboardPage() {
             </span>
           </div>
           <div className="flex h-40 items-end gap-3" role="img" aria-label="Rencana dan realisasi per tahun">
-            {perTahun.map((x) => (
+            {perTahun.map((x, i) => (
               <div key={x.tahun} className="flex flex-1 flex-col items-center gap-1.5">
                 <div className="flex h-32 w-full items-end justify-center gap-1">
                   <div
-                    className="w-1/3 rounded-t bg-sd-rm/30"
-                    style={{ height: `${(x.rencana / maksTahun) * 100}%` }}
+                    className="grafik-tinggi w-1/3 rounded-t bg-sd-rm/30"
+                    style={{ height: `${(x.rencana / maksTahun) * 100}%`, animationDelay: `${i * 80}ms` }}
                     title={`Rencana ${x.tahun}: ${formatRupiah(x.rencana)}`}
                   />
                   <div
-                    className="w-1/3 rounded-t bg-sd-rm"
-                    style={{ height: `${Math.max(x.realisasi ? 2 : 0, (x.realisasi / maksTahun) * 100)}%` }}
+                    className="grafik-tinggi w-1/3 rounded-t bg-sd-rm"
+                    style={{
+                      height: `${Math.max(x.realisasi ? 2 : 0, (x.realisasi / maksTahun) * 100)}%`,
+                      animationDelay: `${i * 80 + 150}ms`,
+                    }}
                     title={`Realisasi ${x.tahun}: ${formatRupiah(x.realisasi)}`}
                   />
                 </div>
@@ -581,16 +588,20 @@ export default function DashboardPage() {
             </ul>
           )}
         </div>
-        <div className="flex flex-col justify-between gap-4 rounded-2xl border bg-card p-5">
-          <h2 className="text-base font-semibold">Sekilas lokasi</h2>
-          <div className="flex items-center gap-3">
-            <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary-soft text-primary">
-              <MapPin size={20} />
+        <div className="flex flex-col gap-3 rounded-2xl border bg-card p-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <h2 className="text-base font-semibold">Sekilas lokasi</h2>
+            <span className="text-xs text-muted-foreground">
+              {r?.lokasi.length ?? 0} dari {r?.jumlahProyek ?? 0} proyek berlokasi
             </span>
-            <div>
-              <p className="text-2xl font-bold tabular-nums">{r?.totalLokasi ?? 0}</p>
-              <p className="text-xs text-muted-foreground">titik lokasi alokasi</p>
-            </div>
+          </div>
+          <div className="relative min-h-56 flex-1">
+            {r && <PetaMini lokasi={r.lokasi} />}
+            {r && r.lokasi.length === 0 && (
+              <p className="absolute inset-x-4 top-1/2 z-[500] -translate-y-1/2 rounded-lg bg-card/90 px-3 py-2 text-center text-xs text-muted-foreground shadow-sm">
+                Belum ada proyek yang punya titik lokasi. Isi di tab Lokasi Proyek.
+              </p>
+            )}
           </div>
           <Link href="/proyek" className="inline-flex items-center gap-1 text-sm text-primary-ink underline underline-offset-2">
             Lihat proyek <ArrowRight size={14} />

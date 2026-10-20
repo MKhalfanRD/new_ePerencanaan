@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Skema: Export detail proyek</title>
+<style>
+body{font-family:'Segoe UI',system-ui,sans-serif;margin:28px 36px;color:#231f1c;background:#fff;font-size:13.5px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px}h3{font-size:14px;margin:16px 0 6px}
+.mut{color:#6b655f;font-size:13px}
+.box{border:1px solid #e3ddd8;border-radius:10px;padding:12px 16px;margin:10px 0}
+.q{background:#fff4ec;border-color:#f0c9ad}
+.baru{background:#eef7ef;border-color:#b9dcbc}
+table{border-collapse:collapse;width:100%;font-size:12px}td,th{border:1px solid #e3ddd8;padding:5px 7px;text-align:left;vertical-align:top}th{background:#f6f3f0}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+.sheet{display:inline-block;background:#b24b0a;color:#fff;border-radius:6px 6px 0 0;padding:3px 10px;font-size:12px;font-weight:600;margin-top:10px}
+.page{page-break-after:always}
+code{background:#f6f3f0;padding:0 4px;border-radius:4px}
+s{color:#b63132}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+<div class="page">
+<h1>Export detail proyek ikut template</h1>
+<div class="mut">Pekerjaan no. 1 · 20 Okt 2026 · menunggu persetujuan</div>
+
+<div class="box"><b>Sekarang.</b> Tombol <b>Export › Excel / PDF</b> di detail proyek memakai daftar kolom tetap yang lama:
+Info Umum (nama, balai, kewenangan, sumber usulan, kebutuhan tanah, wilayah sungai, KP, skor), sheet <s>Tahapan Dokumen</s> (tahun Studi Layak/DED/LARAP/Dok. Lingkungan — sudah tidak ada di form), dan Alokasi.
+<br>Akibatnya isi file <b>berbeda</b> dengan yang tampil di layar: kolom tambahan buatan admin, FKB/FKW/MPA per tahun, valuasi A/B/C, rincian skor, realisasi, dokumen tidak ikut.</div>
+<div class="box baru"><b>Usulan.</b> Isi file = <b>persis isi layar detail</b>: bagian "Isi usulan" (urutan tab & kolom mengikuti form kegiatan proyek itu) + daftar Paket (rencana & realisasi per tahun). Angka ditulis <b>penuh</b> (sama dengan keputusan Laporan).</div>
+
+<h2>Alur</h2>
+<pre class="mermaid">
+flowchart LR
+  A(["Detail proyek › Export"]) --> B{"Excel / PDF"}
+  B --> C["Ambil template form<br>kegiatan proyek"]
+  C --> D["Susun baris yang SAMA dengan<br>Isi usulan di layar<br>(syarat tampil kolom ikut)"]
+  D --> E["Tambah daftar Paket:<br>per paket per tahun,<br>rencana + realisasi"]
+  E --> F1["Excel: 3 sheet"]
+  E --> F2["PDF A4: kop + tabel per tab<br>+ tabel paket"]
+</pre>
+</div>
+
+<div class="page">
+<h2>Isi file Excel</h2>
+
+<span class="sheet">Ringkasan</span>
+<table>
+<tr><th style="width:30%">Kolom</th><th>Isi (contoh)</th></tr>
+<tr><td>Nama proyek</td><td>Pembangunan Bendungan B</td></tr>
+<tr><td>Kode proyek</td><td>PR260002</td></tr>
+<tr><td>Kegiatan</td><td>7693 · Pengembangan Bendungan, Danau, dan Bangunan Penampung Air Lainnya</td></tr>
+<tr><td>Balai · Periode</td><td>BBWS Bengawan Solo · 2025–2029</td></tr>
+<tr><td>Status</td><td>Disetujui</td></tr>
+<tr><td>Skor evaluasi</td><td>18,47 / 100</td></tr>
+<tr><td>Total rencana · realisasi</td><td class="n">Rp 1.000.000.000 · Rp 0</td></tr>
+<tr><td>Dibuat oleh · tanggal</td><td>Super Admin · 12 Okt 2026</td></tr>
+<tr><td>Dicetak oleh · tanggal</td><td>Super Admin · 20 Okt 2026 14:05</td></tr>
+</table>
+
+<span class="sheet">Isi usulan</span>
+<table>
+<tr><th style="width:18%">Tab</th><th style="width:28%">Kolom</th><th>Isi</th><th style="width:10%">Jenis</th></tr>
+<tr><td>Identitas Proyek</td><td>Kegiatan</td><td>7691 · Pengembangan dan Rehabilitasi …</td><td>bawaan</td></tr>
+<tr><td>Identitas Proyek</td><td>Wilayah administratif</td><td>Jawa Tengah › Kab. Sragen › …</td><td>bawaan</td></tr>
+<tr><td>Kesiapan Teknis</td><td>Studi Kelayakan</td><td>Sudah ada · 2024</td><td>bawaan</td></tr>
+<tr><td>Tagging</td><td>FKB</td><td>2026, 2027</td><td>bawaan</td></tr>
+<tr><td>Tagging</td><td>Nama kolom buatan admin</td><td>isian pengisi</td><td>tambahan</td></tr>
+<tr><td>Valuasi Proyek</td><td>A · Total anggaran</td><td class="n">Rp 1.000.000.000</td><td>otomatis</td></tr>
+<tr><td>Valuasi Proyek</td><td>Rasio …</td><td>0,8 juta/m³ · Terpenuhi</td><td>tambahan</td></tr>
+<tr><td>Dokumen dan Catatan</td><td>Dokumen pendukung</td><td>nama-berkas.pdf</td><td>bawaan</td></tr>
+<tr><td>Evaluasi Proyek</td><td>Skor total / rincian per tab</td><td>18,47 / 100 · Kesiapan 5 / 20 …</td><td>otomatis</td></tr>
+<tr><td colspan="4" class="mut">Kolom yang belum diisi ditulis "–" (sama dengan layar). Kolom yang tidak tampil karena syaratnya tidak terpenuhi tidak ikut.</td></tr>
+</table>
+
+<span class="sheet">Paket</span>
+<table>
+<tr><th>Paket</th><th>Satker</th><th>KRO/RO</th><th>Indikator RO</th><th>Lokasi RO</th><th>Tahun</th><th>Komponen</th><th>Vol RO</th><th>Vol IRO</th><th>RM</th><th>RMP</th><th>PLN</th><th>SBSN</th><th>KPBU</th><th>Rencana</th><th>Realisasi</th></tr>
+<tr><td>Paket I</td><td>SNVT …</td><td>RBS.001</td><td>… (unit)</td><td>Jawa Tengah</td><td>2027</td><td>001 … (utama)</td><td class="n">1</td><td class="n">10</td><td class="n">1.000.000.000</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">1.000.000.000</td><td class="n">–</td></tr>
+<tr><td colspan="16" class="mut">Satu baris per paket per tahun. Realisasi "–" bila belum diisi. Baris paling bawah: total.</td></tr>
+</table>
+
+<h2>Isi file PDF (A4)</h2>
+<div class="box">Kop: judul "Detail proyek", nama proyek, kode · kegiatan · balai · periode · status, dicetak oleh/tanggal.<br>
+Lalu satu tabel per tab (Kolom | Isi) dengan urutan sama seperti Excel, lalu halaman Paket <b>mendatar</b> (kolom sama dengan sheet Paket). Tanpa tanda tangan/pengesahan (sama dengan Laporan).</div>
+
+<h2>Yang berubah</h2>
+<table>
+<tr><th>Bagian</th><th>Perubahan</th></tr>
+<tr><td>Export Excel detail</td><td>3 sheet baru (Ringkasan, Isi usulan, Paket). Sheet <s>Info Umum</s>, <s>Tahapan Dokumen</s>, <s>Alokasi Anggaran</s> lama diganti.</td></tr>
+<tr><td>Export PDF detail</td><td>Mengikuti isi yang sama.</td></tr>
+<tr><td>Layar detail</td><td>Tidak berubah. Kode penyusun baris "Isi usulan" dipakai bersama layar &amp; export, jadi keduanya selalu sama.</td></tr>
+<tr><td>Export daftar proyek (tombol Export Excel di tabel Proyek)</td><td><b>Tidak</b> disentuh di pekerjaan ini.</td></tr>
+</table>
+
+<h2>Perlu keputusan</h2>
+<div class="box q">
+1. <b>Catatan pemeriksaan</b> (jejak Diajukan/Dikembalikan + catatan pemeriksa) ikut sebagai sheet ke-4? Usulan: <b>tidak</b> — cukup status di Ringkasan.<br>
+2. <b>Riwayat proyek</b> (hanya admin) ikut? Usulan: <b>tidak</b> — riwayat tetap dilihat di layar.<br>
+3. Kolom yang belum diisi: tulis "–" (usulan, sama dengan layar) atau disembunyikan?
+</div>
+</div>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral', flowchart: { curve: 'basis', htmlLabels: true } });</script>
+</body>
+</html>

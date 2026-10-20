@@ -349,7 +349,8 @@ export function ProyekDetailSheet({
 
         <SheetBody
           className={cn(
-            "grid content-start md:min-h-full",
+            // Jangan min-h-full: tinggi isi jadi melebihi jendela sebesar header → bawahnya tak bisa di-scroll.
+            "grid content-start md:content-stretch",
             panelRiwayat && "md:grid-cols-[minmax(0,1fr)_19rem]",
           )}
         >

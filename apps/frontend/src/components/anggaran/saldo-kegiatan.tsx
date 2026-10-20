@@ -122,9 +122,9 @@ export function BarSaldo({ baris, labelLain = "lain", labelIni = "ini" }: { bari
               role="img"
               aria-label={`${b.label}: ${labelLain} ${formatRupiah(b.lain)}, ${labelIni} ${formatRupiah(b.ini)}, saldo ${formatRupiah(b.saldo)}`}
             >
-              <span className="bg-input" style={{ width: `${wLain}%` }} />
+              <span className="grafik-lebar bg-input" style={{ width: `${wLain}%` }} />
               <span
-                className={cn(b.lebih ? "bg-destructive" : b.sd ? WARNA_SD[b.sd] : "bg-primary")}
+                className={cn("grafik-lebar", b.lebih ? "bg-destructive" : b.sd ? WARNA_SD[b.sd] : "bg-primary")}
                 style={{ width: `${b.lebih ? 100 - wLain : wIni}%` }}
               />
             </div>

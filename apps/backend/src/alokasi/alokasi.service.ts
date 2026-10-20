@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { cekSaldoKegiatan } from '../saldo-kegiatan/saldo';
 import { RedisService } from '../redis/redis.service';
 import {
   CreateAlokasiDto,
@@ -63,6 +64,11 @@ export class AlokasiService {
         `Alokasi ${statusLabel} untuk tahun ${dto.tahun} sudah ada di paket ini — silakan edit yang sudah ada, bukan tambah baru.`,
       );
     }
+
+    // ponytail: di luar transaksi (kunci saldo tidak menahan balapan) — endpoint
+    // lama, form memakai /paket. Bungkus $transaction kalau dipakai lagi.
+    if (dto.status === 'RENCANA')
+      await cekSaldoKegiatan(this.prisma, paket.proyek.kegiatanId, [], [dto]);
 
     const pairedStatus = dto.status === 'RENCANA' ? 'REALISASI' : 'RENCANA';
 
@@ -151,9 +157,13 @@ export class AlokasiService {
   async update(id: string, dto: UpdateAlokasiDto, user: any) {
     const alokasi = await this.prisma.alokasi.findUnique({
       where: { id },
-      include: { paket: { select: { proyekId: true } } },
+      include: { paket: { select: { proyekId: true, proyek: { select: { kegiatanId: true } } } } },
     });
     if (!alokasi) throw new NotFoundException('Alokasi tidak ditemukan');
+    if (alokasi.status === 'RENCANA')
+      await cekSaldoKegiatan(this.prisma, alokasi.paket.proyek.kegiatanId, [alokasi], [
+        { ...alokasi, ...Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined)) },
+      ]);
 
     // Simpan histori sebelum update
     await this.prisma.historiAlokasi.create({

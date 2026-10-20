@@ -29,24 +29,24 @@ const badgeVariants = cva(
 );
 
 // Warna titik untuk varian "dot" — sinyal status data, bukan blok warna penuh.
-// Sesuai token §4 design-concept-planning.md: slate/amber/rose/emerald/blue.
+// Nama kunci lama dipertahankan, nilainya palet status Arah C (globals.css):
+// slate = draft/netral, emerald = disetujui/ok, rose = dikembalikan/error,
+// blue = diajukan/info, amber = peringatan.
 const dotColorClasses = {
-  slate: "bg-slate-400",
-  amber: "bg-amber-500",
-  rose: "bg-rose-500",
-  emerald: "bg-emerald-500",
-  blue: "bg-blue-600",
+  slate: "bg-st-draft",
+  amber: "bg-warn",
+  rose: "bg-st-dikembalikan",
+  emerald: "bg-st-disetujui",
+  blue: "bg-st-diajukan",
 } as const;
 
-// Tint latar + warna teks per status untuk varian "dot" — meniru
-// `.badge.b-*` di mockup (pill dengan background tint tipis, bukan hanya
-// dot polos di atas transparan).
+// Pill: latar tint tipis + teks versi gelap (kontras >= 4,5).
 const dotToneClasses = {
-  slate: "bg-slate-100 text-slate-600",
-  amber: "bg-amber-50 text-amber-700",
-  rose: "bg-rose-50 text-rose-700",
-  emerald: "bg-emerald-50 text-emerald-700",
-  blue: "bg-blue-50 text-blue-700",
+  slate: "bg-st-draft/12 text-st-draft-ink",
+  amber: "bg-warn/12 text-warn-ink",
+  rose: "bg-st-dikembalikan/10 text-st-dikembalikan-ink",
+  emerald: "bg-st-disetujui/10 text-st-disetujui-ink",
+  blue: "bg-st-diajukan/10 text-st-diajukan-ink",
 } as const;
 
 type DotColor = keyof typeof dotColorClasses;

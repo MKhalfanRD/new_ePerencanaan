@@ -545,7 +545,7 @@ export function PnppkpTab() {
                             className="text-muted-foreground shrink-0"
                           />
                         )}
-                        <span className="font-mono text-[10px] bg-sky-50 text-sky-700 px-1.5 py-0.5 rounded shrink-0">
+                        <span className="font-mono text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded shrink-0">
                           {p.code}
                         </span>
                         <span className="text-sm font-medium flex-1 truncate">
@@ -618,7 +618,7 @@ export function PnppkpTab() {
                                       className="text-muted-foreground shrink-0"
                                     />
                                   )}
-                                  <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded shrink-0">
+                                  <span className="font-mono text-[10px] bg-tier-1 text-foreground px-1.5 py-0.5 rounded shrink-0">
                                     {pp.code}
                                   </span>
                                   <span className="text-[13px] font-medium flex-1 truncate">
@@ -669,7 +669,7 @@ export function PnppkpTab() {
                                         key={k.id}
                                         className="group flex items-center gap-2 pl-16 pr-3.5 py-1.5"
                                       >
-                                        <span className="font-mono text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded shrink-0">
+                                        <span className="font-mono text-[10px] bg-ok/10 text-ok px-1.5 py-0.5 rounded shrink-0">
                                           {k.code}
                                         </span>
                                         <span className="text-[12px] flex-1 truncate">

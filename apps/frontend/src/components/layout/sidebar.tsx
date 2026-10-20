@@ -7,9 +7,9 @@ import {
   FolderKanban,
   Users,
   LogOut,
-  ChevronRight,
   Database,
   ScrollText,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
@@ -35,6 +35,7 @@ const navItems: {
 }[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Proyek", href: "/proyek", icon: FolderKanban },
+  { label: "Anggaran Kegiatan", href: "/anggaran", icon: Wallet },
   { label: "Pengguna", href: "/users", icon: Users, roles: ADMIN },
   { label: "Master Data", href: "/master", icon: Database, roles: ADMIN },
   {
@@ -64,21 +65,21 @@ export function Sidebar() {
     <TooltipProvider delayDuration={0}>
       <aside className="fixed left-0 top-0 h-screen w-16 lg:w-60 bg-card border-r border-border flex flex-col z-40 transition-all duration-200">
         {/* Logo */}
-        <div className="h-16 flex items-center px-4 border-b border-border">
+        <div className="h-16 flex items-center px-4">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-              <span className="text-primary-foreground font-bold text-xs">
+            <div className="w-7 h-7 rounded-lg bg-sd-rm flex items-center justify-center shrink-0">
+              <span className="text-white font-bold text-xs">
                 eP
               </span>
             </div>
-            <span className="font-semibold text-sm hidden lg:block">
+            <span className="font-bold text-[15px] hidden lg:block">
               ePerencanaan
             </span>
           </div>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 py-4 px-2 space-y-1">
+        <nav className="flex-1 py-2 px-3 space-y-0.5" aria-label="Menu utama">
           {filteredNav.map((item) => {
             const isActive =
               pathname === item.href || pathname.startsWith(item.href + "/");
@@ -87,21 +88,16 @@ export function Sidebar() {
                 <TooltipTrigger asChild>
                   <Link
                     href={item.href}
+                    aria-current={isActive ? "page" : undefined}
                     className={cn(
-                      "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group",
+                      "flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors",
                       isActive
-                        ? "bg-primary text-primary-foreground"
+                        ? "bg-primary-soft text-primary-ink"
                         : "text-muted-foreground hover:text-foreground hover:bg-accent",
                     )}
                   >
-                    <item.icon size={18} className="shrink-0" />
+                    <item.icon size={17} className="shrink-0" />
                     <span className="hidden lg:block">{item.label}</span>
-                    {isActive && (
-                      <ChevronRight
-                        size={14}
-                        className="ml-auto hidden lg:block"
-                      />
-                    )}
                   </Link>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="lg:hidden">
@@ -113,10 +109,10 @@ export function Sidebar() {
         </nav>
 
         {/* User & Logout */}
-        <div className="p-2 border-t border-border space-y-1">
+        <div className="mx-3 mb-3 pt-2 border-t border-border space-y-0.5">
           <div className="flex items-center gap-3 px-3 py-2">
-            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-              <span className="text-primary font-semibold text-xs">
+            <div className="w-8 h-8 rounded-full bg-tier-1 flex items-center justify-center shrink-0">
+              <span className="text-foreground font-semibold text-xs">
                 {user?.name?.charAt(0).toUpperCase()}
               </span>
             </div>
@@ -131,9 +127,9 @@ export function Sidebar() {
             <TooltipTrigger asChild>
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
               >
-                <LogOut size={18} className="shrink-0" />
+                <LogOut size={17} className="shrink-0" />
                 <span className="hidden lg:block">Keluar</span>
               </button>
             </TooltipTrigger>

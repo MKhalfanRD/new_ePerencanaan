@@ -67,10 +67,10 @@ export function ActivityDetailDialog({ row, onClose }: Props) {
                     <td className="px-3 py-1.5 font-medium">
                       {labelField(row.entity, c.field)}
                     </td>
-                    <td className="px-3 py-1.5 text-red-600">
+                    <td className="px-3 py-1.5 text-destructive">
                       {formatNilai(c.before)}
                     </td>
-                    <td className="px-3 py-1.5 text-emerald-700">
+                    <td className="px-3 py-1.5 text-ok">
                       {formatNilai(c.after)}
                     </td>
                   </tr>

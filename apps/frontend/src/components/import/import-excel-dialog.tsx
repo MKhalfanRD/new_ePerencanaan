@@ -99,6 +99,8 @@ interface PreviewResult {
   duplikat: Duplikat[];
   parseErrors: ParseError[];
   info: string[];
+  /** Melebihi saldo kegiatan / tahun tanpa saldo — tetap boleh diimport. */
+  peringatanSaldo: string[];
   rencana: RencanaProyek[];
   bolehBuatBalai: boolean;
 }
@@ -183,10 +185,10 @@ function TabelBanding({ d }: { d: Duplikat }) {
         {KOLOM_BANDING.map(([k, label]) => {
           const beda = d.lama[k] !== d.excel[k];
           return (
-            <tr key={k} className={beda ? "bg-amber-50" : undefined}>
+            <tr key={k} className={beda ? "bg-warn/12" : undefined}>
               <td className="p-1.5 text-muted-foreground">{label}</td>
               <td className="p-1.5">{tampilNilai(k, d.lama[k])}</td>
-              <td className={`p-1.5 ${beda ? "font-semibold text-amber-700" : ""}`}>
+              <td className={`p-1.5 ${beda ? "font-semibold text-warn-ink" : ""}`}>
                 {tampilNilai(k, d.excel[k])}
               </td>
             </tr>
@@ -257,14 +259,14 @@ function DuplikatPanel({ items }: { items: Duplikat[] }) {
   // File Renstra bisa ribuan duplikat — tampilkan bertahap.
   const [batas, setBatas] = useState(50);
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 overflow-hidden">
+    <div className="rounded-lg border border-warn/35 bg-warn/12 overflow-hidden">
       <div className="flex items-center gap-2 p-3">
-        <AlertTriangle size={15} className="text-amber-600" />
-        <span className="text-sm font-medium text-amber-800">
+        <AlertTriangle size={15} className="text-warn-ink" />
+        <span className="text-sm font-medium text-warn-ink">
           {items.length} alokasi duplikat, tidak diimpor
         </span>
       </div>
-      <ul className="divide-y border-t border-amber-200 bg-white max-h-80 overflow-y-auto">
+      <ul className="divide-y border-t border-warn/35 bg-white max-h-80 overflow-y-auto">
         {items.slice(0, batas).map((d, i) => (
           <li key={i} className="p-2.5 text-xs">
             <div className="flex items-start justify-between gap-2">
@@ -275,7 +277,7 @@ function DuplikatPanel({ items }: { items: Duplikat[] }) {
                 <p className="text-muted-foreground truncate">
                   {d.namaProyek} · {d.balaiName}
                 </p>
-                <p className="text-amber-700 mt-0.5">{d.alasan}</p>
+                <p className="text-warn-ink mt-0.5">{d.alasan}</p>
               </div>
               <Button
                 size="sm"
@@ -341,7 +343,7 @@ function ErrorTable({
     <div>
       <div className="max-h-56 overflow-y-auto">
         <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-red-50">
+          <thead className="sticky top-0 bg-destructive/10">
             <tr>
               <th className="text-left p-2 font-medium">Baris</th>
               <th className="text-left p-2 font-medium">Proyek</th>
@@ -363,7 +365,7 @@ function ErrorTable({
                     {e.balaiName}
                   </td>
                 )}
-                <td className="p-2 text-red-600">{e.reason}</td>
+                <td className="p-2 text-destructive">{e.reason}</td>
               </tr>
             ))}
           </tbody>
@@ -631,7 +633,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border">
                   <FileSpreadsheet
                     size={18}
-                    className="text-green-600 shrink-0"
+                    className="text-ok shrink-0"
                   />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{file.name}</p>
@@ -665,7 +667,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   </p>
                 </div>
                 <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold text-green-600">
+                  <p className="text-2xl font-bold text-ok">
                     {preview.summary.totalProyekBaru}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -681,7 +683,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   </p>
                 </div>
                 <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold text-amber-600">
+                  <p className="text-2xl font-bold text-warn-ink">
                     {preview.summary.totalDuplikat}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -691,13 +693,27 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
               </div>
 
               {preview.info.length > 0 && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 flex gap-2.5">
-                  <Info size={15} className="text-blue-600 shrink-0 mt-0.5" />
-                  <ul className="text-xs text-blue-800 space-y-1">
+                <div className="rounded-lg border border-primary/30 bg-primary-soft p-3 flex gap-2.5">
+                  <Info size={15} className="text-primary-ink shrink-0 mt-0.5" />
+                  <ul className="text-xs text-primary-ink space-y-1">
                     {preview.info.map((t) => (
                       <li key={t}>{t}</li>
                     ))}
                   </ul>
+                </div>
+              )}
+
+              {preview.peringatanSaldo?.length > 0 && (
+                <div role="status" className="rounded-lg border border-warn/35 bg-warn/12 p-3 flex gap-2.5">
+                  <AlertTriangle size={15} className="text-warn-ink shrink-0 mt-0.5" />
+                  <div className="text-xs text-warn-ink space-y-1">
+                    <p className="font-semibold">Saldo kegiatan: data tetap bisa diimport</p>
+                    <ul className="space-y-1">
+                      {preview.peringatanSaldo.map((t) => (
+                        <li key={t}>{t}</li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               )}
 
@@ -710,29 +726,29 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
               )}
 
               {preview.summary.totalRowsError > 0 && (
-                <div className="rounded-lg border border-red-200 bg-red-50 overflow-hidden">
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 overflow-hidden">
                   <button
                     onClick={() => setShowParseErrors(!showParseErrors)}
-                    className="w-full flex items-center justify-between p-3 hover:bg-red-100/50 transition-colors"
+                    className="w-full flex items-center justify-between p-3 hover:bg-destructive/10 transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <AlertTriangle size={15} className="text-red-600" />
-                      <span className="text-sm font-medium text-red-700">
+                      <AlertTriangle size={15} className="text-destructive" />
+                      <span className="text-sm font-medium text-destructive">
                         {preview.summary.totalRowsError} baris tidak dapat
                         dibaca
                       </span>
                     </div>
-                    <span className="text-xs text-red-600 underline">
+                    <span className="text-xs text-destructive underline">
                       {showParseErrors ? "Tutup" : "Lihat detail"}
                     </span>
                   </button>
                   {showParseErrors && (
-                    <div className="border-t border-red-200 bg-white">
+                    <div className="border-t border-destructive/30 bg-white">
                       <ErrorTable
                         errors={preview.parseErrors}
                         showBalai={false}
                       />
-                      <div className="p-2 border-t border-red-200">
+                      <div className="p-2 border-t border-destructive/30">
                         <Button
                           size="sm"
                           variant="outline"
@@ -756,7 +772,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
               {preview.matched.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <CheckCircle2 size={14} className="text-green-600" />
+                    <CheckCircle2 size={14} className="text-ok" />
                     <p className="text-sm font-medium">
                       {preview.matched.length} Balai Cocok Otomatis
                     </p>
@@ -778,7 +794,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
               {preview.unmatched.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-3">
-                    <AlertCircle size={14} className="text-amber-600" />
+                    <AlertCircle size={14} className="text-warn-ink" />
                     <p className="text-sm font-medium">
                       {preview.unmatched.length} Balai Perlu Konfirmasi
                     </p>
@@ -839,13 +855,13 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
               <div className="text-center py-4 space-y-3">
                 <div
                   className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto ${
-                    result.skipped > 0 ? "bg-amber-100" : "bg-green-100"
+                    result.skipped > 0 ? "bg-warn/12" : "bg-ok/10"
                   }`}
                 >
                   {result.skipped > 0 ? (
-                    <AlertTriangle size={32} className="text-amber-600" />
+                    <AlertTriangle size={32} className="text-warn-ink" />
                   ) : (
-                    <CheckCircle2 size={32} className="text-green-600" />
+                    <CheckCircle2 size={32} className="text-ok" />
                   )}
                 </div>
                 <div>
@@ -863,13 +879,13 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
 
               <div className="grid grid-cols-4 gap-2.5">
                 <div className="rounded-lg border p-3 text-center">
-                  <p className="text-xl font-bold text-green-600">
+                  <p className="text-xl font-bold text-ok">
                     {result.createdProyek}
                   </p>
                   <p className="text-xs text-muted-foreground">Proyek Baru</p>
                 </div>
                 <div className="rounded-lg border p-3 text-center">
-                  <p className="text-xl font-bold text-blue-600">
+                  <p className="text-xl font-bold text-primary-ink">
                     {result.updatedProyek}
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -877,7 +893,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                   </p>
                 </div>
                 <div className="rounded-lg border p-3 text-center">
-                  <p className="text-xl font-bold text-amber-600">
+                  <p className="text-xl font-bold text-warn-ink">
                     {result.skippedDuplikat}
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -886,7 +902,7 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
                 </div>
                 <div className="rounded-lg border p-3 text-center">
                   <p
-                    className={`text-xl font-bold ${result.skipped > 0 ? "text-red-600" : "text-muted-foreground"}`}
+                    className={`text-xl font-bold ${result.skipped > 0 ? "text-destructive" : "text-muted-foreground"}`}
                   >
                     {result.skipped}
                   </p>
@@ -949,25 +965,25 @@ export function ImportExcelDialog({ open, onClose, onSuccess }: Props) {
               )}
 
               {result.skipped > 0 && (
-                <div className="rounded-lg border border-red-200 bg-red-50 overflow-hidden">
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 overflow-hidden">
                   <button
                     onClick={() => setShowCommitErrors(!showCommitErrors)}
-                    className="w-full flex items-center justify-between p-3 hover:bg-red-100/50 transition-colors"
+                    className="w-full flex items-center justify-between p-3 hover:bg-destructive/10 transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <AlertTriangle size={15} className="text-red-600" />
-                      <span className="text-sm font-medium text-red-700">
+                      <AlertTriangle size={15} className="text-destructive" />
+                      <span className="text-sm font-medium text-destructive">
                         Lihat {result.skipped} data error
                       </span>
                     </div>
-                    <span className="text-xs text-red-600 underline">
+                    <span className="text-xs text-destructive underline">
                       {showCommitErrors ? "Tutup" : "Lihat detail"}
                     </span>
                   </button>
                   {showCommitErrors && (
-                    <div className="border-t border-red-200 bg-white">
+                    <div className="border-t border-destructive/30 bg-white">
                       <ErrorTable errors={result.commitErrors} />
-                      <div className="p-2 border-t border-red-200">
+                      <div className="p-2 border-t border-destructive/30">
                         <Button
                           size="sm"
                           variant="outline"

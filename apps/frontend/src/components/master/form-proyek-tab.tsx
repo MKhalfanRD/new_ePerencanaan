@@ -159,7 +159,7 @@ function Switch({
       }}
       className={cn(
         "relative inline-flex h-5.5 w-10 shrink-0 items-center rounded-full transition-colors",
-        checked ? "bg-emerald-500" : "bg-muted-foreground/25",
+        checked ? "bg-ok" : "bg-muted-foreground/25",
         disabled && "cursor-not-allowed opacity-50",
       )}
     >
@@ -417,13 +417,13 @@ export function FormProyekTab({
     tab,
   ) =>
     tab?.isActive === false ? (
-      <p className="mb-4 rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+      <p className="mb-4 rounded-lg bg-warn/12 px-4 py-2.5 text-sm text-warn-ink">
         Tab ini sedang disembunyikan dari form.
       </p>
     ) : null;
 
   const renderAdminNote: ProyekFormAdminHandlers["note"] = (tabKey) => (
-    <p className="text-xs text-muted-foreground italic px-1 border-l-2 border-slate-300 py-1">
+    <p className="text-xs text-muted-foreground italic px-1 border-l-2 border-input py-1">
       {catatanTab(tabKey) ?? "Tidak ada pengaturan tambahan untuk bagian ini."}
     </p>
   );
@@ -635,7 +635,7 @@ export function FormProyekTab({
                   <span
                     className={cn(
                       "shrink-0 text-[11px]",
-                      r.anak.length ? "text-muted-foreground" : "text-amber-700",
+                      r.anak.length ? "text-muted-foreground" : "text-warn-ink",
                     )}
                   >
                     {r.anak.length || "belum ada"}
@@ -689,7 +689,7 @@ export function FormProyekTab({
       <div
         className={cn(
           "sticky top-0 z-10 -mx-5 space-y-1.5 border-b px-5 py-3 xl:-top-5",
-          merah ? "border-red-200 bg-red-50" : "bg-white",
+          merah ? "border-destructive/30 bg-destructive/10" : "bg-white",
         )}
       >
         <div className="flex items-center justify-between gap-2">
@@ -1040,7 +1040,7 @@ export function FormProyekTab({
             <Button
             size="icon"
             variant="ghost"
-            className="h-8 w-8 shrink-0 text-[#59636e]"
+            className="h-8 w-8 shrink-0 text-muted-foreground"
             title="Tutup"
             aria-label="Tutup pengaturan"
             onClick={() => {
@@ -1130,7 +1130,7 @@ export function FormProyekTab({
                   </p>
                 </div>
                 {!kategori ? (
-                  <p className="text-[11px] text-amber-700">
+                  <p className="text-[11px] text-warn-ink">
                     Belum ada field Kategori Proyek di tab Pemaketan.
                   </p>
                 ) : (
@@ -1273,7 +1273,7 @@ export function FormProyekTab({
             <Button
             size="icon"
             variant="ghost"
-            className="h-8 w-8 shrink-0 text-[#59636e]"
+            className="h-8 w-8 shrink-0 text-muted-foreground"
             title="Tutup"
             aria-label="Tutup pengaturan"
             onClick={() => {
@@ -1423,7 +1423,7 @@ export function FormProyekTab({
         </div>
 
         {induk && nilaiKondisi(item.conditionValue).length === 0 && (
-          <div className="space-y-2 rounded-md bg-amber-50 p-2.5 text-xs text-amber-900">
+          <div className="space-y-2 rounded-md bg-warn/12 p-2.5 text-xs text-warn-ink">
             <p>
               Field ini terhubung ke &quot;{induk.label}&quot; tapi belum ke
               pilihan mana pun, jadi tidak pernah muncul di form.
@@ -1516,7 +1516,7 @@ export function FormProyekTab({
                 {pilihSumber(cfg.penyebut, "penyebut")}
               </div>
               {cfg.pembilang && cfg.pembilang === cfg.penyebut && (
-                <p className="text-[11px] text-amber-700">Pembilang dan penyebut sama — hasilnya selalu 1.</p>
+                <p className="text-[11px] text-warn-ink">Pembilang dan penyebut sama — hasilnya selalu 1.</p>
               )}
               <div className="space-y-1.5">
                 <Label className="text-xs">Terpenuhi kalau hasil</Label>
@@ -1662,7 +1662,7 @@ export function FormProyekTab({
                   </SelectContent>
                 </Select>
                 {!item.optionParentKey && (
-                  <p className="text-[11px] text-amber-700">
+                  <p className="text-[11px] text-warn-ink">
                     {indukList.length
                       ? "Pilih field induknya — tanpa induk, pilihan di form akan kosong."
                       : "Belum ada field yang bisa jadi induk. Tambahkan dulu fieldnya, lalu pilih di sini."}
@@ -1898,7 +1898,7 @@ export function FormProyekTab({
               c.isActive === false && "opacity-40",
               editItemId === c.id
                 ? "border-primary ring-1 ring-primary/30"
-                : "border-[#d0d7de] hover:border-primary/60",
+                : "border-input hover:border-primary/60",
             )}
           >
             {item.fieldType === "CHECKBOX" &&
@@ -1917,7 +1917,7 @@ export function FormProyekTab({
                 &quot; {item.fieldType === "CHECKBOX" ? "dicentang" : "dipilih"}
               </p>
             ) : (
-              <p className="mb-1.5 text-[11px] font-semibold text-amber-800">
+              <p className="mb-1.5 text-[11px] font-semibold text-warn-ink">
                 ↳ Belum terhubung ke pilihan mana pun — field ini tidak muncul di form
               </p>
             )}
@@ -1964,8 +1964,8 @@ export function FormProyekTab({
               key={section.id}
               aria-label={`Bagian ${section.label}`}
               className={cn(
-                "space-y-3 rounded-[14px] bg-[#f6f8fa] p-4",
-                terpilih ? "border-2 border-primary" : "border border-[#d0d7de]",
+                "space-y-3 rounded-[14px] bg-tier-2 p-4",
+                terpilih ? "border-2 border-primary" : "border border-input",
               )}
             >
               <div className="flex items-center justify-between gap-3">
@@ -1996,7 +1996,7 @@ export function FormProyekTab({
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="h-8 w-8 shrink-0 text-[#59636e] hover:bg-white hover:text-foreground"
+                  className="h-8 w-8 shrink-0 text-muted-foreground hover:bg-white hover:text-foreground"
                   title="Atur bagian"
                   aria-label={`Atur bagian ${section.label}`}
                   onClick={() => {
@@ -2025,12 +2025,12 @@ export function FormProyekTab({
                       item.isActive === false && "opacity-50",
                       editItemId === item.id
                         ? "border-2 border-primary"
-                        : "border border-[#d0d7de] shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-primary/60",
+                        : "border border-input shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-primary/60",
                     )}
                   >
                     {/* Label tipe sebaris dengan judul field (pojok kanan
                         atas), bukan baris sendiri. */}
-                    <div className="pointer-events-none absolute right-4 top-4 z-10 flex items-center gap-1.5 bg-white pl-2 text-[11px] leading-5 text-[#59636e]">
+                    <div className="pointer-events-none absolute right-4 top-4 z-10 flex items-center gap-1.5 bg-white pl-2 text-[11px] leading-5 text-muted-foreground">
                       {item.isActive === false && (
                         <Badge variant="outline" className="text-[9px]">
                           Disembunyikan
@@ -2048,7 +2048,7 @@ export function FormProyekTab({
               <button
                 type="button"
                 onClick={() => bukaTambahField(section.id, tabKey)}
-                className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-[#b6bec8] text-sm font-semibold text-[#3d4752] transition-colors hover:border-primary/60 hover:bg-white hover:text-primary"
+                className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-input text-sm font-semibold text-foreground transition-colors hover:border-primary/60 hover:bg-white hover:text-primary"
               >
                 <Plus size={14} /> Tambah field
               </button>
@@ -2059,7 +2059,7 @@ export function FormProyekTab({
         <button
           type="button"
           onClick={() => setAddSectionTabId(tabId)}
-          className="flex h-14 w-full items-center justify-center gap-1.5 rounded-[14px] border-2 border-dashed border-[#b6bec8] text-sm font-semibold text-[#3d4752] transition-colors hover:border-primary/60 hover:bg-white hover:text-primary"
+          className="flex h-14 w-full items-center justify-center gap-1.5 rounded-[14px] border-2 border-dashed border-input text-sm font-semibold text-foreground transition-colors hover:border-primary/60 hover:bg-white hover:text-primary"
         >
           <Plus size={15} /> Tambah bagian
         </button>
@@ -2104,7 +2104,7 @@ export function FormProyekTab({
         <div
           role="group"
           aria-label="Mode kanvas"
-          className="flex rounded-lg border border-[#d0d7de] bg-[#eef0f3] p-1"
+          className="flex rounded-lg border border-input bg-tier-1 p-1"
         >
           {(
             [
@@ -2146,9 +2146,9 @@ export function FormProyekTab({
       </div>
 
       {kegiatanId && templateKosong && (
-        <div className="mx-auto max-w-xl rounded-[14px] border border-[#d0d7de] bg-white px-8 py-10 text-center shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <div className="mx-auto max-w-xl rounded-[14px] border border-input bg-white px-8 py-10 text-center shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
           <p className="text-lg font-bold">Kegiatan ini belum punya Form Proyek</p>
-          <p className="mt-2 text-sm text-[#59636e]">
+          <p className="mt-2 text-sm text-muted-foreground">
             Cara tercepat: salin form dari kegiatan lain yang sudah lengkap,
             lalu sesuaikan field, pilihan, dan bobotnya di sini.
           </p>
@@ -2199,7 +2199,7 @@ export function FormProyekTab({
           </div>
           <aside
             aria-label="Pengaturan field"
-            className="w-full rounded-[14px] border border-[#d0d7de] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:w-[400px] xl:shrink-0 xl:overflow-y-auto">
+            className="w-full rounded-[14px] border border-input bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:w-[400px] xl:shrink-0 xl:overflow-y-auto">
             {renderPanel()}
           </aside>
         </div>

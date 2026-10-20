@@ -196,7 +196,6 @@ export class CreateProyekDto {
   catatanSspsda?: string;
 
   // Pemaketan: saldo (kosong = tanpa batas) & izin satker ubah paket.
-  @ApiPropertyOptional() @IsOptional() @IsNumber() saldoAnggaran?: number | null;
   @ApiPropertyOptional() @IsOptional() @IsNumber() saldoVolumeRo?: number | null;
   @ApiPropertyOptional() @IsOptional() @IsNumber() saldoVolumeIro?: number | null;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() satkerBolehUbahPaket?: boolean;

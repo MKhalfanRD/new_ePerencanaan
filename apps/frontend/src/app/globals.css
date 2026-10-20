@@ -7,20 +7,37 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* Disamakan dengan stack font di mockup-redesign-planning.html:
-     -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica,
-     Arial, sans-serif. `--font-inter` (dari next/font, lihat layout.tsx)
-     ditaruh paling depan supaya Inter selalu konsisten ter-load di semua
-     OS/browser, baru diikuti fallback sistem yang sama seperti mockup.
-     (Sebelumnya `--font-sans: var(--font-sans)` — referensi ke dirinya
-     sendiri, nilai jadi invalid dan browser diam-diam jatuh ke font
-     default, bukan Geist seperti niat awal.) */
+  /* Arah C (hi-fi disetujui 20 Okt 2026): Instrument Sans + Geist Mono,
+     di-load lewat next/font di layout.tsx. */
   --font-sans:
-    var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Inter,
+    var(--font-instrument), -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, Helvetica, Arial, sans-serif;
-  /* Mockup tidak memuat font mono kustom — kode-chip/proj-code pakai
-     monospace bawaan sistem, jadi disamakan begitu saja tanpa webfont. */
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Token tambahan Arah C — dipakai sbg kelas Tailwind (bg-tier-1,
+     text-primary-ink, bg-sd-rm, text-st-draft-ink, dst). */
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-ink: var(--primary-ink);
+  --color-tier-1: var(--tier-1);
+  --color-tier-2: var(--tier-2);
+  --color-ok: var(--ok);
+  --color-info: var(--info);
+  --color-warn: var(--warn);
+  /* Sumber dana (palet tervalidasi, bisa dibedakan buta warna). */
+  --color-sd-rm: #c0571e;
+  --color-sd-rmp: #1b589e;
+  --color-sd-pln: #b68b16;
+  --color-sd-sbsn: #00906f;
+  --color-sd-kpbu: #8a428e;
+  /* Status proyek: titik = warna dasar, teks = versi gelap (kontras >= 4,5). */
+  --color-st-draft: #8a847f;
+  --color-st-diajukan: #5759a6;
+  --color-st-dikembalikan: #b63132;
+  --color-st-disetujui: #2e7c35;
+  --color-st-draft-ink: color-mix(in oklch, #8a847f 70%, black);
+  --color-st-diajukan-ink: color-mix(in oklch, #5759a6 80%, black);
+  --color-st-dikembalikan-ink: color-mix(in oklch, #b63132 85%, black);
+  --color-st-disetujui-ink: color-mix(in oklch, #2e7c35 85%, black);
+  --color-warn-ink: color-mix(in oklch, #b68b16 65%, black);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -61,38 +78,46 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.546 0.245 262.881);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Arah C: putih hangat, aksen oranye bata. Satu aksen saja (DESIGN.md). */
+  --background: #fcfbfa;
+  --foreground: #231f1c;
+  --card: #ffffff;
+  --card-foreground: #231f1c;
+  --popover: #ffffff;
+  --popover-foreground: #231f1c;
+  --primary: #b24b0a;
+  --primary-foreground: #ffffff;
+  --primary-soft: #fff1e8;
+  --primary-ink: #8f3c08;
+  --secondary: #f6f3f0;
+  --secondary-foreground: #231f1c;
+  --muted: #f6f3f0;
+  --muted-foreground: #6b655f;
+  --accent: #f6f3f0;
+  --accent-foreground: #231f1c;
+  --destructive: #b63132;
+  --border: #ebe7e3;
+  --input: #dcd6d0;
+  --ring: #c0571e;
+  --tier-1: #f6f3f0;
+  --tier-2: #faf8f6;
+  --ok: #2e7c35;
+  --info: #5759a6;
+  --warn: #b68b16;
+  --chart-1: #c0571e;
+  --chart-2: #1b589e;
+  --chart-3: #b68b16;
+  --chart-4: #00906f;
+  --chart-5: #8a428e;
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.546 0.245 262.881);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #ffffff;
+  --sidebar-foreground: #231f1c;
+  --sidebar-primary: #b24b0a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #fff1e8;
+  --sidebar-accent-foreground: #8f3c08;
+  --sidebar-border: #ebe7e3;
+  --sidebar-ring: #c0571e;
 }
 
 .dark {

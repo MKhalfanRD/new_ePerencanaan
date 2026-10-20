@@ -636,11 +636,14 @@ export function ProyekDetailSheet({
         tahunMin={proyek.periode?.startYear}
         tahunMax={proyek.periode?.endYear}
         saldo={{
-          anggaran: proyek.saldoAnggaran == null ? null : Number(proyek.saldoAnggaran),
           volumeRo: proyek.saldoVolumeRo == null ? null : Number(proyek.saldoVolumeRo),
           volumeIro: proyek.saldoVolumeIro == null ? null : Number(proyek.saldoVolumeIro),
         }}
         paketLain={paket.filter((x) => x.id !== editPaket?.id).flatMap(ringkasPaketServer)}
+        proyekId={proyek.id}
+        alokasiLain={paket
+          .filter((x) => x.id !== editPaket?.id)
+          .flatMap((x) => (x.alokasi ?? []).filter((a) => a.status === "RENCANA"))}
         breadcrumb={[
           { label: "Daftar Proyek", onClick: onClose },
           { label: proyek.projectName || "Proyek", onClick: () => setShowPaketForm(false) },

@@ -151,20 +151,19 @@ export async function ringkasIsian(
 
 const angka = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 4 });
 
-/** Total paket tidak boleh melebihi saldo proyek (saldo kosong = tanpa batas).
- * Anggaran = semua paket; volume = paket berkomponen UTAMA. */
+/** Volume paket berkomponen UTAMA tidak boleh melebihi saldo volume proyek
+ * (kosong = tanpa batas). Saldo ANGGARAN per kegiatan — lihat saldo-kegiatan/saldo.ts. */
 export function cekSaldo(
-  saldo: { saldoAnggaran?: unknown; saldoVolumeRo?: unknown; saldoVolumeIro?: unknown },
+  saldo: { saldoVolumeRo?: unknown; saldoVolumeIro?: unknown },
   paket: PaketRingkas[],
 ) {
   const r = ringkasPaket(paket);
   const lebih: string[] = [];
-  const cek = (nama: string, dipakai: number, batas: unknown, rp = false) => {
+  const cek = (nama: string, dipakai: number, batas: unknown) => {
     if (batas == null || batas === '') return;
     if (dipakai > Number(batas) + 1e-9)
-      lebih.push(`${nama} ${rp ? 'Rp ' : ''}${angka(dipakai)} melebihi saldo ${rp ? 'Rp ' : ''}${angka(Number(batas))}`);
+      lebih.push(`${nama} ${angka(dipakai)} melebihi saldo ${angka(Number(batas))}`);
   };
-  cek('Total anggaran paket', r.A, saldo.saldoAnggaran, true);
   cek('Total volume RO', r.B, saldo.saldoVolumeRo);
   cek('Total volume IRO', r.C, saldo.saldoVolumeIro);
   if (lebih.length) throw new BadRequestException(lebih.join('; '));

@@ -301,8 +301,8 @@ function UsersPageInner() {
                       size="icon"
                       className={`h-8 w-8 ${
                         u.status === "ACTIVE"
-                          ? "text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                          : "text-green-600 hover:text-green-700 hover:bg-green-50"
+                          ? "text-warn-ink hover:text-warn-ink hover:bg-warn/12"
+                          : "text-ok hover:text-ok hover:bg-ok/10"
                       }`}
                       onClick={() => handleToggleStatus(u)}
                       disabled={u.id === currentUser?.id}

@@ -243,6 +243,7 @@ model Kegiatan {
   kategoriProyek  KategoriProyek[]
   balai           Balai[]
   proyek          Proyek[]
+  saldo           SaldoKegiatan[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -911,9 +912,9 @@ model Proyek {
   status  StatusProyek @default(DRAFT)
   catatan String?      @db.Text
 
-  // === PEMAKETAN === saldo diisi user; total paket tidak boleh melebihi.
-  // Anggaran = semua paket; volume = paket berkomponen UTAMA saja.
-  saldoAnggaran  Decimal? @db.Decimal(16, 0)
+  // === PEMAKETAN === saldo volume diisi user; total volume paket berkomponen
+  // UTAMA tidak boleh melebihi. Saldo ANGGARAN per kegiatan per tahun — lihat
+  // SaldoKegiatan.
   saldoVolumeRo  Decimal? @db.Decimal(14, 4)
   saldoVolumeIro Decimal? @db.Decimal(14, 4)
   // Akun Satker boleh menambah/mengubah paket proyek ini (diatur pusat/Balai).
@@ -1137,4 +1138,28 @@ model HistoriAlokasi {
   changedBy String   @db.VarChar(150)
 
   @@map("histori_alokasi")
+}
+
+/// Saldo anggaran kegiatan per tahun, ditetapkan Admin/Super Admin. Semua
+/// balai di kegiatan itu berbagi saldo ini. `total` wajib; pecahan per sumber
+/// dana opsional (null = tidak dipecah, cukup dicek terhadap total).
+model SaldoKegiatan {
+  id         String   @id @default(cuid())
+  kegiatanId String   @db.VarChar(10)
+  kegiatan   Kegiatan @relation(fields: [kegiatanId], references: [id], onDelete: Cascade)
+  tahun      Int      @db.SmallInt
+  total      Decimal  @db.Decimal(16, 0)
+  rm         Decimal? @db.Decimal(16, 0)
+  rmp        Decimal? @db.Decimal(16, 0)
+  pln        Decimal? @db.Decimal(16, 0)
+  sbsn       Decimal? @db.Decimal(16, 0)
+  kpbu       Decimal? @db.Decimal(16, 0)
+  // Alasan perubahan terakhir (riwayatnya di activity_logs).
+  alasan     String?  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([kegiatanId, tahun])
+  @@map("saldo_kegiatan")
 }

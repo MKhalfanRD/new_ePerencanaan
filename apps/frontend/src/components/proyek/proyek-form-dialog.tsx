@@ -52,6 +52,7 @@ import {
   type PaketIsian,
 } from "./paket-template";
 import { AngkaInput, PaketDialog, statusSaldo, teksAngka } from "./paket-dialog";
+import { RingkasSaldoProyek } from "@/components/anggaran/saldo-kegiatan";
 import { formatRupiah } from "@/lib/format-rupiah";
 import { useAuthStore } from "@/store/auth";
 import { cn } from "@/lib/utils";
@@ -203,7 +204,6 @@ const schema = z.object({
   // Tab 4: Pemaketan — saldo & izin satker milik proyek. Daftar paket
   // (PaketIsian) cuma dipakai saat buat proyek baru; proyek yang sudah ada
   // menyimpan paket langsung lewat /paket.
-  saldoAnggaran: z.number().nullable().optional(),
   saldoVolumeRo: z.number().nullable().optional(),
   saldoVolumeIro: z.number().nullable().optional(),
   satkerBolehUbahPaket: z.boolean(),
@@ -313,7 +313,6 @@ const FIELD_TO_TAB: Record<string, (typeof TABS)[number]["value"]> = {
   kebutuhanTanah: "kriteria",
   kewenangan: "kriteria",
   paket: "pemaketan",
-  saldoAnggaran: "pemaketan",
   saldoVolumeRo: "pemaketan",
   saldoVolumeIro: "pemaketan",
   satkerBolehUbahPaket: "pemaketan",
@@ -599,7 +598,6 @@ export function ProyekFormDialog({
         kebutuhanTanah: editData.kebutuhanTanah,
         kewenangan: editData.kewenangan,
         paket: [],
-        saldoAnggaran: angkaAtauNull(editData.saldoAnggaran),
         saldoVolumeRo: angkaAtauNull(editData.saldoVolumeRo),
         saldoVolumeIro: angkaAtauNull(editData.saldoVolumeIro),
         satkerBolehUbahPaket: editData.satkerBolehUbahPaket ?? true,
@@ -1889,7 +1887,6 @@ export function ProyekFormDialog({
   const ringkasPerPaket = daftarPaket.map((pk) => ringkasIsianPaket(pk, roList, komponenList));
   const ringkasDaftar = ringkasPerPaket.flat();
   const saldoForm = {
-    anggaran: watch("saldoAnggaran"),
     volumeRo: watch("saldoVolumeRo"),
     volumeIro: watch("saldoVolumeIro"),
   };
@@ -1956,7 +1953,7 @@ export function ProyekFormDialog({
   // Saldo: input angka + "Dipakai … · sisa …" (anggaran semua paket, volume
   // paket berkomponen utama).
   const saldoRenderer =
-    (field: "saldoAnggaran" | "saldoVolumeRo" | "saldoVolumeIro", rp: boolean, huruf: "A" | "B" | "C") =>
+    (field: "saldoVolumeRo" | "saldoVolumeIro", rp: boolean, huruf: "B" | "C") =>
     (item: FormItemNode) => {
       const dipakai = ringkasPaket(ringkasDaftar)[huruf];
       const batas = watch(field);
@@ -2003,7 +2000,6 @@ export function ProyekFormDialog({
     };
 
   const pemaketanRenderers: Record<string, (item: FormItemNode) => React.ReactNode> = {
-    saldoAnggaran: saldoRenderer("saldoAnggaran", true, "A"),
     saldoVolumeRo: saldoRenderer("saldoVolumeRo", false, "B"),
     saldoVolumeIro: saldoRenderer("saldoVolumeIro", false, "C"),
     satkerBolehUbahPaket: (item) => (
@@ -2473,7 +2469,7 @@ export function ProyekFormDialog({
           </div>
         ) : perluPilihKegiatan ? (
           <div className="px-6 py-10">
-            <div className="mx-auto max-w-lg space-y-4 rounded-[14px] border border-[#d0d7de] bg-white p-6">
+            <div className="mx-auto max-w-lg space-y-4 rounded-[14px] border border-input bg-white p-6">
               <div className="space-y-1">
                 <p className="text-base font-bold">Pilih kegiatan untuk memulai</p>
                 <p className="text-sm text-muted-foreground">
@@ -2522,18 +2518,18 @@ export function ProyekFormDialog({
             className={cn("flex-1 min-h-0", embedded && "flex-none")}
           >
             <div className={cn("pt-2", adminMode ? "px-0" : "px-6")}>
-              <TabsList className="h-auto w-full flex-wrap justify-start gap-0 rounded-[12px] border border-[#d0d7de] bg-white p-0 px-2">
+              <TabsList className="h-auto w-full flex-wrap justify-start gap-0 rounded-[12px] border border-input bg-white p-0 px-2">
                 {visibleTabs.map((t) => (
                   <TabsTrigger
                     key={t.value}
                     value={t.value}
                     className={cn(
-                      "h-11 flex-none gap-1.5 rounded-none border-0 border-b-[3px] border-transparent px-3.5 text-sm font-medium text-[#3d4752] shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:font-bold data-[state=active]:text-primary data-[state=active]:shadow-none",
+                      "h-11 flex-none gap-1.5 rounded-none border-0 border-b-[3px] border-transparent px-3.5 text-sm font-medium text-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:font-bold data-[state=active]:text-primary data-[state=active]:shadow-none",
                       adminMode && !isTabActive(t.value) && "opacity-50",
                     )}
                   >
                     {!adminMode && !isEdit && !previewMode && visitedTabs.has(t.value) && (
-                      <span aria-label="sudah dibuka" className="text-emerald-600">✓</span>
+                      <span aria-label="sudah dibuka" className="text-ok">✓</span>
                     )}
                     {tabHeader(t.value).title}
                     {adminMode && !isTabActive(t.value) && (
@@ -2641,7 +2637,16 @@ export function ProyekFormDialog({
                 ) : (
                   // Akun Satker: saldo, kategori & paket cuma bisa diisi kalau
                   // saklar izin dari pusat/Balai menyala.
-                  <fieldset disabled={!bolehUbahPaket} className="m-0 min-w-0 border-0 p-0">
+                  <fieldset disabled={!bolehUbahPaket} className="m-0 min-w-0 space-y-4 border-0 p-0">
+                    {selectedKegiatanId && (
+                      <RingkasSaldoProyek
+                        kegiatanId={selectedKegiatanId}
+                        dari={periodeForm?.startYear}
+                        sampai={periodeForm?.endYear}
+                        proyekId={editData?.id}
+                        alokasi={daftarPaket.flatMap((pk) => pk.alokasi)}
+                      />
+                    )}
                     {renderTemplatedTab(
                       "pemaketan",
                       pemaketanRenderers,
@@ -2664,6 +2669,8 @@ export function ProyekFormDialog({
                     tahunMax={periodeForm?.endYear}
                     saldo={saldoForm}
                     paketLain={ringkasPerPaket.filter((_, i) => i !== paketEdit?.idx).flat()}
+                    proyekId={editData?.id}
+                    alokasiLain={daftarPaket.filter((_, i) => i !== paketEdit?.idx).flatMap((pk) => pk.alokasi)}
                     breadcrumb={[
                       { label: watch("projectName") || "Proyek baru", onClick: () => setPaketEdit(null) },
                       { label: paketEdit?.idx != null ? "Edit paket" : "Tambah paket" },
@@ -2754,7 +2761,7 @@ export function ProyekFormDialog({
                                     <td className="px-3 py-2 whitespace-nowrap">
                                       {info.syarat || "—"}{" "}
                                       {"teks" in info && (lolos ? (
-                                        <span className="text-emerald-600">✓</span>
+                                        <span className="text-ok">✓</span>
                                       ) : (
                                         <span className="text-destructive">✗</span>
                                       ))}

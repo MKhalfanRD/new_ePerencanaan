@@ -12,7 +12,6 @@ const SALDO: Baku[] = [
   // Saklar izin satker paling atas: menentukan satker boleh mengisi saldo,
   // kategori & paket.
   ['satkerBolehUbahPaket', 'Satker boleh membuat & mengubah paket', 'CHECKBOX'],
-  ['saldoAnggaran', 'Saldo anggaran', 'NUMBER'],
   ['saldoVolumeRo', 'Saldo volume RO', 'NUMBER'],
   ['saldoVolumeIro', 'Saldo volume IRO', 'NUMBER'],
 ];

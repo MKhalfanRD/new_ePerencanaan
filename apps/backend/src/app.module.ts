@@ -15,6 +15,7 @@ import { PaketModule } from './paket/paket.module';
 import { ImportModule } from './import/import.module';
 import { WilayahModule } from './wilayah/wilayah.module';
 import { ActivityLogModule } from './activity-log/activity-log.module';
+import { SaldoKegiatanModule } from './saldo-kegiatan/saldo-kegiatan.module';
 import { ActivityLogInterceptor } from './activity-log/activity-log.interceptor';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 
@@ -32,6 +33,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
     ImportModule,
     WilayahModule,
     ActivityLogModule,
+    SaldoKegiatanModule,
   ],
   controllers: [AppController],
   providers: [

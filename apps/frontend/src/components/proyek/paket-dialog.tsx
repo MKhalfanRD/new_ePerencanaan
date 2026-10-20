@@ -43,6 +43,14 @@ import api from "@/lib/api";
 import type { Komponen, RO } from "@/types";
 import type { FormItemNode } from "./proyek-form-dialog";
 import {
+  BarSaldo,
+  TahunTerkunci,
+  danaTahun,
+  hitungSaldo,
+  useSaldoKegiatan,
+  type BarisDana,
+} from "@/components/anggaran/saldo-kegiatan";
+import {
   PAKET_BAKU_KEYS,
   PaketLabel,
   SUMBER_DANA,
@@ -104,8 +112,8 @@ export function AngkaInput({
   );
 }
 
+/** Saldo VOLUME per proyek. Saldo anggaran per kegiatan — lihat components/anggaran/saldo-kegiatan. */
 export interface SaldoProyek {
-  anggaran?: number | null;
   volumeRo?: number | null;
   volumeIro?: number | null;
 }
@@ -114,7 +122,6 @@ export interface SaldoProyek {
 export function statusSaldo(saldo: SaldoProyek, paket: PaketRingkas[]) {
   const r = ringkasPaket(paket);
   return [
-    { nama: "Anggaran", dipakai: r.A, batas: saldo.anggaran, rp: true },
     { nama: "Volume RO", dipakai: r.B, batas: saldo.volumeRo, rp: false },
     { nama: "Volume IRO", dipakai: r.C, batas: saldo.volumeIro, rp: false },
   ]
@@ -163,7 +170,7 @@ function JenisBadge({ jenis }: { jenis?: string }) {
     <span
       className={cn(
         "shrink-0 rounded-full px-1.5 py-px text-[10px] font-semibold",
-        pendukung ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800",
+        pendukung ? "bg-warn/12 text-warn-ink" : "bg-ok/10 text-ok",
       )}
     >
       {pendukung ? "pendukung" : "utama"}
@@ -192,6 +199,8 @@ export function PaketDialog({
   tahunMax,
   saldo,
   paketLain,
+  proyekId,
+  alokasiLain = [],
   breadcrumb,
 }: {
   open: boolean;
@@ -207,8 +216,12 @@ export function PaketDialog({
   tahunMin?: number;
   tahunMax?: number;
   saldo: SaldoProyek;
-  /** Ringkasan paket lain di proyek ini (utk sisa saldo). */
+  /** Ringkasan paket lain di proyek ini (utk sisa saldo volume). */
   paketLain: PaketRingkas[];
+  /** Proyek tersimpan (pemakaiannya di server tidak dihitung; paketnya dijumlah dari form). */
+  proyekId?: string;
+  /** Alokasi paket lain di proyek ini — bagian "lain" saldo kegiatan. */
+  alokasiLain?: BarisDana[];
   breadcrumb?: { label: string; onClick?: () => void }[];
 }) {
   const [p, setP] = useState<PaketIsian>(paketKosong(satkerTerkunci));
@@ -299,7 +312,19 @@ export function PaketDialog({
     ...paketLain,
     ...ringkasIsianPaket(p, roList, komponenList),
   ]);
-  const lebihSaldo = status.some((s) => s.lebih);
+  // Saldo anggaran kegiatan per tahun: lain = kegiatan di luar proyek ini +
+  // paket lain proyek ini; ditolak hanya kalau paket ini menambah pemakaian.
+  const saldoKeg = useSaldoKegiatan(kegiatanId, tahunList[0], tahunList[tahunList.length - 1], proyekId, open);
+  const saldoTahun = (t: number) => saldoKeg?.find((s) => s.tahun === t);
+  const terkunci = (t: number) => !!saldoKeg && !saldoTahun(t)?.saldo;
+  const barisSaldo = (t: number) => {
+    const s = saldoTahun(t);
+    const lain = danaTahun(alokasiLain, t);
+    for (const k of Object.keys(lain) as (keyof typeof lain)[]) lain[k] += s?.terpakai[k] ?? 0;
+    return hitungSaldo(s, lain, danaTahun(p.alokasi, t), danaTahun(value?.alokasi ?? [], t));
+  };
+  const tahunLebih = rentang.filter((t) => barisSaldo(t)?.some((b) => b.lebih));
+  const lebihSaldo = status.some((s) => s.lebih) || tahunLebih.length > 0;
 
   const ubahBaris = (tahun: number, patch: Partial<BarisTahun>) =>
     setP((cur) => {
@@ -566,14 +591,19 @@ export function PaketDialog({
                 const komp = komponenRo.find((k) => k.id === a.komponenId);
                 const tampil = sumberTahun[t] ?? ["rm"];
                 const sisa = SUMBER_DANA.filter((k) => !tampil.includes(k));
+                const kunci = terkunci(t);
+                const bar = kunci ? null : barisSaldo(t);
                 return (
-                  <div key={t} className="space-y-2 border-b px-3 py-3 last:border-b-0">
+                  <div key={t} className={cn("space-y-2 border-b px-3 py-3 last:border-b-0", kunci && "bg-tier-2")}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold">{t}</span>
                       <span className="text-xs tabular-nums text-muted-foreground">
                         {formatRupiah(totalAlokasi(a))}
                       </span>
                     </div>
+                    {kunci && kegiatanId && <TahunTerkunci kegiatanId={kegiatanId} tahun={t} />}
+                    {/* Tahun terkunci: isian lama tetap tersimpan, tidak bisa diubah. */}
+                    <fieldset disabled={kunci} className={cn("space-y-2", kunci && "opacity-50")}>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_9.5rem_9.5rem]">
                       <Select
                         value={a.komponenId || undefined}
@@ -672,6 +702,8 @@ export function PaketDialog({
                         </Select>
                       )}
                     </div>
+                    </fieldset>
+                    {bar && <BarSaldo baris={bar} />}
                   </div>
                 );
               })}
@@ -751,10 +783,15 @@ export function PaketDialog({
         if (isRequiredPaketItem(i) && i.fieldType !== "UPLOAD" && !terisi(p, i.key))
           return toast.error(`Lengkapi "${i.label}"`);
     // Tiap tahun wajib 1 komponen (penentu utama/pendukung di Valuasi).
-    const tanpaKomponen = rentang.find((t) => !p.alokasi.find((a) => a.tahun === t)?.komponenId);
+    const tanpaKomponen = rentang.find((t) => {
+      const a = p.alokasi.find((x) => x.tahun === t);
+      // Tahun terkunci tanpa isian lama memang dibiarkan kosong.
+      return !(terkunci(t) && !a) && !a?.komponenId;
+    });
     if (p.roId && komponenRo.length && tanpaKomponen)
       return toast.error(`Pilih komponen tahun ${tanpaKomponen}`);
-    if (lebihSaldo) return toast.error("Paket melebihi saldo proyek");
+    if (tahunLebih.length) return toast.error(`Alokasi ${tahunLebih.join(", ")} melebihi saldo kegiatan`);
+    if (lebihSaldo) return toast.error("Volume paket melebihi saldo proyek");
     setSaving(true);
     try {
       await onSave({ ...p, alokasi: alokasiDalamRentang(p) });
@@ -791,7 +828,7 @@ export function PaketDialog({
                     }
                     className={cn(
                       "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs",
-                      ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "bg-background",
+                      ok ? "border-ok/30 bg-ok/10 text-ok" : "bg-background",
                     )}
                   >
                     {ok && <Check size={11} />}
@@ -823,7 +860,7 @@ export function PaketDialog({
                   <span
                     className={cn(
                       "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                      ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700",
+                      ok ? "bg-ok/10 text-ok" : "bg-warn/12 text-warn-ink",
                     )}
                   >
                     {ok ? "✓ Lengkap" : "Belum lengkap"}

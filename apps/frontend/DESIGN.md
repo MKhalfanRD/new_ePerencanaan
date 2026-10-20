@@ -13,11 +13,27 @@ seperlunya. Tampilan harus "menghilang" di balik pekerjaan.
 
 ## Warna
 
-- **Hemat warna.** Dasarnya netral (putih, abu-abu bertingkat), ditambah **satu
-  aksen** (`primary` biru). Aksen hanya untuk aksi utama, pilihan aktif, dan
-  penanda status, bukan untuk hiasan.
-- Warna semantik dipakai seragam: sukses, peringatan, error, info,
-  nonaktif.
+Arah visual: **Arah C** (hi-fi disetujui 20 Okt 2026, kanvas desain
+"Desain Tabel Proyek ePerencanaan"). Semua warna lewat token di
+`src/app/globals.css`; jangan menulis hex atau palet Tailwind (`blue-600`,
+`emerald-50`, dst.) langsung di komponen.
+
+- **Dasar:** latar putih hangat `background` (#fcfbfa), kartu putih `card`,
+  teks `foreground` (#231f1c), teks redup `muted-foreground` (#6b655f),
+  garis `border` (#ebe7e3) / `input` (#dcd6d0). Latar bertingkat: `tier-1`
+  (#f6f3f0, paling gelap) dan `tier-2` (#faf8f6).
+- **Satu aksen:** `primary` oranye bata (#b24b0a), versi lembut `primary-soft`
+  (#fff1e8) untuk pilihan aktif, teks di atasnya `primary-ink` (#8f3c08).
+  Aksen hanya untuk aksi utama, pilihan aktif, dan penanda status, bukan hiasan.
+  Satu layar idealnya satu tombol `primary`.
+- **Semantik:** `ok` (#2e7c35), `destructive` (#b63132), `warn` (#b68b16, teks
+  pakai `warn-ink`), `info` (#5759a6).
+- **Status proyek:** `st-draft`, `st-diajukan`, `st-dikembalikan`,
+  `st-disetujui` (titik/bar) dan `st-*-ink` (teks pill). Lewat `Badge
+  variant="dot"` + `status-config.ts`.
+- **Sumber dana** (tervalidasi untuk buta warna, selalu urutan ini):
+  `sd-rm` #c0571e, `sd-rmp` #1b589e, `sd-pln` #b68b16, `sd-sbsn` #00906f,
+  `sd-kpbu` #8a428e. Warna sumber dana selalu disertai labelnya.
 - **Jangan** memberi garis warna tebal di tepi kiri kartu atau baris sebagai
   hiasan. Garis tepi hanya boleh kalau menandai status nyata (mis. baris yang
   sedang dipilih).
@@ -26,12 +42,13 @@ seperlunya. Tampilan harus "menghilang" di balik pekerjaan.
 
 ## Tipografi
 
-- Satu keluarga huruf untuk semuanya. Hierarki dibangun dari **ukuran dan
-  ketebalan**, bukan dari ganti font atau warna.
+- **Instrument Sans** untuk semua teks, **Geist Mono** hanya untuk kode/ID
+  (dimuat lewat `next/font` di `layout.tsx`). Hierarki dibangun dari **ukuran
+  dan ketebalan**, bukan dari ganti font atau warna.
 - Skala rapat (rasio sekitar 1,125–1,2). Label memakai huruf biasa (sentence case),
   hindari label kecil berhuruf kapital semua sebagai hiasan.
 - Kolom angka: `tabular-nums`, rata kanan, format lewat `Intl.NumberFormat`.
-- Monospace hanya untuk kode/ID (kode proyek, kode RO), bukan untuk gaya.
+- Monospace (Geist Mono) hanya untuk kode/ID (kode proyek, kode RO), bukan untuk gaya.
 - Teks panjang: `truncate` + `title`, `min-w-0` di anak flex.
 
 ## Tabel dan data berjenjang

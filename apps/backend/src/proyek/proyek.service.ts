@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { unlink } from 'fs/promises';
 import { join } from 'path';
 
+import { cekSaldoKegiatan } from '../saldo-kegiatan/saldo';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreateProyekDto } from './dto/create-proyek.dto';
@@ -415,6 +416,7 @@ export class ProyekService {
       // Anggaran semua paket, volume paket UTAMA — rasio Valuasi & saldo.
       const ringkasan = (await Promise.all((dto.paket ?? []).map((p) => ringkasIsian(tx, p)))).flat();
       cekSaldo(dto, ringkasan);
+      await cekSaldoKegiatan(tx, kegiatanId, [], (dto.paket ?? []).flatMap((p) => p.alokasi ?? []));
       const paketSekarang = ringkasPaket(ringkasan);
       const { skorEvaluasi, formValueCreates } = await this.hitungEvaluasi(
         tx,
@@ -469,7 +471,6 @@ export class ProyekService {
           catatanSspsda: dto.catatanSspsda,
           status: 'APPROVED',
           createdById: userId,
-          saldoAnggaran: dto.saldoAnggaran,
           saldoVolumeRo: dto.saldoVolumeRo,
           saldoVolumeIro: dto.saldoVolumeIro,
           satkerBolehUbahPaket: izinSatker(user, dto.satkerBolehUbahPaket),
@@ -770,7 +771,6 @@ export class ProyekService {
         ...(izinSatker(user, true) === undefined && !proyek.satkerBolehUbahPaket
           ? {}
           : {
-              saldoAnggaran: dto.saldoAnggaran,
               saldoVolumeRo: dto.saldoVolumeRo,
               saldoVolumeIro: dto.saldoVolumeIro,
             }),

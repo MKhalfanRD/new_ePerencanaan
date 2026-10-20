@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { Prisma } from '@prisma/client';
+import { BarisDana, SUMBER, Sumber, jumlahPerTahun, pemakaianKegiatan } from '../saldo-kegiatan/saldo';
 import { PrismaService } from '../prisma/prisma.service';
 import { CommitImportDto } from './dto/import.dto';
 import { changesForCreate } from '../activity-log/activity-log.util';
@@ -820,6 +821,12 @@ export class ImportService {
       }))
       .filter((d) => d.paket.length > 0);
 
+    const peringatanSaldo = await this.peringatanSaldo(
+      rencana.flatMap(({ grup, paket }) =>
+        paket.flatMap((p) => p.rows.map((row) => ({ ...row, kdKegiatan: grup[0].kdKegiatan }))),
+      ),
+    );
+
     const sessionId = `import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     importSessions.set(sessionId, {
       rows: parsedRows,
@@ -846,10 +853,44 @@ export class ImportService {
       duplikat,
       parseErrors,
       info,
+      peringatanSaldo,
       rencana: daftarRencana,
       // Hanya admin yang boleh menambah balai ke master lewat import.
       bolehBuatBalai: lintasUnit(user),
     };
+  }
+
+  /**
+   * Import tetap boleh masuk walau melebihi saldo kegiatan / jatuh di tahun
+   * tanpa saldo (keputusan 20 Okt 2026) — preview cukup memperingatkan.
+   */
+  private async peringatanSaldo(baris: (BarisDana & { kdKegiatan: string })[]): Promise<string[]> {
+    const rp = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
+    const hasil: string[] = [];
+    for (const kegiatanId of [...new Set(baris.map((b) => b.kdKegiatan))].sort()) {
+      const impor = jumlahPerTahun(baris.filter((b) => b.kdKegiatan === kegiatanId));
+      const tahun = [...impor.keys()].sort();
+      const [saldo, pakai] = await Promise.all([
+        this.prisma.saldoKegiatan.findMany({ where: { kegiatanId, tahun: { in: tahun } } }),
+        pemakaianKegiatan(this.prisma, kegiatanId, tahun),
+      ]);
+      for (const t of tahun) {
+        const tambah = impor.get(t)!;
+        if (tambah.total <= 0) continue;
+        const s = saldo.find((x) => x.tahun === t);
+        if (!s) {
+          hasil.push(`Kegiatan ${kegiatanId} tahun ${t} belum punya saldo; alokasi impor ${rp(tambah.total)} tetap masuk.`);
+          continue;
+        }
+        const sesudah = (k: Sumber | 'total') => (pakai.get(t)?.[k] ?? 0) + tambah[k];
+        if (sesudah('total') > Number(s.total))
+          hasil.push(`Kegiatan ${kegiatanId} tahun ${t}: setelah impor terpakai ${rp(sesudah('total'))}, melebihi saldo ${rp(Number(s.total))} (lebih ${rp(sesudah('total') - Number(s.total))}).`);
+        for (const k of SUMBER)
+          if (s[k] != null && tambah[k] > 0 && sesudah(k) > Number(s[k]))
+            hasil.push(`Kegiatan ${kegiatanId} tahun ${t}: ${k.toUpperCase()} setelah impor ${rp(sesudah(k))}, melebihi saldo ${k.toUpperCase()} ${rp(Number(s[k]))}.`);
+      }
+    }
+    return hasil;
   }
 
   /**

@@ -397,7 +397,7 @@ export function SasaranTab() {
                   return (
                     <div key={prog.id} className="py-2">
                       <div className="flex items-center gap-2 px-3.5 py-1">
-                        <span className="font-mono text-[10px] bg-sky-50 text-sky-700 px-1.5 py-0.5 rounded shrink-0">
+                        <span className="font-mono text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded shrink-0">
                           {prog.code}
                         </span>
                         <span className="text-xs font-semibold text-muted-foreground truncate">
@@ -550,7 +550,7 @@ export function SasaranTab() {
                   return (
                     <div key={keg.id} className="py-2">
                       <div className="flex items-center gap-2 px-3.5 py-1">
-                        <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded shrink-0">
+                        <span className="font-mono text-[10px] bg-tier-1 text-foreground px-1.5 py-0.5 rounded shrink-0">
                           {keg.code}
                         </span>
                         <span className="text-xs font-semibold text-muted-foreground truncate">

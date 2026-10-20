@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { cekSaldoKegiatan } from '../saldo-kegiatan/saldo';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreatePaketDto } from './dto/create-paket.dto';
@@ -80,7 +81,7 @@ export class PaketService {
   /** Saldo proyek vs paket lain + paket yang sedang disimpan. */
   private async cekSaldoProyek(
     tx: Prisma.TransactionClient,
-    proyek: { id: string; saldoAnggaran: unknown; saldoVolumeRo: unknown; saldoVolumeIro: unknown },
+    proyek: { id: string; saldoVolumeRo: unknown; saldoVolumeIro: unknown },
     dto: CreatePaketDto | UpdatePaketDto,
     kecualiPaketId?: string,
   ) {
@@ -111,6 +112,7 @@ export class PaketService {
       await cekRoKegiatan(tx, proyek.kegiatanId, [dto.roId]);
       dto.satkerId = await satkerPaket(tx, user, proyek.balaiId, dto.satkerId);
       await this.cekSaldoProyek(tx, proyek, dto);
+      await cekSaldoKegiatan(tx, proyek.kegiatanId, [], dto.alokasi ?? []);
       // Kode Proyek seharusnya sudah ada dari saat proyek dibuat — fallback
       // generate di sini cuma jaga-jaga untuk data lama sebelum fitur ini ada.
       const kodeProyek =
@@ -194,8 +196,11 @@ export class PaketService {
     const updated = await this.prisma.$transaction(async (tx) => {
       await cekRoKegiatan(tx, paket.proyek.kegiatanId, [isian.roId]);
       isian.satkerId = await satkerPaket(tx, user, paket.proyek.balaiId, isian.satkerId);
-      if (dto.alokasi !== undefined)
+      if (dto.alokasi !== undefined) {
         await this.cekSaldoProyek(tx, paket.proyek, isian, id);
+        const lama = await tx.alokasi.findMany({ where: { paketId: id, status: 'RENCANA' } });
+        await cekSaldoKegiatan(tx, paket.proyek.kegiatanId, lama, dto.alokasi);
+      }
       await simpanRelasiPaket(tx, id, isian);
       // formValues tidak dikirim = jangan sentuh isian lama.
       const formValues =

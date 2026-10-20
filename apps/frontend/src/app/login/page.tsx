@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -25,6 +25,13 @@ export default function LoginPage() {
   const router = useRouter();
   const { setAuth } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
+  const [statistik, setStatistik] = useState<{ balai: number; proyek: number; periode: string | null } | null>(null);
+  useEffect(() => {
+    api
+      .get("/statistik-login")
+      .then((r) => setStatistik(r.data))
+      .catch(() => setStatistik(null));
+  }, []);
 
   const {
     register,
@@ -48,57 +55,42 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Left panel - branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-primary flex-col justify-between p-12">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary-foreground/20 flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">
-                eP
-              </span>
-            </div>
-            <span className="text-primary-foreground font-semibold text-lg">
-              ePerencanaan
-            </span>
+      {/* Panel kiri (hi-fi HfLogin): angka dari data asli, disembunyikan kalau gagal dimuat. */}
+      <div className="hidden lg:flex lg:w-[560px] lg:flex-none bg-primary-soft flex-col justify-between p-11">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-sd-rm flex items-center justify-center">
+            <span className="text-white font-bold text-xs">eP</span>
           </div>
+          <span className="font-bold text-[15px]">ePerencanaan</span>
         </div>
 
-        <div className="space-y-4">
-          <h1 className="text-4xl font-bold text-primary-foreground leading-tight">
-            Sistem Perencanaan
-            <br />
-            Anggaran Terpadu
+        <div className="space-y-3.5">
+          <h1 className="text-[38px] font-semibold leading-[1.1] tracking-tight">
+            Rencana dan realisasi anggaran, dari usulan sampai paket.
           </h1>
-          <p className="text-primary-foreground/70 text-lg leading-relaxed">
-            Kelola rencana dan realisasi anggaran proyek infrastruktur secara
-            efisien dan transparan.
+          <p className="max-w-md text-[15px] text-muted-foreground">
+            Satu tempat untuk menyusun usulan proyek, memeriksa, dan memantau saldo setiap kegiatan.
           </p>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: "Balai", value: "3+" },
-            { label: "Proyek Aktif", value: "120+" },
-            { label: "Periode", value: "2025–2029" },
-          ].map((stat) => (
-            <div
-              key={stat.label}
-              className="bg-primary-foreground/10 rounded-xl p-4"
-            >
-              <div className="text-2xl font-bold text-primary-foreground">
-                {stat.value}
+        <div className="grid grid-cols-3 gap-3 min-h-[86px]">
+          {statistik &&
+            [
+              { label: "Balai", value: statistik.balai.toLocaleString("id-ID") },
+              { label: "Proyek aktif", value: statistik.proyek.toLocaleString("id-ID") },
+              { label: "Periode aktif", value: statistik.periode ?? "—" },
+            ].map((stat) => (
+              <div key={stat.label} className="rounded-xl bg-card p-3.5">
+                <div className="text-[22px] font-bold tabular-nums">{stat.value}</div>
+                <div className="text-sm text-muted-foreground">{stat.label}</div>
               </div>
-              <div className="text-primary-foreground/60 text-sm mt-1">
-                {stat.label}
-              </div>
-            </div>
-          ))}
+            ))}
         </div>
       </div>
 
       {/* Right panel - form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
-        <div className="w-full max-w-md space-y-8">
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="w-full max-w-[380px] space-y-8">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-3 mb-8">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
@@ -159,7 +151,7 @@ export default function LoginPage() {
               )}
             </div>
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
+            <Button type="submit" className="h-10 w-full" disabled={isSubmitting}>
               {isSubmitting && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}

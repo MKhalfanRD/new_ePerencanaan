@@ -684,7 +684,7 @@ export function NomenklaturTab() {
                                                     (i: any) => (
                                                       <span
                                                         key={i.id}
-                                                        className="group/chip inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700"
+                                                        className="group/chip inline-flex items-center gap-1 rounded bg-primary-soft px-1.5 py-0.5 text-[10px] text-primary-ink"
                                                       >
                                                         <Cek level="IRO" id={i.id} />
                                                         IRO: {i.nama} (
@@ -720,7 +720,7 @@ export function NomenklaturTab() {
                                                   ).map((k: any) => (
                                                     <span
                                                       key={k.id}
-                                                      className="group/chip inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700"
+                                                      className="group/chip inline-flex items-center gap-1 rounded bg-ok/10 px-1.5 py-0.5 text-[10px] text-ok"
                                                     >
                                                       <Cek
                                                         level="Komponen"
@@ -733,8 +733,8 @@ export function NomenklaturTab() {
                                                       <span
                                                         className={
                                                           k.jenis === "PENDUKUNG"
-                                                            ? "rounded border border-slate-300 bg-white px-1 text-[9px] text-slate-500"
-                                                            : "rounded bg-emerald-600 px-1 text-[9px] text-white"
+                                                            ? "rounded border border-input bg-white px-1 text-[9px] text-muted-foreground"
+                                                            : "rounded bg-ok px-1 text-[9px] text-white"
                                                         }
                                                       >
                                                         {k.jenis === "PENDUKUNG" ? "pendukung" : "utama"}

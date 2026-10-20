@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Flowchart: saldo anggaran per kegiatan per tahun</title>
+<style>
+body{font-family:'Segoe UI',system-ui,sans-serif;margin:28px 36px;color:#231f1c;background:#fff;font-size:13.5px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px}
+.mut{color:#6b655f;font-size:13px}
+.box{border:1px solid #e3ddd8;border-radius:10px;padding:12px 16px;margin:10px 0}
+.q{background:#fff4ec;border-color:#f0c9ad}
+table{border-collapse:collapse;width:100%;font-size:12.5px}td,th{border:1px solid #e3ddd8;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f6f3f0}
+.page{page-break-after:always}
+code{background:#f6f3f0;padding:0 4px;border-radius:4px}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+<div class="page">
+<h1>Saldo anggaran per kegiatan per tahun</h1>
+<div class="mut">Fitur no. 4 · 20 Okt 2026 · revisi 2 · keputusan 1–3 sudah masuk · menunggu persetujuan akhir</div>
+
+<div class="box"><b>Sekarang.</b> Saldo anggaran diisi <b>per proyek</b> di tab Pemaketan (kolom "Saldo anggaran"). Kolom ini kosong di semua proyek. Tidak ada saldo per kegiatan, jadi user tidak tahu berapa yang boleh dipakai.</div>
+<div class="box"><b>Yang sudah diputuskan (19 Okt).</b>
+<ul style="margin:6px 0 0;padding-left:18px">
+<li>Saldo anggaran ditetapkan <b>Admin / Super Admin</b>, <b>per kegiatan per tahun</b>. Semua balai dalam kegiatan itu berbagi saldo yang sama.</li>
+<li>Terpakai = jumlah alokasi semua paket di kegiatan itu pada tahun itu, <b>dihitung sejak Draft</b>. Setelah fitur realisasi ada: realisasi dipakai bila sudah diisi, kalau belum pakai rencana.</li>
+<li>Melebihi saldo → paket <b>tidak bisa disimpan</b> (hi-fi Form Paket).</li>
+<li><b>Baru (20 Okt):</b> saldo = <b>satu angka total</b> yang wajib diisi admin. Admin <b>boleh</b> memecahnya ke sumber dana (opsional, boleh sebagian, jumlahnya ≤ total). Sumber dana yang dipecah dicek sendiri; sisanya cukup dicek terhadap total.</li>
+<li><b>Baru (20 Okt):</b> tahun yang saldonya <b>belum ditetapkan</b> → alokasi tahun itu <b>tidak bisa diisi</b> sampai admin menetapkan.</li>
+<li><b>Baru (20 Okt):</b> import Excel yang melebihi saldo atau jatuh di tahun tanpa saldo → <b>tetap masuk dengan peringatan</b>.</li>
+<li>Kolom "Saldo anggaran" per proyek dihapus. Saldo volume RO/IRO tetap per proyek.</li>
+<li>Menu baru <b>Anggaran Kegiatan</b> (hi-fi HfAnggaran).</li>
+</ul></div>
+
+<h2>1 · Admin menetapkan saldo</h2>
+<pre class="mermaid">
+flowchart TD
+  A(["Admin buka menu<br>Anggaran Kegiatan"]) --> B["Pilih tahun"]
+  B --> C["Tabel kegiatan:<br>saldo · terpakai · sisa<br>(baris balai = pemakaian per balai)"]
+  C --> D["Klik 'Tetapkan saldo'<br>pada 1 kegiatan"]
+  D --> E["Isi saldo total Rp (wajib)"]
+  E --> E2["Opsional: pecah ke sumber dana<br>(RM / RMP / PLN / SBSN / KPBU),<br>boleh sebagian, jumlah ≤ total"]
+  E2 --> E3{"Jumlah pecahan<br>&gt; total?"}
+  E3 -- Ya --> E2
+  E3 -- Tidak --> F
+  F{"Saldo &lt; yang<br>sudah terpakai?"}
+  F -- Ya --> G["Peringatan: kegiatan jadi<br>melebihi saldo Rp x.<br>Paket lama tetap ada"]
+  G --> H{"Tetap simpan?"}
+  H -- Tidak --> E
+  H -- Ya --> I["Simpan + catat di riwayat"]
+  F -- Tidak --> I
+</pre>
+</div>
+
+<div class="page">
+<h2>2 · User mengisi alokasi paket</h2>
+<pre class="mermaid">
+flowchart TD
+  A(["Buka form paket<br>(dari form proyek / detail)"]) --> B["Ambil saldo kegiatan proyek<br>untuk tiap tahun paket"]
+  B --> B1{"Saldo tahun itu<br>sudah ditetapkan?"}
+  B1 -- Belum --> B2["Alokasi tahun itu DIKUNCI:<br>'Saldo 2027 belum ditetapkan,<br>hubungi admin'"]
+  B1 -- Sudah --> C["Isi alokasi per tahun<br>(RM, RMP, PLN, SBSN, KPBU)"]
+  C --> D["Bar per tahun, langsung berubah saat mengetik:<br>saldo · paket lain · paket ini · sisa<br>(+ bar per sumber dana yang dipecah admin)"]
+  D --> E{"Ada tahun / sumber dana<br>yang melebihi saldo?"}
+  E -- Ya --> F["Tahun itu merah +<br>'2027 melebihi saldo Rp 0,4 M'<br>Tombol Simpan nonaktif"]
+  F --> C
+  E -- Tidak --> G["Simpan"]
+  G --> H["Server cek ulang<br>(data terbaru semua balai)"]
+  H --> I{"Masih cukup?"}
+  I -- Ya --> J(["Tersimpan"])
+  I -- "Tidak (balai lain baru<br>saja memakai saldo)" --> K["Ditolak dengan pesan<br>sisa terbaru"] --> C
+</pre>
+
+<h2>Aturan hitung</h2>
+<table>
+<tr><th>Hal</th><th>Aturan</th></tr>
+<tr><td>Terpakai</td><td>Σ total alokasi RENCANA semua paket (tidak terhapus) dari semua proyek kegiatan itu, tahun itu, semua status termasuk Draft</td></tr>
+<tr><td>Sisa</td><td>Saldo − terpakai (untuk total, dan untuk tiap sumber dana yang dipecah admin)</td></tr>
+<tr><td>Tahun tanpa saldo</td><td>Alokasi tahun itu dikunci di form. Paket lama yang sudah punya alokasi di tahun itu tetap tersimpan dan boleh diedit bagian lainnya, tapi alokasinya tidak bisa ditambah</td></tr>
+<tr><td>Kapan ditolak</td><td>Hanya kalau simpanan ini <b>menambah</b> pemakaian dan hasilnya melebihi saldo. Mengurangi atau mengedit isian lain di kegiatan yang sudah terlanjur lebih tetap boleh</td></tr>
+<tr><td>Dicek di</td><td>Form paket (langsung), simpan paket, simpan proyek, import Excel, dan hapus paket (selalu boleh karena mengurangi pemakaian)</td></tr>
+</table>
+
+<h2>Yang berubah</h2>
+<table>
+<tr><th>Bagian</th><th>Perubahan</th></tr>
+<tr><td>Database</td><td>Tabel baru <code>saldo_kegiatan</code> (kegiatan, tahun, total, pecahan RM/RMP/PLN/SBSN/KPBU opsional). Hapus kolom <code>proyek.saldoAnggaran</code> (kosong di semua proyek)</td></tr>
+<tr><td>Master form</td><td>Item "Saldo anggaran" di tab Pemaketan dihapus dari semua template</td></tr>
+<tr><td>Menu baru</td><td>Anggaran Kegiatan (hanya Admin / Super Admin bisa menetapkan; role lain hanya lihat kegiatannya)</td></tr>
+<tr><td>Form paket</td><td>Bar saldo per tahun + kunci tombol Simpan</td></tr>
+<tr><td>Form proyek</td><td>Tab Pemaketan: ringkasan saldo kegiatan per tahun di atas daftar paket</td></tr>
+<tr><td>Import</td><td>Tetap masuk; preview memberi peringatan untuk proyek yang membuat kegiatan melebihi saldo atau beralokasi di tahun tanpa saldo</td></tr>
+<tr><td>Dashboard</td><td>Menyusul (fitur no. 9), memakai data yang sama</td></tr>
+</table>
+
+<h2>Keputusan</h2>
+<div class="box">1. Saldo satu angka total, pecahan per sumber dana opsional oleh admin · 2. Tahun tanpa saldo tidak bisa diisi · 3. Import tetap masuk dengan peringatan</div>
+</div>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral', flowchart: { curve: 'basis', htmlLabels: true } });</script>
+</body>
+</html>

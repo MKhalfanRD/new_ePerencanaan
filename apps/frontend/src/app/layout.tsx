@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Geist_Mono, Instrument_Sans } from "next/font/google";
 import "./globals.css";
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 import { Toaster } from "@/components/ui/sonner";
 
-const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
+const instrument = Instrument_Sans({ variable: "--font-instrument", subsets: ["latin"] });
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "ePerencanaan",
@@ -18,7 +19,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="id" className={inter.variable}>
+    <html lang="id" className={`${instrument.variable} ${geistMono.variable}`}>
       <body className="antialiased">
         {children}
         <Toaster richColors position="bottom-right" duration={2000} />

@@ -123,9 +123,9 @@ export function MapPicker({
       ) {
         const layer =
           tipeKoordinat === "GARIS"
-            ? L.polyline(coordinates as any, { color: "#2563eb", weight: 3 })
+            ? L.polyline(coordinates as any, { color: "#b24b0a", weight: 3 })
             : L.polygon(coordinates as any, {
-                color: "#2563eb",
+                color: "#b24b0a",
                 weight: 2,
                 fillOpacity: 0.2,
               });
@@ -268,9 +268,9 @@ export function MapPicker({
     drawHandlerRef.current?.disable();
     const DrawHandler =
       type === "GARIS"
-        ? new L.Draw.Polyline(map, { shapeOptions: { color: "#2563eb", weight: 3 } })
+        ? new L.Draw.Polyline(map, { shapeOptions: { color: "#b24b0a", weight: 3 } })
         : new L.Draw.Polygon(map, {
-            shapeOptions: { color: "#2563eb", weight: 2, fillOpacity: 0.2 },
+            shapeOptions: { color: "#b24b0a", weight: 2, fillOpacity: 0.2 },
           });
     DrawHandler.enable();
     drawHandlerRef.current = DrawHandler;

@@ -111,7 +111,7 @@ export function TombolImport({
             />
             {file ? (
               <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-3">
-                <FileSpreadsheet size={18} className="shrink-0 text-green-600" />
+                <FileSpreadsheet size={18} className="shrink-0 text-ok" />
                 <p className="min-w-0 flex-1 truncate text-sm font-medium">
                   {file.name}
                 </p>

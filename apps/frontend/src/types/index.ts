@@ -231,7 +231,6 @@ export interface Proyek {
   kewenangan: "PUSAT" | "DAERAH";
   status: "DRAFT" | "APPROVED";
   // Pemaketan: saldo (kosong = tanpa batas) & izin satker ubah paket.
-  saldoAnggaran?: string | null;
   saldoVolumeRo?: string | null;
   saldoVolumeIro?: string | null;
   satkerBolehUbahPaket?: boolean;

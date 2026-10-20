@@ -17,7 +17,6 @@ import { cn } from "@/lib/utils";
 import { kondisiTerpenuhi } from "@/lib/form-condition";
 import { fmtSkor, fmtRupiahRingkas, ringkasPaket, teksRasio } from "@/lib/form-score";
 import { rowsForItem, useSourceData } from "@/lib/option-sources";
-import { formatRupiahShort } from "@/lib/format-rupiah";
 import type { Proyek } from "@/types";
 import type { FormItemNode, FormTabNode } from "./proyek-form-dialog";
 import { fromFormValueRows, ringkasPaketServer } from "./paket-template";
@@ -179,7 +178,6 @@ export function IsiUsulan({ proyek, kegiatanId }: { proyek: Proyek; kegiatanId: 
           <span className="flex flex-col gap-1">{umum.map((d) => <Berkas key={d.id} d={d} />)}</span>
         ) : null;
       }
-      case "saldoAnggaran": return ada(p.saldoAnggaran) ? `Rp ${formatRupiahShort(Number(p.saldoAnggaran))}` : null;
       case "saldoVolumeRo": return ada(p.saldoVolumeRo) ? angka(Number(p.saldoVolumeRo)) : null;
       case "saldoVolumeIro": return ada(p.saldoVolumeIro) ? angka(Number(p.saldoVolumeIro)) : null;
       case "satkerBolehUbahPaket": return yaTidak(p.satkerBolehUbahPaket !== false);
@@ -200,7 +198,7 @@ export function IsiUsulan({ proyek, kegiatanId }: { proyek: Proyek; kegiatanId: 
       return (
         <>
           {info.teks}{" "}
-          <span className={info.terpenuhi ? "font-medium text-emerald-700" : "font-medium text-destructive"}>
+          <span className={info.terpenuhi ? "font-medium text-ok" : "font-medium text-destructive"}>
             · {info.terpenuhi ? "Terpenuhi" : "Belum terpenuhi"}
           </span>
         </>

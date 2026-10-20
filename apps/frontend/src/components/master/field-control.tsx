@@ -155,7 +155,7 @@ export function FieldControl({
             {!preview && ringkasPaket && info.teks && (
               <span
                 className={
-                  info.terpenuhi ? "font-semibold text-emerald-700" : "font-semibold text-destructive"
+                  info.terpenuhi ? "font-semibold text-ok" : "font-semibold text-destructive"
                 }
               >
                 {info.terpenuhi ? "✓ Terpenuhi" : "✗ Belum terpenuhi"} ·{" "}

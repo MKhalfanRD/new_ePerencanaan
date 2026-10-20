@@ -29,7 +29,6 @@ export const PAKET_BAKU_KEYS = [
   "paketLokasi",
 ];
 export const PEMAKETAN_PROYEK_KEYS = [
-  "saldoAnggaran",
   "saldoVolumeRo",
   "saldoVolumeIro",
   "satkerBolehUbahPaket",
@@ -287,7 +286,6 @@ const CONTOH: Record<string, string[]> = {
   paketTahun: ["Tahun mulai", "Tahun selesai"],
   paketAlokasi: ["Per tahun: komponen utama/pendukung", "Vol RO", "Vol IRO", "Sumber dana"],
   paketLokasi: ["Sama dengan lokasi proyek? Ya / Tidak (peta)"],
-  saldoAnggaran: ["Rp 0", "Dipakai … · sisa …"],
   saldoVolumeRo: ["0", "Dipakai … · sisa …"],
   saldoVolumeIro: ["0", "Dipakai … · sisa …"],
   satkerBolehUbahPaket: ["Saklar ya / tidak"],

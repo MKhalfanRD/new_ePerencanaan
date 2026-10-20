@@ -37,19 +37,19 @@ const formatRupiahShort = (val: number) => {
 // Warna tint per status, dipakai utk kotak ikon KPI card — mengikuti token
 // dot-badge yang sama dgn status-config.ts (bukan warna baru).
 const iconToneClasses: Record<string, string> = {
-  slate: "bg-slate-100 text-slate-600",
-  blue: "bg-blue-50 text-blue-600",
-  amber: "bg-amber-50 text-amber-600",
-  rose: "bg-rose-50 text-rose-600",
-  emerald: "bg-emerald-50 text-emerald-600",
+  slate: "bg-tier-1 text-muted-foreground",
+  blue: "bg-primary-soft text-primary-ink",
+  amber: "bg-warn/12 text-warn-ink",
+  rose: "bg-destructive/10 text-destructive",
+  emerald: "bg-ok/10 text-ok",
 };
 
 const barToneClasses: Record<string, string> = {
-  slate: "bg-slate-400",
-  blue: "bg-blue-500",
-  amber: "bg-amber-500",
-  rose: "bg-rose-500",
-  emerald: "bg-emerald-500",
+  slate: "bg-st-draft",
+  blue: "bg-primary",
+  amber: "bg-warn",
+  rose: "bg-destructive",
+  emerald: "bg-ok",
 };
 
 interface BarisAlokasi {
@@ -193,7 +193,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
             Dashboard
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -230,7 +230,7 @@ export default function DashboardPage() {
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
                     {card.title}
                   </p>
-                  <p className="text-3xl font-bold mt-1 text-slate-900">
+                  <p className="text-3xl font-bold mt-1 text-foreground">
                     {loading ? "—" : card.value}
                   </p>
                 </div>
@@ -253,7 +253,7 @@ export default function DashboardPage() {
         <Card className="lg:col-span-2">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Wallet size={16} className="text-blue-600" />
+              <Wallet size={16} className="text-primary-ink" />
               Ringkasan Rencana Anggaran
             </CardTitle>
             {tahunTersedia.length > 0 && (
@@ -267,7 +267,7 @@ export default function DashboardPage() {
                       onClick={() => setTahunAnggaran(th)}
                       className={`rounded-md px-2 py-0.5 text-xs font-medium transition-colors ${
                         aktif
-                          ? "bg-blue-600 text-white"
+                          ? "bg-primary text-white"
                           : "bg-muted/50 text-muted-foreground hover:bg-muted"
                       }`}
                     >
@@ -288,7 +288,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
                   Rencana
                 </p>
-                <p className="text-xl font-bold mt-1 text-slate-900">
+                <p className="text-xl font-bold mt-1 text-foreground">
                   {loading ? "—" : formatRupiahShort(anggaran.totalRencana)}
                 </p>
               </div>
@@ -298,7 +298,7 @@ export default function DashboardPage() {
                 </p>
                 <p
                   className={`text-xl font-bold mt-1 ${
-                    anggaran.overBudget ? "text-amber-600" : "text-emerald-700"
+                    anggaran.overBudget ? "text-warn-ink" : "text-ok"
                   }`}
                 >
                   {loading ? "—" : formatRupiahShort(anggaran.totalRealisasi)}
@@ -313,7 +313,7 @@ export default function DashboardPage() {
                 </p>
                 <p
                   className={`text-xs font-semibold ${
-                    anggaran.overBudget ? "text-amber-600" : "text-slate-900"
+                    anggaran.overBudget ? "text-warn-ink" : "text-foreground"
                   }`}
                 >
                   {loading
@@ -323,10 +323,10 @@ export default function DashboardPage() {
                       }`}
                 </p>
               </div>
-              <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+              <div className="h-1.5 rounded-full bg-tier-1 overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${
-                    anggaran.overBudget ? "bg-amber-500" : "bg-emerald-500"
+                    anggaran.overBudget ? "bg-warn" : "bg-ok"
                   }`}
                   style={{
                     width: `${
@@ -345,12 +345,12 @@ export default function DashboardPage() {
                 {anggaran.sumberDana.map((s) => (
                   <div
                     key={s.label}
-                    className="rounded-md border bg-slate-50/60 px-2 py-2 text-center"
+                    className="rounded-md border bg-tier-2/60 px-2 py-2 text-center"
                   >
                     <p className="text-[10px] font-semibold text-muted-foreground">
                       {s.label}
                     </p>
-                    <p className="text-xs font-semibold mt-0.5 text-slate-900">
+                    <p className="text-xs font-semibold mt-0.5 text-foreground">
                       {loading ? "—" : formatRupiahShort(s.value)}
                     </p>
                   </div>
@@ -376,7 +376,7 @@ export default function DashboardPage() {
                     {loading ? "—" : row.count}
                   </span>
                 </div>
-                <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                <div className="h-1.5 rounded-full bg-tier-1 overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${barToneClasses[row.dotColor]}`}
                     style={{
@@ -412,11 +412,11 @@ export default function DashboardPage() {
                     key={r.tahun}
                     className="flex-1 flex flex-col items-center justify-end h-full group"
                   >
-                    <p className="text-[11px] font-semibold text-slate-700 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <p className="text-[11px] font-semibold text-foreground mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       {formatRupiahShort(r.total)}
                     </p>
                     <div
-                      className="w-full max-w-10 rounded-t-md bg-blue-500/80 group-hover:bg-blue-600 transition-colors"
+                      className="w-full max-w-10 rounded-t-md bg-primary/80 group-hover:bg-primary transition-colors"
                       style={{
                         height: `${Math.max(4, (r.total / perTahun.max) * 100)}%`,
                       }}
@@ -438,14 +438,14 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center gap-3 rounded-lg border p-3">
-              <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 rounded-lg bg-primary-soft text-primary-ink flex items-center justify-center shrink-0">
                 <MapPin size={18} />
               </div>
               <div>
                 <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
                   Total Titik Lokasi
                 </p>
-                <p className="text-xl font-bold text-slate-900">
+                <p className="text-xl font-bold text-foreground">
                   {loading ? "—" : totalLokasi}
                 </p>
               </div>
@@ -471,7 +471,7 @@ export default function DashboardPage() {
           <CardTitle className="text-base">Proyek Terbaru</CardTitle>
           <Link
             href="/proyek"
-            className="text-xs font-medium text-blue-600 hover:underline flex items-center gap-1"
+            className="text-xs font-medium text-primary-ink hover:underline flex items-center gap-1"
           >
             Lihat semua
             <ArrowRight size={12} />
@@ -500,10 +500,10 @@ export default function DashboardPage() {
                   <Link
                     key={p.id}
                     href="/proyek"
-                    className="flex items-center justify-between py-3 px-1 -mx-1 rounded-lg hover:bg-slate-50 transition-colors"
+                    className="flex items-center justify-between py-3 px-1 -mx-1 rounded-lg hover:bg-tier-2 transition-colors"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate text-slate-900">
+                      <p className="text-sm font-medium truncate text-foreground">
                         {p.projectName}
                       </p>
                       <p className="text-xs text-muted-foreground mt-0.5">

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Flowchart: FKB/FKW/MPA per tahun</title>
+<style>
+body{font-family:'Segoe UI',system-ui,sans-serif;margin:28px 36px;color:#231f1c;background:#fff;font-size:13.5px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px}
+.mut{color:#6b655f;font-size:13px}
+.box{border:1px solid #e3ddd8;border-radius:10px;padding:12px 16px;margin:10px 0}
+.q{background:#fff4ec;border-color:#f0c9ad}
+table{border-collapse:collapse;width:100%;font-size:12.5px}td,th{border:1px solid #e3ddd8;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f6f3f0}
+.page{page-break-after:always}
+code{background:#f6f3f0;padding:0 4px;border-radius:4px}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+<div class="page">
+<h1>Penanda FKB / FKW / MPA per tahun</h1>
+<div class="mut">Fitur no. 6 · 20 Okt 2026 · disetujui</div>
+
+<div class="box"><b>Sekarang.</b> FKB (kegiatan baru), FKW (kegiatan wajib), MPA (Memorandum Program Anggaran) masing-masing <b>satu centang per proyek</b> di tab Tagging (skor 1,67 tiap centang di form 7691). Import mengambil nilainya dari kolom FKB/FKW/MPA per baris Excel — padahal tiap baris Excel punya tahun. Data: 1 proyek FKB, 1 proyek FKW.</div>
+<div class="box"><b>Yang sudah diputuskan (19 Okt).</b> FKB/FKW/MPA dicentang <b>per proyek per tahun</b>, kolomnya <b>selalu ada</b> di tab Tagging. Hi-fi HfForm06: tabel "Penanda per tahun" — baris FKB/FKW/MPA × kolom tahun periode.</div>
+
+<h2>1 · Mengisi</h2>
+<pre class="mermaid">
+flowchart TD
+  A(["Tab Tagging"]) --> B["Tabel Penanda per tahun:<br>baris FKB · FKW · MPA<br>kolom = tahun periode proyek (2025–2029)"]
+  B --> C["Centang di tahun yang berlaku"]
+  C --> D["Skor tiap penanda: dapat bila dicentang<br>di minimal satu tahun"]
+  D --> E["Simpan · tercatat di riwayat<br>'FKB: 2026 → 2026, 2027'"]
+  F(["Import Excel"]) --> G["Baris Excel ber-FKB/FKW/MPA = Ya<br>→ dicentang di TAHUN baris itu"]
+  G --> E
+</pre>
+
+<h2>Yang berubah</h2>
+<table>
+<tr><th>Bagian</th><th>Perubahan</th></tr>
+<tr><td>Database</td><td>Kolom <code>fkb</code>, <code>fkw</code>, <code>mpa</code> berubah dari Ya/Tidak menjadi <b>daftar tahun</b> (mis. 2026, 2027)</td></tr>
+<tr><td>Form proyek › Tagging</td><td>3 centang lama diganti tabel Penanda per tahun (hi-fi HfForm06), selalu tampil</td></tr>
+<tr><td>Skor evaluasi</td><td>Tidak berubah aturannya: penanda dihitung "terisi" bila dicentang di minimal satu tahun</td></tr>
+<tr><td>Detail proyek, riwayat, export</td><td>Ditulis sebagai daftar tahun: "FKB: 2026, 2027" / "–"</td></tr>
+<tr><td>Import Excel</td><td>Centang per tahun baris (proyek ditambah tahun baru = penandanya ikut ditambah)</td></tr>
+<tr><td>Tabel proyek</td><td>Chip saring <b>Penanda</b> (hi-fi HfProyek): FKB / FKW / MPA di tahun mana pun; ikon kecil di baris proyek</td></tr>
+</table>
+
+<h2>Keputusan (20 Okt)</h2>
+<div class="box">1. Data lama masih dummy — dipakai tahun yang punya rencana paket · 2. Skor bila dicentang di minimal satu tahun · 3. Semua tahun periode bisa dicentang</div>
+</div>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral', flowchart: { curve: 'basis', htmlLabels: true } });</script>
+</body>
+</html>

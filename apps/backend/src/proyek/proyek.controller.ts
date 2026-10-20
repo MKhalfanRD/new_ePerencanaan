@@ -35,6 +35,7 @@ import { CreateProyekDto } from './dto/create-proyek.dto';
 import { UpdateProyekDto } from './dto/update-proyek.dto';
 import { QueryProyekDto } from './dto/query-proyek.dto';
 import { PreviewSkorDto } from './dto/preview-skor.dto';
+import { IdsDto, PeriksaDto, PutuskanDto, QueryPemeriksaanDto } from './dto/pemeriksaan.dto';
 
 @ApiTags('Proyek')
 @ApiBearerAuth()
@@ -61,22 +62,45 @@ export class ProyekController {
   }
 
   @ApiOperation({ summary: 'Daftar proyek dengan pagination & filter' })
-  @Roles('SATKER', 'VERIFICATOR', 'ADMINISTRATOR')
+  @Roles('SATKER', 'VERIFICATOR', 'OPERATOR', 'ADMINISTRATOR')
   @Get()
   findAll(@CurrentUser() user: any, @Query() query: QueryProyekDto) {
     return this.proyekService.findAll(user, query);
   }
 
   @ApiOperation({ summary: 'Ringkasan angka dashboard (semua proyek yang boleh dilihat)' })
-  @Roles('SATKER', 'VERIFICATOR', 'ADMINISTRATOR')
+  @Roles('SATKER', 'VERIFICATOR', 'OPERATOR', 'ADMINISTRATOR')
   @Get('ringkasan')
   ringkasan(@CurrentUser() user: any) {
     return this.proyekService.ringkasan(user);
   }
 
+  @ApiOperation({ summary: 'Menu Pemeriksaan: daftar per tab + jumlah' })
+  @Roles('VERIFICATOR', 'OPERATOR', 'ADMINISTRATOR')
+  @Get('pemeriksaan')
+  daftarPemeriksaan(@CurrentUser() user: any, @Query() q: QueryPemeriksaanDto) {
+    return this.proyekService.daftarPemeriksaan(user, q);
+  }
+
+  @ApiOperation({ summary: 'Ajukan banyak proyek sekaligus (Draft/Dikembalikan)' })
+  @Roles('SATKER', 'ADMINISTRATOR')
+  @Post('ajukan-massal')
+  ajukanMassal(@Body() dto: IdsDto, @CurrentUser() user: any) {
+    return this.proyekService.massal(dto.ids, user, (id) => this.proyekService.ajukan(id, user));
+  }
+
+  @ApiOperation({ summary: 'Setujui banyak proyek sekaligus (Admin)' })
+  @Roles('ADMINISTRATOR')
+  @Post('setujui-massal')
+  setujuiMassal(@Body() dto: IdsDto, @CurrentUser() user: any) {
+    return this.proyekService.massal(dto.ids, user, (id) =>
+      this.proyekService.putuskan(id, user, { hasil: 'SETUJU' }),
+    );
+  }
+
   @ApiOperation({ summary: 'Detail proyek' })
   @ApiParam({ name: 'id' })
-  @Roles('SATKER', 'VERIFICATOR', 'ADMINISTRATOR')
+  @Roles('SATKER', 'VERIFICATOR', 'OPERATOR', 'ADMINISTRATOR')
   @Get(':id/skor')
   @ApiOperation({ summary: 'Skor evaluasi & rincian per tab proyek tersimpan' })
   skor(@Param('id') id: string, @CurrentUser() user: any) {
@@ -88,21 +112,49 @@ export class ProyekController {
     return this.proyekService.findOne(id, user);
   }
 
-  @ApiOperation({ summary: 'Setujui proyek (DRAFT → APPROVED)' })
+  @ApiOperation({ summary: 'Riwayat proyek berlabel (khusus admin)' })
   @Roles('ADMINISTRATOR')
-  @Patch(':id/approve')
-  approve(@Param('id') id: string) {
-    return this.proyekService.approve(id);
+  @Get(':id/riwayat')
+  riwayat(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.proyekService.riwayat(id, user);
   }
 
-  @ApiOperation({ summary: 'Kembalikan proyek ke draft (APPROVED → DRAFT)' })
-  @Roles('ADMINISTRATOR')
-  @Patch(':id/unapprove')
-  unapprove(@Param('id') id: string) {
-    return this.proyekService.unapprove(id);
+  @ApiOperation({ summary: 'Yang berubah sejak pengembalian terakhir (Pemeriksaan)' })
+  @Roles('VERIFICATOR', 'OPERATOR', 'ADMINISTRATOR')
+  @Get(':id/perubahan')
+  perubahan(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.proyekService.perubahanSejakDikembalikan(id, user);
   }
 
-  @ApiOperation({ summary: 'Edit proyek (hanya DRAFT)' })
+  @ApiOperation({ summary: 'Jejak pengajuan & pemeriksaan proyek' })
+  @Roles('SATKER', 'VERIFICATOR', 'OPERATOR', 'ADMINISTRATOR')
+  @Get(':id/pemeriksaan')
+  riwayatPemeriksaan(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.proyekService.riwayatPemeriksaan(id, user);
+  }
+
+  @ApiOperation({ summary: 'Ajukan / ajukan ulang proyek (Draft/Dikembalikan → Diajukan)' })
+  @Roles('SATKER', 'ADMINISTRATOR')
+  @Patch(':id/ajukan')
+  ajukan(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.proyekService.ajukan(id, user);
+  }
+
+  @ApiOperation({ summary: 'Hasil pemeriksaan Verifikator/Operator (Sesuai / Perlu revisi)' })
+  @Roles('VERIFICATOR', 'OPERATOR', 'ADMINISTRATOR')
+  @Patch(':id/periksa')
+  periksa(@Param('id') id: string, @Body() dto: PeriksaDto, @CurrentUser() user: any) {
+    return this.proyekService.periksa(id, user, dto);
+  }
+
+  @ApiOperation({ summary: 'Keputusan Admin (Setujui / Kembalikan)' })
+  @Roles('ADMINISTRATOR')
+  @Patch(':id/putuskan')
+  putuskan(@Param('id') id: string, @Body() dto: PutuskanDto, @CurrentUser() user: any) {
+    return this.proyekService.putuskan(id, user, dto);
+  }
+
+  @ApiOperation({ summary: 'Edit proyek (Draft/Dikembalikan)' })
   @Roles('SATKER', 'ADMINISTRATOR')
   @Patch(':id')
   update(
@@ -172,7 +224,7 @@ export class ProyekController {
   @ApiOperation({ summary: 'Hapus 1 dokumen pendukung' })
   @Roles('SATKER', 'ADMINISTRATOR')
   @Delete('dokumen/:docId')
-  removeDokumen(@Param('docId') docId: string) {
-    return this.proyekService.hapusDokumen(docId);
+  removeDokumen(@Param('docId') docId: string, @CurrentUser() user: any) {
+    return this.proyekService.hapusDokumen(docId, user.userId);
   }
 }

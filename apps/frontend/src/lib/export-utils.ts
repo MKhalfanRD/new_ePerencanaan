@@ -10,6 +10,9 @@ const formatRupiah = (val: string | number) =>
 
 const statusLabel: Record<string, string> = {
   DRAFT: "Draft",
+  DIAJUKAN: "Diajukan",
+  DIPERIKSA: "Diperiksa",
+  DIKEMBALIKAN: "Dikembalikan",
   APPROVED: "Disetujui",
 };
 

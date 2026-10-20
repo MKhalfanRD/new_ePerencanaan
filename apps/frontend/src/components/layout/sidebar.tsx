@@ -8,11 +8,13 @@ import {
   Users,
   LogOut,
   Database,
-  ScrollText,
   Wallet,
+  ClipboardCheck,
+  FileBarChart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
+import { punyaRole } from "@/lib/role";
 import { toast } from "sonner";
 import {
   Tooltip,
@@ -35,15 +37,16 @@ const navItems: {
 }[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Proyek", href: "/proyek", icon: FolderKanban },
+  {
+    label: "Pemeriksaan",
+    href: "/pemeriksaan",
+    icon: ClipboardCheck,
+    roles: [...ADMIN, "VERIFICATOR", "OPERATOR"],
+  },
   { label: "Anggaran Kegiatan", href: "/anggaran", icon: Wallet },
+  { label: "Laporan", href: "/laporan", icon: FileBarChart },
   { label: "Pengguna", href: "/users", icon: Users, roles: ADMIN },
   { label: "Master Data", href: "/master", icon: Database, roles: ADMIN },
-  {
-    label: "Log Aktivitas",
-    href: "/activity-log",
-    icon: ScrollText,
-    roles: ["SUPER_ADMIN"],
-  },
 ];
 
 // Kode role -> label: "SUPER_ADMIN" -> "Super Admin", "OPERATOR_7691" -> "Operator 7691".
@@ -65,8 +68,9 @@ export function Sidebar() {
     router.push("/login");
   };
 
+  // punyaRole: role turunan (mis. VERIFIKATOR_7691) ikut baseRole-nya.
   const filteredNav = navItems.filter(
-    (item) => user && (!item.roles || item.roles.includes(user.role)),
+    (item) => user && (!item.roles || punyaRole(user, ...item.roles)),
   );
 
   return (

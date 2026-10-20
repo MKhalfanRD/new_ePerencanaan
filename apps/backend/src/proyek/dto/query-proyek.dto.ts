@@ -3,9 +3,9 @@ import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class QueryProyekDto {
-  @ApiPropertyOptional({ enum: ['DRAFT', 'APPROVED'] })
+  @ApiPropertyOptional({ enum: ['DRAFT', 'DIAJUKAN', 'DIPERIKSA', 'DIKEMBALIKAN', 'APPROVED'] })
   @IsOptional()
-  @IsIn(['DRAFT', 'APPROVED'])
+  @IsIn(['DRAFT', 'DIAJUKAN', 'DIPERIKSA', 'DIKEMBALIKAN', 'APPROVED'])
   status?: string;
 
   @ApiPropertyOptional({ example: 1 })

@@ -7,7 +7,6 @@ import {
   Search,
   FileText,
   Trash2,
-  CheckCheck,
   ChevronRight,
   ChevronLeft,
   ChevronsLeft,
@@ -16,6 +15,7 @@ import {
   Minimize2,
   MapPin,
   SlidersHorizontal,
+  Send,
   StickyNote,
   FileSpreadsheet,
   Loader2,
@@ -25,6 +25,7 @@ import { exportProyekToExcel } from "@/lib/export-proyek-excel";
 import { nilaiRealisasi, statusConfig } from "@/components/shared/status-config";
 import type { Dana, SaldoNilai } from "@/components/anggaran/saldo-kegiatan";
 import { cn } from "@/lib/utils";
+import { bisaDiajukan, terkunci } from "@/lib/alur-status";
 import { punyaRole } from "@/lib/role";
 
 import { Button } from "@/components/ui/button";
@@ -102,11 +103,17 @@ function SelAngka({
   realisasi,
   tebal,
   sembunyi,
+  tampilReal = true,
+  onIsi,
 }: {
   rencana: number;
   realisasi: number;
   tebal?: boolean;
   sembunyi?: boolean;
+  /** Mode "Rencana + realisasi" (tombol di atas tabel). */
+  tampilReal?: boolean;
+  /** Sel tahun paket yang boleh diisi realisasi tapi belum: tampil "+ isi". */
+  onIsi?: () => void;
 }) {
   const n = nilaiRealisasi(realisasi, rencana);
   return (
@@ -114,10 +121,22 @@ function SelAngka({
       <span className={cn("block", tebal ? "font-semibold" : rencana ? "" : "text-muted-foreground")}>
         {fmtM(rencana)}
       </span>
-      {realisasi > 0 && (
+      {tampilReal && realisasi > 0 && (
         <span className={cn("block text-[11px]", n.over ? "text-destructive" : "text-muted-foreground")}>
           {fmtM(realisasi)}
         </span>
+      )}
+      {tampilReal && !realisasi && rencana > 0 && onIsi && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onIsi();
+          }}
+          className="block w-full text-right text-[11px] font-medium text-primary-ink hover:underline"
+        >
+          + isi
+        </button>
       )}
     </span>
   );
@@ -221,6 +240,9 @@ function ProyekPageInner() {
   // hasil import tampil, apa pun periodenya).
   const [filterImport, setFilterImport] = useState(false);
   const [filterStatus, setFilterStatus] = useState("");
+  // Penanda FKB/FKW/MPA di tahun mana pun (flowchart-penanda-tahun.pdf).
+  const [filterPenanda, setFilterPenanda] = useState<"" | "fkb" | "fkw" | "mpa">("");
+  const [tampilReal, setTampilReal] = useState(true);
 
   // Saldo kegiatan tahun berjalan (baris kegiatan: "pakai X dari saldo Y").
   const periodeAktif = periodeList.find((pr) => String(pr.id) === filterPeriode);
@@ -367,21 +389,40 @@ function ProyekPageInner() {
     }
   };
 
-  const handleApprove = async (id: string) => {
+  // Ajukan massal: proyek Draft/Dikembalikan yang sedang tampil (mis. hasil import terakhir).
+  const [ajukanMassalBuka, setAjukanMassalBuka] = useState(false);
+  const [mengajukan, setMengajukan] = useState(false);
+  const handleAjukanMassal = async () => {
+    setMengajukan(true);
     try {
-      await api.patch(`/proyek/${id}/approve`);
-      toast.success("Proyek disetujui");
+      const res = await api.post<{ berhasil: number; gagal: { id: string; alasan: string }[] }>(
+        "/proyek/ajukan-massal",
+        { ids: bisaAjukan.map((p) => p.id) },
+      );
+      const { berhasil, gagal } = res.data;
+      if (berhasil) toast.success(`${berhasil} proyek diajukan`);
+      if (gagal.length) {
+        const nama = (id: string) => proyekList.find((p) => p.id === id)?.projectName ?? id;
+        toast.error(
+          `${gagal.length} proyek gagal diajukan: ${gagal
+            .slice(0, 3)
+            .map((g) => `${nama(g.id)} (${g.alasan})`)
+            .join("; ")}${gagal.length > 3 ? "; …" : ""}`,
+          { duration: 8000 },
+        );
+      }
+      setAjukanMassalBuka(false);
       fetchProyek();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Gagal menyetujui proyek");
+      toast.error(err.response?.data?.message || "Gagal mengajukan proyek");
+    } finally {
+      setMengajukan(false);
     }
   };
 
-  const canApprove = (p: Proyek) =>
-    p.status === "DRAFT" && punyaRole(user, "ADMINISTRATOR");
-
+  // Pengisi hanya boleh menghapus sebelum diajukan; admin kapan saja.
   const canDelete = (p: Proyek) =>
-    punyaRole(user, "ADMINISTRATOR") || p.createdBy.id === user?.id;
+    punyaRole(user, "ADMINISTRATOR") || (p.createdBy.id === user?.id && !terkunci(p.status));
 
   // Opsi filter, dicascade dari data yang sudah termuat: Balai independen;
   // Program > Kegiatan > KRO > RO mengikuti pilihan level di atasnya.
@@ -449,6 +490,7 @@ function ProyekPageInner() {
     return proyekList.filter((p) => {
       if (filterStatus && p.status !== filterStatus) return false;
       if (filterBalai && String(p.balai.id) !== filterBalai) return false;
+      if (filterPenanda && !p[filterPenanda]?.length) return false;
       // Program & kegiatan milik proyek; KRO/RO dari paketnya.
       const keg = kegiatanProyek(p);
       if (filterProgram && keg?.program.id !== filterProgram) return false;
@@ -466,6 +508,7 @@ function ProyekPageInner() {
     filterKro,
     filterRo,
     filterStatus,
+    filterPenanda,
   ]);
   // Jumlah per status dari semua proyek termuat.
   const jumlahStatus = useMemo(() => {
@@ -473,7 +516,13 @@ function ProyekPageInner() {
     for (const p of proyekList) m[p.status] = (m[p.status] ?? 0) + 1;
     return m;
   }, [proyekList]);
-  const filterLainAktif = [filterProgram, filterKro, filterRo].filter(Boolean).length;
+  const filterLainAktif = [filterProgram, filterKro, filterRo, filterPenanda].filter(Boolean).length;
+  // "+ isi" realisasi: admin semua status, pengisi saat Disetujui (flowchart-realisasi.pdf).
+  const bisaIsiRealisasi = (p: Proyek) =>
+    punyaRole(user, "ADMINISTRATOR") || (punyaRole(user, "SATKER") && p.status === "APPROVED");
+  const bisaAjukan = punyaRole(user, "SATKER", "ADMINISTRATOR")
+    ? filteredProyek.filter((p) => bisaDiajukan(p.status))
+    : [];
 
   type KegiatanGroup = {
     kegiatanId: string;
@@ -642,21 +691,6 @@ function ProyekPageInner() {
   const renderActions = (p: Proyek) => (
     <TooltipProvider delayDuration={300}>
       <div className="flex items-center gap-1 shrink-0">
-        {canApprove(p) && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-ok hover:text-ok hover:bg-ok/10"
-                onClick={() => handleApprove(p.id)}
-              >
-                <CheckCheck size={14} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Setujui Proyek</TooltipContent>
-          </Tooltip>
-        )}
         {canDelete(p) && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -664,6 +698,7 @@ function ProyekPageInner() {
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                aria-label={`Hapus proyek ${p.projectName}`}
                 onClick={() => setDeleteId(p.id)}
               >
                 <Trash2 size={14} />
@@ -805,8 +840,41 @@ function ProyekPageInner() {
                 semua="Semua RO"
                 opsi={filterOptions.ro.map(([id, v]) => [String(id), `${v.code} — ${v.name}`])}
               />
+              <FilterSelect
+                label="Penanda"
+                lebar
+                value={filterPenanda}
+                onChange={(v) => setFilterPenanda(v as typeof filterPenanda)}
+                semua="Semua proyek"
+                opsi={[
+                  ["fkb", "FKB · kegiatan baru"],
+                  ["fkw", "FKW · kegiatan wajib"],
+                  ["mpa", "MPA"],
+                ]}
+              />
             </PopoverContent>
           </Popover>
+          <div role="group" aria-label="Angka yang ditampilkan" className="ml-auto flex overflow-hidden rounded-lg border">
+            {(
+              [
+                [false, "Rencana"],
+                [true, "Rencana + realisasi"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={label}
+                type="button"
+                aria-pressed={tampilReal === v}
+                onClick={() => setTampilReal(v)}
+                className={cn(
+                  "h-9 px-3 text-[13px] transition-colors",
+                  tampilReal === v ? "bg-foreground text-background" : "bg-card hover:bg-accent",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           {(filterBalai || filterProgram || filterKegiatan || filterKro || filterRo || filterStatus) && (
             <button
               type="button"
@@ -866,11 +934,22 @@ function ProyekPageInner() {
               Hasil import terakhir{filterImport && " ✕"}
             </button>
           )}
+          {bisaAjukan.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto h-8 gap-1.5 text-[13px]"
+              onClick={() => setAjukanMassalBuka(true)}
+            >
+              <Send size={13} />
+              Ajukan {bisaAjukan.length} proyek
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
             onClick={toggleAllGroups}
-            className="ml-auto h-8 gap-1.5 text-[13px] text-muted-foreground"
+            className={cn("h-8 gap-1.5 text-[13px] text-muted-foreground", !bisaAjukan.length && "ml-auto")}
           >
             {allCollapsed ? <Maximize2 size={13} /> : <Minimize2 size={13} />}
             {allCollapsed ? "Buka semua" : "Tutup semua"}
@@ -939,9 +1018,9 @@ function ProyekPageInner() {
                     </span>
                   </span>
                   <span className="hidden md:block" />
-                  <SelAngka rencana={balaiGroup.grandTotalRencana} realisasi={balaiGroup.grandTotalRealisasi} tebal />
+                  <SelAngka tampilReal={tampilReal} rencana={balaiGroup.grandTotalRencana} realisasi={balaiGroup.grandTotalRealisasi} tebal />
                   {groups.years.map((y) => (
-                    <SelAngka
+                    <SelAngka tampilReal={tampilReal}
                       key={y}
                       sembunyi
                       rencana={balaiGroup.rencanaByYear[y] || 0}
@@ -992,9 +1071,9 @@ function ProyekPageInner() {
                             </span>
                           </span>
                           <span className="hidden md:block" />
-                          <SelAngka rencana={kegGroup.grandTotalRencana} realisasi={kegGroup.grandTotalRealisasi} tebal />
+                          <SelAngka tampilReal={tampilReal} rencana={kegGroup.grandTotalRencana} realisasi={kegGroup.grandTotalRealisasi} tebal />
                           {groups.years.map((y) => (
-                            <SelAngka
+                            <SelAngka tampilReal={tampilReal}
                               key={y}
                               sembunyi
                               rencana={kegGroup.rencanaByYear[y] || 0}
@@ -1047,6 +1126,17 @@ function ProyekPageInner() {
                                       <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                         <span className="font-mono">{p.kodeProyek ?? getProyekKode(p)}</span>
                                         <span>· {paketOf(p).length} paket</span>
+                                        {(["fkb", "fkw", "mpa"] as const)
+                                          .filter((k) => p[k]?.length)
+                                          .map((k) => (
+                                            <span
+                                              key={k}
+                                              className="rounded bg-tier-1 px-1 font-mono text-[10.5px] uppercase"
+                                              title={`${k.toUpperCase()}: ${p[k].join(", ")}`}
+                                            >
+                                              {k}
+                                            </span>
+                                          ))}
                                         <Penanda
                                           ada={hasLokasi(p)}
                                           ikon={MapPin}
@@ -1071,9 +1161,9 @@ function ProyekPageInner() {
                                       </Badge>
                                     )}
                                   </span>
-                                  <SelAngka rencana={total.rencana} realisasi={total.realisasi} tebal />
+                                  <SelAngka tampilReal={tampilReal} rencana={total.rencana} realisasi={total.realisasi} tebal />
                                   {groups.years.map((y) => (
-                                    <SelAngka
+                                    <SelAngka tampilReal={tampilReal}
                                       key={y}
                                       sembunyi
                                       rencana={byYear[y]?.rencana || 0}
@@ -1121,13 +1211,14 @@ function ProyekPageInner() {
                                             </span>
                                           </span>
                                           <span className="hidden md:block" />
-                                          <SelAngka rencana={pkTotal.rencana} realisasi={pkTotal.realisasi} />
+                                          <SelAngka tampilReal={tampilReal} rencana={pkTotal.rencana} realisasi={pkTotal.realisasi} />
                                           {groups.years.map((y) => (
-                                            <SelAngka
+                                            <SelAngka tampilReal={tampilReal}
                                               key={y}
                                               sembunyi
                                               rencana={pkByYear[y]?.rencana || 0}
                                               realisasi={pkByYear[y]?.realisasi || 0}
+                                              onIsi={bisaIsiRealisasi(p) ? () => bukaDetail(p) : undefined}
                                             />
                                           ))}
                                           <span className="hidden md:block" />
@@ -1147,8 +1238,8 @@ function ProyekPageInner() {
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        Angka atas = rencana; angka bawah abu = realisasi (tampil kalau sudah ada). Klik nama proyek untuk membuka
-        detailnya.
+        Angka atas = rencana; angka bawah abu = realisasi (mode Rencana + realisasi). &ldquo;+ isi&rdquo; membuka detail
+        proyek untuk mengisi realisasi tahun itu. Klik nama proyek untuk membuka detailnya.
       </p>
 
       {!loading && groups.balaiGroups.length > 0 && totalPages > 1 && (
@@ -1230,6 +1321,30 @@ function ProyekPageInner() {
           } else fetchProyek();
         }}
       />
+
+      <AlertDialog open={ajukanMassalBuka} onOpenChange={(v) => !mengajukan && setAjukanMassalBuka(v)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ajukan {bisaAjukan.length} proyek?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Semua proyek berstatus Draft atau Dikembalikan yang sedang tampil (sesuai filter) akan diajukan untuk
+              diperiksa. Setelah diajukan, isinya dikunci sampai dikembalikan. Proyek tanpa paket akan dilewati.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={mengajukan}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={mengajukan}
+              onClick={(e) => {
+                e.preventDefault();
+                handleAjukanMassal();
+              }}
+            >
+              {mengajukan ? "Mengajukan…" : `Ajukan ${bisaAjukan.length} proyek`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>

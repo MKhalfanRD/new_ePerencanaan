@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Flowchart: riwayat proyek (admin)</title>
+<style>
+body{font-family:'Segoe UI',system-ui,sans-serif;margin:28px 36px;color:#231f1c;background:#fff;font-size:13.5px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px}
+.mut{color:#6b655f;font-size:13px}
+.box{border:1px solid #e3ddd8;border-radius:10px;padding:12px 16px;margin:10px 0}
+.q{background:#fff4ec;border-color:#f0c9ad}
+table{border-collapse:collapse;width:100%;font-size:12.5px}td,th{border:1px solid #e3ddd8;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f6f3f0}
+.page{page-break-after:always}
+code{background:#f6f3f0;padding:0 4px;border-radius:4px}
+.contoh{border:1px solid #d9d2cb;border-radius:10px;padding:10px 14px;background:#fcfbfa;font-size:12.5px}
+.contoh p{margin:6px 0}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+<div class="page">
+<h1>Riwayat proyek (khusus admin)</h1>
+<div class="mut">Fitur no. 8 · 20 Okt 2026 · disetujui</div>
+
+<div class="box"><b>Sekarang.</b> Log aktivitas hanya membandingkan kolom tabel proyek itu sendiri, dengan nama teknis (mis. <code>balaiId: 9</code>, <code>outputTarget</code>). Perubahan <b>paket, alokasi per tahun, realisasi, lokasi, dokumen, dan isian form tambahan</b> tidak masuk riwayat proyek. Hanya Super Admin yang bisa melihat, lewat panel di detail &amp; menu Log Aktivitas global.</div>
+<div class="box"><b>Kebutuhan (riset T4, 19 Okt).</b> Riwayat <b>per proyek</b>, tampil <b>di dalam proyek</b>, <b>hanya admin</b>, isinya jelas dan mencakup <b>semua yang ada di proyek</b>: semua kolom &amp; isian form, paket, alokasi per tahun, lokasi, dokumen, status. Hi-fi HfDetail: panel kanan "Riwayat proyek", filter "Semua bagian".</div>
+
+<h2>1 · Cara mencatat</h2>
+<pre class="mermaid">
+flowchart TD
+  A(["Ada yang menyimpan perubahan<br>(form proyek, paket, realisasi, dokumen,<br>ajukan/periksa/putuskan, import)"]) --> B["Potret isi proyek SEBELUM<br>(semua bagian, sudah berlabel)"]
+  B --> C["Perubahan disimpan seperti biasa"]
+  C --> D["Potret isi proyek SESUDAH"]
+  D --> E["Bandingkan per baris berlabel"]
+  E --> F{"Ada yang berbeda?"}
+  F -- Tidak --> G(["Tidak dicatat"])
+  F -- Ya --> H["Simpan 1 entri riwayat:<br>siapa · kapan · aksi · daftar<br>Bagian › Kolom: sebelum → sesudah"]
+</pre>
+
+<h2>Isi potret (label diambil dari form kegiatan proyek)</h2>
+<table>
+<tr><th>Bagian</th><th>Contoh baris yang dibandingkan</th></tr>
+<tr><td>Tab form (Identitas … Dokumen)</td><td>Semua kolom bawaan &amp; tambahan admin, dengan label dari Master Data › Form Proyek. Nilai ditulis seperti di detail: "BBWS Mesuji Sekampung", "Ada · 2025", label pilihan, bukan id</td></tr>
+<tr><td>Paket</td><td>"Paket I › Nama / Satker / KRO-RO / Tahun / Lokasi"; paket ditambah / dihapus</td></tr>
+<tr><td>Alokasi per tahun</td><td>"Paket I › 2026 › SBSN: Rp 1,0 M → Rp 1,5 M", komponen, volume RO/IRO</td></tr>
+<tr><td>Realisasi</td><td>"Paket I › 2026 › Realisasi RM: – → Rp 4,1 M"</td></tr>
+<tr><td>Dokumen</td><td>Berkas ditambah / dihapus (per kolom upload)</td></tr>
+<tr><td>Status</td><td>Diajukan / Diperiksa / Dikembalikan / Disetujui + catatan pemeriksaan</td></tr>
+</table>
+</div>
+
+<div class="page">
+<h2>2 · Tampilan (panel kanan detail proyek)</h2>
+<div class="contoh">
+<b>Riwayat proyek</b> <span class="mut">· hanya admin</span> &nbsp; [Semua bagian ▾]
+<p>● <b>Rina (Verifikator)</b> · 18 Okt 14.20<br>Pemeriksaan: <b>Perlu revisi</b> · "Volume RO paket II belum sesuai DED"</p>
+<p>● <b>Budi (Satker)</b> · 17 Okt 09.12 · Realisasi<br>Paket I › 2026 › RM: – → Rp 4,1 M</p>
+<p>● <b>Budi (Satker)</b> · 16 Okt 16.40 · Edit paket · 2 perubahan<br>Paket II › 2026 › SBSN: Rp 1,0 M → Rp 1,5 M<br>Paket II › 2026 › Volume RO: 900 → 1.250 ha</p>
+<p>● <b>Sistem</b> · 14 Okt 08.00<br>Proyek dibuat lewat Import Excel</p>
+</div>
+<ul>
+<li>Entri dengan banyak perubahan menampilkan 3 baris pertama + "lihat semua (n)".</li>
+<li>Filter bagian: Semua · per tab form · Paket &amp; alokasi · Realisasi · Dokumen · Status.</li>
+</ul>
+
+<h2>3 · Ikut terbuka: "yang berubah sejak dikembalikan" (Pemeriksaan)</h2>
+<pre class="mermaid">
+flowchart LR
+  A["Proyek diajukan ulang"] --> B["Ambil entri riwayat sejak<br>pengembalian terakhir"]
+  B --> C["Gabung per kolom:<br>nilai sebelum pertama → nilai sesudah terakhir"]
+  C --> D["Tabel di panel Pemeriksaan<br>(hi-fi HfPeriksa)"]
+</pre>
+
+<h2>Yang berubah</h2>
+<table>
+<tr><th>Bagian</th><th>Perubahan</th></tr>
+<tr><td>Database</td><td>Tabel baru <code>riwayat_proyek</code>: proyek, pengguna, aksi, daftar perubahan (bagian, kolom, sebelum, sesudah), waktu</td></tr>
+<tr><td>Server</td><td>Potret + bandingkan di semua jalur simpan proyek/paket/realisasi/dokumen/status; import = 1 entri ringkas per proyek ("+2 paket, +3 alokasi")</td></tr>
+<tr><td>Detail proyek</td><td>Panel kanan memakai riwayat baru; terlihat untuk Admin &amp; Super Admin</td></tr>
+<tr><td>Pemeriksaan</td><td>Tabel "yang berubah sejak dikembalikan" (pemeriksa &amp; admin)</td></tr>
+</table>
+
+<h2>Keputusan (20 Okt)</h2>
+<div class="box">Log <b>hanya ada di detail proyek</b> dan mencakup <b>seluruh aktivitas yang terkait proyek itu</b>. Menu &amp; halaman Log Aktivitas global dihapus. Riwayat mulai dari sekarang; import = 1 entri ringkas per proyek.</div>
+</div>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral', flowchart: { curve: 'basis', htmlLabels: true } });</script>
+</body>
+</html>

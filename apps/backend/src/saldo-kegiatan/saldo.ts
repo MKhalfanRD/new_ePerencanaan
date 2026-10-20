@@ -32,7 +32,7 @@ export function jumlahPerTahun(rows: BarisDana[]): Map<number, Dana> {
   return m;
 }
 
-/** Pemakaian (alokasi RENCANA paket aktif) kegiatan per tahun. */
+/** Pemakaian kegiatan per tahun: per paket per tahun realisasi bila sudah diisi, kalau belum rencana. */
 export async function pemakaianKegiatan(
   tx: Prisma.TransactionClient,
   kegiatanId: string,
@@ -41,9 +41,11 @@ export async function pemakaianKegiatan(
 ): Promise<Map<number, Dana>> {
   if (!tahun.length) return new Map();
   const rows = await tx.$queryRaw<BarisDana[]>`
-    SELECT a.tahun::int AS tahun, SUM(a.rm) AS rm, SUM(a.rmp) AS rmp, SUM(a.pln) AS pln,
-           SUM(a.sbsn) AS sbsn, SUM(a.kpbu) AS kpbu
+    SELECT a.tahun::int AS tahun, SUM(COALESCE(r.rm, a.rm)) AS rm, SUM(COALESCE(r.rmp, a.rmp)) AS rmp,
+           SUM(COALESCE(r.pln, a.pln)) AS pln, SUM(COALESCE(r.sbsn, a.sbsn)) AS sbsn,
+           SUM(COALESCE(r.kpbu, a.kpbu)) AS kpbu
     FROM alokasi a
+    LEFT JOIN alokasi r ON r."paketId" = a."paketId" AND r.tahun = a.tahun AND r.status = 'REALISASI'
     JOIN paket k ON k.id = a."paketId"
     JOIN proyek p ON p.id = k."proyekId"
     WHERE a.status = 'RENCANA' AND k."deletedAt" IS NULL

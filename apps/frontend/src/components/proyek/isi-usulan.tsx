@@ -175,9 +175,9 @@ export function IsiUsulan({
           : null;
       case "tematikRenjaId": return p.tematikRenja?.name;
       case "pkpnId": return p.pkpn?.name;
-      case "fkb": return yaTidak(p.fkb);
-      case "fkw": return yaTidak(p.fkw);
-      case "mpa": return yaTidak(p.mpa);
+      case "fkb": return (p.fkb ?? []).join(", ") || null;
+      case "fkw": return (p.fkw ?? []).join(", ") || null;
+      case "mpa": return (p.mpa ?? []).join(", ") || null;
       case "taggingDinamis": return p.taggingDinamis?.length ? p.taggingDinamis.join(", ") : null;
       case "catatanPembina": return p.catatanPembina;
       case "catatanSspsda": return p.catatanSspsda;

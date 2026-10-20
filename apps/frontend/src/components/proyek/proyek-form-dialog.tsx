@@ -215,9 +215,10 @@ const schema = z.object({
   indikatorSasaranProgramId: z.string().optional(),
   indikatorSasaranKegiatanId: z.string().optional(),
   tematikRenjaId: z.string().optional(),
-  fkb: z.boolean(),
-  fkw: z.boolean(),
-  mpa: z.boolean(),
+  // Penanda per tahun: daftar tahun yang dicentang.
+  fkb: z.array(z.number()),
+  fkw: z.array(z.number()),
+  mpa: z.array(z.number()),
   taggingDinamis: z.array(z.string()),
 
   // Tab 6: Dokumen & Catatan
@@ -382,6 +383,44 @@ function SectionHeader({
   );
 }
 
+/** Baris "Penanda per tahun" (hi-fi HfForm06): centang FKB/FKW/MPA per tahun periode. */
+function PenandaTahun({
+  label,
+  tahun,
+  nilai,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  tahun: number[];
+  nilai: number[];
+  onChange: (v: number[]) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <fieldset
+      disabled={disabled}
+      className="col-span-full flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border px-4 py-3"
+    >
+      <legend className="sr-only">{label} per tahun</legend>
+      <span className="min-w-[14rem] flex-1 text-sm font-medium">{label}</span>
+      {tahun.map((t) => (
+        <label key={t} className="flex cursor-pointer items-center gap-1.5 text-[13px]">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-input accent-[var(--primary)]"
+            checked={nilai.includes(t)}
+            onChange={(e) =>
+              onChange(e.target.checked ? [...nilai, t].sort() : nilai.filter((x) => x !== t))
+            }
+          />
+          {t}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
 function CincinSkor({ nilai, memuat }: { nilai: number; memuat?: boolean }) {
   const r = 62;
   const keliling = 2 * Math.PI * r;
@@ -543,9 +582,9 @@ export function ProyekFormDialog({
       statusDed: "RENCANA",
       statusLarap: "RENCANA",
       statusDokumenLingkungan: "RENCANA",
-      fkb: false,
-      fkw: false,
-      mpa: false,
+      fkb: [],
+      fkw: [],
+      mpa: [],
       taggingDinamis: [],
       paket: [],
       satkerBolehUbahPaket: true,
@@ -638,9 +677,9 @@ export function ProyekFormDialog({
         indikatorSasaranProgramId: editData.indikatorSasaranProgramId || "",
         indikatorSasaranKegiatanId: editData.indikatorSasaranKegiatanId || "",
         tematikRenjaId: editData.tematikRenjaId || "",
-        fkb: editData.fkb,
-        fkw: editData.fkw,
-        mpa: editData.mpa,
+        fkb: editData.fkb ?? [],
+        fkw: editData.fkw ?? [],
+        mpa: editData.mpa ?? [],
         taggingDinamis: editData.taggingDinamis || [],
         catatanPembina: editData.catatanPembina || "",
         catatanSspsda: editData.catatanSspsda || "",
@@ -691,9 +730,9 @@ export function ProyekFormDialog({
         statusDed: "RENCANA",
         statusLarap: "RENCANA",
         statusDokumenLingkungan: "RENCANA",
-        fkb: false,
-        fkw: false,
-        mpa: false,
+        fkb: [],
+        fkw: [],
+        mpa: [],
         taggingDinamis: [],
         paket: [],
         satkerBolehUbahPaket: true,
@@ -1405,6 +1444,11 @@ export function ProyekFormDialog({
     ),
   };
 
+  // Tahun penanda = semua tahun periode proyek (keputusan 20 Okt).
+  const periodePenanda = periodeList.find((pr) => pr.id === watch("periodeId"));
+  const tahunPenanda = periodePenanda
+    ? Array.from({ length: periodePenanda.endYear - periodePenanda.startYear + 1 }, (_, i) => periodePenanda.startYear + i)
+    : [];
   const taggingRenderers: Record<string, (item: FormItemNode) => React.ReactNode> = {
     kegiatanPrioritasId: (item) => (
       <div key={item.id} className={cn("space-y-2", isItemWide(item) && "col-span-full")}>
@@ -1685,46 +1729,34 @@ export function ProyekFormDialog({
       </div>
     ),
     fkb: (item) => (
-      <label
+      <PenandaTahun
         key={item.id}
-        className="flex items-center gap-2 text-xs font-medium self-end pb-2 cursor-pointer"
-      >
-        <input
-          type="checkbox"
-          className="h-3.5 w-3.5 rounded border-input"
-          checked={watch("fkb")}
-          onChange={(e) => setValue("fkb", e.target.checked)}
-        />
-        {item.label}
-      </label>
+        label={item.label}
+        tahun={tahunPenanda}
+        nilai={watch("fkb") ?? []}
+        onChange={(v) => setValue("fkb", v, { shouldDirty: true })}
+        disabled={previewMode}
+      />
     ),
     fkw: (item) => (
-      <label
+      <PenandaTahun
         key={item.id}
-        className="flex items-center gap-2 text-xs font-medium self-end pb-2 cursor-pointer"
-      >
-        <input
-          type="checkbox"
-          className="h-3.5 w-3.5 rounded border-input"
-          checked={watch("fkw")}
-          onChange={(e) => setValue("fkw", e.target.checked)}
-        />
-        {item.label}
-      </label>
+        label={item.label}
+        tahun={tahunPenanda}
+        nilai={watch("fkw") ?? []}
+        onChange={(v) => setValue("fkw", v, { shouldDirty: true })}
+        disabled={previewMode}
+      />
     ),
     mpa: (item) => (
-      <label
+      <PenandaTahun
         key={item.id}
-        className="flex items-center gap-2 text-xs font-medium self-end pb-2 cursor-pointer"
-      >
-        <input
-          type="checkbox"
-          className="h-3.5 w-3.5 rounded border-input"
-          checked={watch("mpa")}
-          onChange={(e) => setValue("mpa", e.target.checked)}
-        />
-        {item.label}
-      </label>
+        label={item.label}
+        tahun={tahunPenanda}
+        nilai={watch("mpa") ?? []}
+        onChange={(v) => setValue("mpa", v, { shouldDirty: true })}
+        disabled={previewMode}
+      />
     ),
     taggingDinamis: (item) => (
       <div key={item.id} className={cn("space-y-2", isItemWide(item) && "col-span-full")}>

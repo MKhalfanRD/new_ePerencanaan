@@ -20,9 +20,22 @@ enum UserStatus {
   INACTIVE
 }
 
+/// Alur pemeriksaan (flowchart-alur-status.pdf): DRAFT -> DIAJUKAN -> DIPERIKSA
+/// -> APPROVED (Disetujui); DIKEMBALIKAN = perlu revisi (catatan wajib).
 enum StatusProyek {
   DRAFT
+  DIAJUKAN
+  DIPERIKSA
+  DIKEMBALIKAN
   APPROVED
+}
+
+enum AksiPemeriksaan {
+  AJUKAN
+  SESUAI
+  REVISI
+  SETUJU
+  KEMBALIKAN
 }
 
 enum MasaPelaksanaan {
@@ -116,6 +129,8 @@ model User {
   proyek           Proyek[]
   activityLogs     ActivityLog[]
   dokumenPendukung DokumenPendukung[]
+  pemeriksaan      PemeriksaanProyek[]
+  riwayat          RiwayatProyek[]
 
   @@map("users")
 }
@@ -898,9 +913,10 @@ model Proyek {
   tematikRenjaId String? // RENJA: Tematik
   tematikRenja   TematikRenja? @relation(fields: [tematikRenjaId], references: [id])
 
-  fkb Boolean @default(false)
-  fkw Boolean @default(false)
-  mpa Boolean @default(false)
+  // Penanda per tahun (flowchart-penanda-tahun.pdf): daftar tahun yang dicentang.
+  fkb Int[] @default([]) @db.SmallInt
+  fkw Int[] @default([]) @db.SmallInt
+  mpa Int[] @default([]) @db.SmallInt
 
   // Tagging Dinamis — daftar tag bebas, ditulis manual.
   taggingDinamis String[] @default([])
@@ -935,6 +951,8 @@ model Proyek {
   paket            Paket[]
   formValues       ProyekFormValue[]
   dokumenPendukung DokumenPendukung[]
+  pemeriksaan      PemeriksaanProyek[]
+  riwayat          RiwayatProyek[]
 
   @@index([balaiId])
   @@index([status])
@@ -1162,4 +1180,40 @@ model SaldoKegiatan {
 
   @@unique([kegiatanId, tahun])
   @@map("saldo_kegiatan")
+}
+
+/// Jejak pengajuan, hasil pemeriksaan & keputusan per proyek — dasar banner
+/// "Dikembalikan", lama menunggu, dan hasil pemeriksa di menu Pemeriksaan.
+model PemeriksaanProyek {
+  id       String          @id @default(cuid())
+  proyekId String
+  proyek   Proyek          @relation(fields: [proyekId], references: [id], onDelete: Cascade)
+  aksi     AksiPemeriksaan
+  catatan  String?         @db.Text
+  userId   String
+  user     User            @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([proyekId, createdAt])
+  @@map("pemeriksaan_proyek")
+}
+
+/// Riwayat proyek (khusus admin, tampil di detail proyek): tiap simpan yang
+/// mengubah isi proyek — kolom form, paket, alokasi, realisasi, dokumen,
+/// status — dicatat sebagai daftar {bagian, kolom, sebelum, sesudah} berlabel.
+model RiwayatProyek {
+  id        String  @id @default(cuid())
+  proyekId  String
+  proyek    Proyek  @relation(fields: [proyekId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?   @relation(fields: [userId], references: [id])
+  aksi      String  @db.VarChar(120)
+  catatan   String? @db.Text
+  perubahan Json    @default("[]")
+
+  createdAt DateTime @default(now())
+
+  @@index([proyekId, createdAt])
+  @@map("riwayat_proyek")
 }

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Flowchart: laporan</title>
+<style>
+body{font-family:'Segoe UI',system-ui,sans-serif;margin:28px 36px;color:#231f1c;background:#fff;font-size:13.5px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px}
+.mut{color:#6b655f;font-size:13px}
+.box{border:1px solid #e3ddd8;border-radius:10px;padding:12px 16px;margin:10px 0}
+.q{background:#fff4ec;border-color:#f0c9ad}
+table{border-collapse:collapse;width:100%;font-size:12.5px}td,th{border:1px solid #e3ddd8;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f6f3f0}
+.page{page-break-after:always}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+<div class="page">
+<h1>Laporan (PDF &amp; Excel)</h1>
+<div class="mut">Fitur no. 9 · 20 Okt 2026 · disetujui</div>
+
+<div class="box"><b>Sekarang.</b> Tidak ada menu Laporan. Yang ada hanya Export Excel daftar proyek &amp; Export detail 1 proyek.</div>
+<div class="box"><b>Yang sudah diputuskan (riset 19 Okt, Q7–Q8, T3).</b>
+<ul style="margin:6px 0 0;padding-left:18px">
+<li>Laporan pimpinan: <b>alokasi rencana &amp; realisasi per kegiatan</b>; <b>total proyek</b> &amp; <b>total proyek per kegiatan</b>; di tiap kegiatan terlihat <b>balai-balainya</b>, <b>saldo diberikan, dipakai, sisa</b>.</li>
+<li>Bentuk <b>PDF dan Excel</b>. Pagu/aktual tidak dipakai.</li>
+<li>Pembina boleh melihat laporan kegiatannya. Menu baru "Laporan" (hi-fi HfLaporan: pilih jenis · saring · pratinjau · unduh).</li>
+</ul></div>
+
+<h2>1 · Alur</h2>
+<pre class="mermaid">
+flowchart TD
+  A(["Buka menu Laporan"]) --> B["Pilih jenis laporan"]
+  B --> C["Saring: tahun · kegiatan · balai · status proyek"]
+  C --> D["Pratinjau tabel di layar<br>(isi sama persis dengan file)"]
+  D --> E{"Unduh"}
+  E -- PDF --> F["PDF A4 mendatar:<br>judul · saringan · tanggal cetak · dicetak oleh<br>+ tabel + baris total"]
+  E -- Excel --> G["Excel: 1 sheet laporan + 1 sheet keterangan saringan<br>angka berupa sel angka (bisa dijumlah)"]
+</pre>
+
+<h2>2 · Isi tiap jenis</h2>
+<table>
+<tr><th>Jenis</th><th>Baris</th><th>Kolom</th></tr>
+<tr><td><b>A. Alokasi rencana &amp; realisasi per kegiatan</b></td><td>Per kegiatan: baris rencana &amp; baris realisasi (tahun terpilih atau semua tahun); baris total</td><td>RM · RMP · PLN · SBSN · KPBU · Total</td></tr>
+<tr><td><b>B. Total proyek per kegiatan</b></td><td>Per kegiatan, dirinci per balai; baris total</td><td>Jumlah proyek · jumlah paket · Draft · Diajukan · Diperiksa · Dikembalikan · Disetujui</td></tr>
+<tr><td><b>C. Saldo &amp; pemakaian per balai</b></td><td>Per kegiatan (saldo tahun terpilih), dirinci per balai pemakai</td><td>Saldo diberikan · Terpakai · Sisa · % terpakai (terpakai memakai realisasi bila sudah diisi)</td></tr>
+</table>
+<p class="mut">Saringan berlaku sama di layar &amp; file. Laporan C memakai satu tahun (saldo per tahun).</p>
+
+<h2>Keputusan (20 Okt)</h2>
+<div class="box">1. Semua akun, isi sesuai cakupan akun · 2. Angka <b>penuh</b> di Excel &amp; PDF, <b>ringkas</b> di layar · 3. Kop PDF: judul, saringan, tanggal cetak, pencetak — tanpa tanda tangan/pengesahan</div>
+</div>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral', flowchart: { curve: 'basis', htmlLabels: true } });</script>
+</body>
+</html>

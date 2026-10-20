@@ -1,4 +1,5 @@
 import {
+  IsInt,
   IsArray,
   IsBoolean,
   IsEnum,
@@ -110,9 +111,9 @@ export class PreviewSkorDto {
   @IsString()
   tematikRenjaId?: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() fkb?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() fkw?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() mpa?: boolean;
+  @ApiPropertyOptional({ type: [Number] }) @IsOptional() @IsArray() @IsInt({ each: true }) fkb?: number[];
+  @ApiPropertyOptional({ type: [Number] }) @IsOptional() @IsArray() @IsInt({ each: true }) fkw?: number[];
+  @ApiPropertyOptional({ type: [Number] }) @IsOptional() @IsArray() @IsInt({ each: true }) mpa?: number[];
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()

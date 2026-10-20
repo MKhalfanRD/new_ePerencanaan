@@ -180,10 +180,17 @@ export const lintasUnit = (user: any) =>
  */
 export function cekAksesPaket(
   user: any,
-  proyek: { balaiId: number; satkerBolehUbahPaket: boolean },
+  proyek: { balaiId: number; satkerBolehUbahPaket: boolean; createdById?: string },
   satkerIdPaket?: string | null,
 ) {
-  if (!user?.balaiId || lintasUnit(user)) return;
+  if (lintasUnit(user)) return;
+  // Akun pusat non-admin: hanya proyek buatannya sendiri (sama dengan aturan
+  // melihat proyek di ProyekService.findOne).
+  if (!user?.balaiId) {
+    if (proyek.createdById && proyek.createdById !== user?.userId)
+      throw new ForbiddenException('Bukan proyek milik Anda');
+    return;
+  }
   if (user.balaiId !== proyek.balaiId)
     throw new ForbiddenException('Proyek ini milik balai lain');
   if (!user.satkerId) return;

@@ -1,10 +1,15 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { cekSaldoKegiatan } from '../saldo-kegiatan/saldo';
+import { cekBolehUbah } from '../proyek/alur-status';
+import { SUMBER } from '../saldo-kegiatan/saldo';
+import { RealisasiDto } from './dto/realisasi.dto';
+import { catatRiwayat, potretProyek } from '../proyek/riwayat';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreatePaketDto } from './dto/create-paket.dto';
@@ -21,6 +26,7 @@ import {
   cekRoKegiatan,
   cekSaldo,
   kolomPaket,
+  lintasUnit,
   relasiPaketBaru,
   ringkasIsian,
   satkerPaket,
@@ -106,7 +112,9 @@ export class PaketService {
       );
     }
     cekAksesPaket(user, proyek);
+    cekBolehUbah(proyek.status);
     cekIsianPaket(dto);
+    const sebelum = await potretProyek(this.prisma, proyek.id);
 
     const result = await this.prisma.$transaction(async (tx) => {
       await cekRoKegiatan(tx, proyek.kegiatanId, [dto.roId]);
@@ -141,6 +149,7 @@ export class PaketService {
     });
 
     await this.invalidateProyek(dto.proyekId);
+    await catatRiwayat(this.prisma, { proyekId: dto.proyekId, userId: user?.userId, aksi: 'Tambah paket', sebelum });
     return result;
   }
 
@@ -165,6 +174,8 @@ export class PaketService {
   async update(id: string, dto: UpdatePaketDto, user?: any) {
     const paket = await this.paketDanProyek(id);
     cekAksesPaket(user, paket.proyek, paket.satkerId);
+    cekBolehUbah(paket.proyek.status);
+    const sebelum = await potretProyek(this.prisma, paket.proyekId);
     // PATCH sebagian: kolom yang tidak dikirim tetap nilai lama.
     const lama = {
       name: paket.name,
@@ -198,6 +209,7 @@ export class PaketService {
       isian.satkerId = await satkerPaket(tx, user, paket.proyek.balaiId, isian.satkerId);
       if (dto.alokasi !== undefined) {
         await this.cekSaldoProyek(tx, paket.proyek, isian, id);
+        await this.cekRencanaVsRealisasi(tx, id, dto.alokasi);
         const lama = await tx.alokasi.findMany({ where: { paketId: id, status: 'RENCANA' } });
         await cekSaldoKegiatan(tx, paket.proyek.kegiatanId, lama, dto.alokasi);
       }
@@ -219,18 +231,84 @@ export class PaketService {
     });
 
     await this.invalidateProyek(paket.proyekId);
+    await catatRiwayat(this.prisma, { proyekId: paket.proyekId, userId: user?.userId, aksi: 'Edit paket', sebelum });
     return updated;
+  }
+
+  /** Rencana tidak boleh di bawah realisasi yang sudah diisi (flowchart-realisasi.pdf). */
+  private async cekRencanaVsRealisasi(
+    tx: Prisma.TransactionClient,
+    paketId: string,
+    alokasi: NonNullable<UpdatePaketDto['alokasi']>,
+  ) {
+    const realisasi = await tx.alokasi.findMany({ where: { paketId, status: 'REALISASI' } });
+    const salah: string[] = [];
+    for (const r of realisasi) {
+      const baru = alokasi.find((a) => a.tahun === r.tahun);
+      if (!baru) {
+        salah.push(`Tahun ${r.tahun} sudah punya realisasi; kosongkan realisasinya dulu sebelum menghapus tahun ini`);
+        continue;
+      }
+      for (const k of SUMBER)
+        if (Number(baru[k] ?? 0) < Number(r[k]))
+          salah.push(`Rencana ${k.toUpperCase()} ${r.tahun} tidak boleh di bawah realisasinya (Rp ${Number(r[k]).toLocaleString('id-ID')})`);
+    }
+    if (salah.length) throw new BadRequestException(salah.join('; '));
+  }
+
+  /**
+   * Isi/ubah realisasi 1 tahun. Admin: semua status. Pengisi: hanya proyek
+   * Disetujui & paket yang boleh ia ubah. Tiap sumber dana <= rencananya.
+   */
+  async simpanRealisasi(id: string, dto: RealisasiDto, user?: any) {
+    const paket = await this.paketDanProyek(id);
+    if (!lintasUnit(user)) {
+      cekAksesPaket(user, paket.proyek, paket.satkerId);
+      if (paket.proyek.status !== 'APPROVED')
+        throw new ForbiddenException('Realisasi diisi setelah proyek disetujui');
+    }
+    const rencana = await this.prisma.alokasi.findUnique({
+      where: { paketId_tahun_status: { paketId: id, tahun: dto.tahun, status: 'RENCANA' } },
+    });
+    if (!rencana) throw new BadRequestException(`Tahun ${dto.tahun} tidak ada di rencana paket ini`);
+    const sebelum = await potretProyek(this.prisma, paket.proyekId);
+
+    const nilai = Object.fromEntries(SUMBER.map((k) => [k, Number(dto[k] ?? 0)])) as Record<
+      (typeof SUMBER)[number],
+      number
+    >;
+    const lebih = SUMBER.filter((k) => nilai[k] > Number(rencana[k])).map(
+      (k) =>
+        `${k.toUpperCase()} Rp ${nilai[k].toLocaleString('id-ID')} melebihi rencana Rp ${Number(rencana[k]).toLocaleString('id-ID')}`,
+    );
+    if (lebih.length) throw new BadRequestException(`Realisasi ${dto.tahun}: ${lebih.join('; ')}`);
+
+    const total = SUMBER.reduce((s, k) => s + nilai[k], 0);
+    const where = { paketId_tahun_status: { paketId: id, tahun: dto.tahun, status: 'REALISASI' as const } };
+    if (total === 0) await this.prisma.alokasi.deleteMany({ where: { paketId: id, tahun: dto.tahun, status: 'REALISASI' } });
+    else
+      await this.prisma.alokasi.upsert({
+        where,
+        create: { paketId: id, tahun: dto.tahun, status: 'REALISASI', ...nilai, total },
+        update: { ...nilai, total },
+      });
+    await this.invalidateProyek(paket.proyekId);
+    await catatRiwayat(this.prisma, { proyekId: paket.proyekId, userId: user?.userId, aksi: `Realisasi ${dto.tahun}`, sebelum });
+    return this.findOne(id);
   }
 
   async remove(id: string, user?: any) {
     const paket = await this.paketDanProyek(id);
     cekAksesPaket(user, paket.proyek, paket.satkerId);
+    cekBolehUbah(paket.proyek.status);
+    const sebelum = await potretProyek(this.prisma, paket.proyekId);
     // Soft delete, konsisten dengan Proyek.deletedAt
     await this.prisma.paket.update({
       where: { id },
       data: { deletedAt: new Date() },
     });
     await this.invalidateProyek(paket.proyekId);
+    await catatRiwayat(this.prisma, { proyekId: paket.proyekId, userId: user?.userId, aksi: `Hapus paket ${paket.name}`, sebelum });
     return { message: 'Paket berhasil dihapus' };
   }
 }

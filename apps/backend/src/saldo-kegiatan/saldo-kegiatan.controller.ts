@@ -21,6 +21,16 @@ export class SaldoKegiatanController {
     return this.service.daftar(user, tahun);
   }
 
+  @ApiOperation({ summary: 'Pemakaian saldo 1 kegiatan 1 tahun per proyek & paket (dashboard)' })
+  @Get(':kegiatanId/proyek')
+  perProyek(
+    @Param('kegiatanId') kegiatanId: string,
+    @Query('tahun', ParseIntPipe) tahun: number,
+    @CurrentUser() user: any,
+  ) {
+    return this.service.perProyek(user, kegiatanId, tahun);
+  }
+
   @ApiOperation({ summary: 'Saldo & pemakaian 1 kegiatan per tahun' })
   @Get(':kegiatanId')
   perTahun(

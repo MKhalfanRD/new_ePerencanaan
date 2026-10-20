@@ -16,6 +16,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { PaketService } from './paket.service';
 import { CreatePaketDto } from './dto/create-paket.dto';
 import { UpdatePaketDto } from './dto/update-paket.dto';
+import { RealisasiDto } from './dto/realisasi.dto';
 
 @ApiTags('Paket')
 @ApiBearerAuth()
@@ -49,6 +50,13 @@ export class PaketController {
     @CurrentUser() user: any,
   ) {
     return this.paketService.update(id, dto, user);
+  }
+
+  @ApiOperation({ summary: 'Isi/ubah realisasi 1 tahun (admin semua status, pengisi saat Disetujui)' })
+  @Roles('SATKER', 'ADMINISTRATOR')
+  @Patch(':id/realisasi')
+  simpanRealisasi(@Param('id') id: string, @Body() dto: RealisasiDto, @CurrentUser() user: any) {
+    return this.paketService.simpanRealisasi(id, dto, user);
   }
 
   @ApiOperation({ summary: 'Hapus paket' })

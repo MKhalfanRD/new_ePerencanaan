@@ -229,7 +229,7 @@ export interface Proyek {
   kodeProyek?: string;
   projectName: string;
   kewenangan: "PUSAT" | "DAERAH";
-  status: "DRAFT" | "APPROVED";
+  status: "DRAFT" | "DIAJUKAN" | "DIPERIKSA" | "DIKEMBALIKAN" | "APPROVED";
   // Pemaketan: saldo (kosong = tanpa batas) & izin satker ubah paket.
   saldoVolumeRo?: string | null;
   saldoVolumeIro?: string | null;
@@ -293,9 +293,10 @@ export interface Proyek {
   };
   tematikRenjaId?: string;
   tematikRenja?: { id: string; name: string };
-  fkb: boolean;
-  fkw: boolean;
-  mpa: boolean;
+  /** Penanda per tahun: daftar tahun yang dicentang. */
+  fkb: number[];
+  fkw: number[];
+  mpa: number[];
   taggingDinamis: string[];
 
   // === Dokumen & Catatan ===

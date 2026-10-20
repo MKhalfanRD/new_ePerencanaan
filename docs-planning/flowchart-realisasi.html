@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Flowchart: realisasi anggaran</title>
+<style>
+body{font-family:'Segoe UI',system-ui,sans-serif;margin:28px 36px;color:#231f1c;background:#fff;font-size:13.5px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px}
+.mut{color:#6b655f;font-size:13px}
+.box{border:1px solid #e3ddd8;border-radius:10px;padding:12px 16px;margin:10px 0}
+.q{background:#fff4ec;border-color:#f0c9ad}
+table{border-collapse:collapse;width:100%;font-size:12.5px}td,th{border:1px solid #e3ddd8;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f6f3f0}
+.page{page-break-after:always}
+code{background:#f6f3f0;padding:0 4px;border-radius:4px}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+<div class="page">
+<h1>Realisasi anggaran</h1>
+<div class="mut">Fitur no. 7 · 20 Okt 2026 · disetujui</div>
+
+<div class="box"><b>Sekarang.</b> Tabel alokasi sudah punya baris <i>Realisasi</i>, tetapi <b>tidak ada tempat mengisinya</b> (dibekukan sejak 13 Okt). Tabel proyek &amp; detail sudah bisa menampilkan angka realisasi bila ada.</div>
+<div class="box"><b>Yang sudah diputuskan (riset 19 Okt).</b>
+<ul style="margin:6px 0 0;padding-left:18px">
+<li><b>R2</b> Realisasi <b>per paket per tahun per sumber dana</b>, sama dengan rencana.</li>
+<li><b>R1/R4/T3</b> Diisi <b>pengisi balai/satker</b> (termasuk pembina) <b>kapan saja</b>; admin bisa mengecek &amp; mengubah.</li>
+<li><b>R6</b> Realisasi <b>melebihi rencana tidak boleh disimpan</b>.</li>
+<li><b>R3/R5</b> Saldo kegiatan: tahun yang sudah ada realisasinya memakai <b>realisasi</b>, selisihnya kembali ke saldo (rencana 10 jt, realisasi 5 jt → 5 jt kembali).</li>
+<li>Realisasi <b>bukan menu terpisah</b>: diisi/dilihat di bawah rencana (tabel proyek &amp; detail). Hi-fi: baris "Realisasi … selisih … [Ubah]" di detail paket, "+ isi" di sel tabel, tombol Rencana / Rencana + realisasi.</li>
+</ul></div>
+
+<h2>1 · Mengisi realisasi</h2>
+<pre class="mermaid">
+flowchart TD
+  A(["Buka detail proyek › paket › tahun"]) --> B{"Proyek boleh<br>diisi realisasi?"}
+  B -- Tidak --> C["Baris realisasi hanya dibaca<br>+ alasan"]
+  B -- Ya --> D["Klik 'Isi realisasi' / 'Ubah'<br>(atau '+ isi' di sel tabel proyek)"]
+  D --> E["Isi per sumber dana yang ada di rencana tahun itu<br>(RM, SBSN, …)"]
+  E --> F["Tampil langsung: realisasi · rencana · selisih"]
+  F --> G{"Ada sumber dana yang<br>melebihi rencana?"}
+  G -- Ya --> H["Merah, tombol Simpan nonaktif"]
+  H --> E
+  G -- Tidak --> I["Simpan"]
+  I --> J["Server cek ulang (≤ rencana)"]
+  J --> K(["Tersimpan · saldo kegiatan<br>tahun itu memakai realisasi"])
+</pre>
+
+<h2>Aturan</h2>
+<table>
+<tr><th>Hal</th><th>Aturan</th></tr>
+<tr><td>Tingkat</td><td>1 baris realisasi per paket per tahun, rincian RM / RMP / PLN / SBSN / KPBU</td></tr>
+<tr><td>Batas</td><td>Tiap sumber dana realisasi ≤ rencana sumber dana itu di tahun yang sama (otomatis total ≤ rencana)</td></tr>
+<tr><td>Saldo kegiatan</td><td>Terpakai per paket per tahun = realisasi bila sudah diisi, kalau belum = rencana</td></tr>
+<tr><td>Mengubah rencana</td><td>Rencana tidak boleh diturunkan di bawah realisasi yang sudah diisi</td></tr>
+<tr><td>Riwayat</td><td>Setiap perubahan tercatat di log (tampilan riwayat proyek admin menyusul)</td></tr>
+</table>
+</div>
+
+<div class="page">
+<h2>2 · Tampil di mana</h2>
+<table>
+<tr><th>Layar</th><th>Perubahan</th></tr>
+<tr><td>Detail proyek › paket</td><td>Di bawah tiap tahun rencana: baris <b>Realisasi</b> (per sumber dana, selisih) + tombol <b>Isi realisasi / Ubah</b></td></tr>
+<tr><td>Tabel proyek</td><td>Tombol <b>Rencana / Rencana + realisasi</b>. Mode kedua: angka bawah = realisasi; di baris paket, sel tahun tanpa realisasi menampilkan <b>"+ isi"</b> (membuka isian tahun itu)</td></tr>
+<tr><td>Anggaran Kegiatan, form paket, tab Pemaketan</td><td>"Terpakai" otomatis memakai realisasi bila ada</td></tr>
+<tr><td>Server</td><td>Endpoint simpan realisasi per paket per tahun; cek batas &amp; hak akses; cek rencana ≥ realisasi saat paket disimpan</td></tr>
+</table>
+
+<h2>Keputusan (20 Okt)</h2>
+<div class="box">1. <b>Admin</b> boleh mengisi di <b>semua status</b>; <b>pengisi</b> hanya saat proyek <b>Disetujui</b> · 2. <b>Semua tahun paket</b> boleh diisi · 3. Tanpa alur persetujuan: <b>admin langsung</b> melihat &amp; mengubah</div>
+</div>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral', flowchart: { curve: 'basis', htmlLabels: true } });</script>
+</body>
+</html>

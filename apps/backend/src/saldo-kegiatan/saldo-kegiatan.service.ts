@@ -40,8 +40,10 @@ export class SaldoKegiatanService {
         { kegiatanId: string; balaiId: number; proyek: number; rm: unknown; rmp: unknown; pln: unknown; sbsn: unknown; kpbu: unknown }[]
       >`
         SELECT p."kegiatanId", p."balaiId", COUNT(DISTINCT p.id)::int AS proyek,
-               SUM(a.rm) AS rm, SUM(a.rmp) AS rmp, SUM(a.pln) AS pln, SUM(a.sbsn) AS sbsn, SUM(a.kpbu) AS kpbu
+               SUM(COALESCE(r.rm, a.rm)) AS rm, SUM(COALESCE(r.rmp, a.rmp)) AS rmp, SUM(COALESCE(r.pln, a.pln)) AS pln,
+               SUM(COALESCE(r.sbsn, a.sbsn)) AS sbsn, SUM(COALESCE(r.kpbu, a.kpbu)) AS kpbu
         FROM alokasi a
+        LEFT JOIN alokasi r ON r."paketId" = a."paketId" AND r.tahun = a.tahun AND r.status = 'REALISASI'
         JOIN paket k ON k.id = a."paketId"
         JOIN proyek p ON p.id = k."proyekId"
         WHERE a.status = 'RENCANA' AND k."deletedAt" IS NULL AND a.tahun = ${tahun}
@@ -91,6 +93,39 @@ export class SaldoKegiatanService {
     ]);
     const s = new Map(saldo.map((x) => [x.tahun, x]));
     return tahun.map((t) => ({ tahun: t, saldo: keluar(s.get(t)) ?? null, terpakai: pakai.get(t) ?? NOL }));
+  }
+
+  /** Dashboard: pemakaian saldo 1 kegiatan 1 tahun per proyek & per paket
+   * (realisasi menggantikan rencana per paket, sama dengan pemakaianKegiatan). */
+  async perProyek(user: any, kegiatanId: string, tahun: number) {
+    this.cekLingkup(user, kegiatanId);
+    const rows = await this.prisma.$queryRaw<
+      { proyekId: string; kodeProyek: string | null; projectName: string; balai: string; paketId: string; paket: string; total: unknown }[]
+    >`
+      SELECT p.id AS "proyekId", p."kodeProyek", p."projectName", b.name AS balai,
+             k.id AS "paketId", k.name AS paket,
+             (COALESCE(r.rm, a.rm) + COALESCE(r.rmp, a.rmp) + COALESCE(r.pln, a.pln)
+              + COALESCE(r.sbsn, a.sbsn) + COALESCE(r.kpbu, a.kpbu)) AS total
+      FROM alokasi a
+      LEFT JOIN alokasi r ON r."paketId" = a."paketId" AND r.tahun = a.tahun AND r.status = 'REALISASI'
+      JOIN paket k ON k.id = a."paketId"
+      JOIN proyek p ON p.id = k."proyekId"
+      JOIN balai b ON b.id = p."balaiId"
+      WHERE a.status = 'RENCANA' AND k."deletedAt" IS NULL
+        AND p."kegiatanId" = ${kegiatanId} AND a.tahun = ${tahun}`;
+    const proyek = new Map<
+      string,
+      { proyekId: string; kodeProyek: string | null; nama: string; balai: string; terpakai: number; paket: { id: string; nama: string; terpakai: number }[] }
+    >();
+    for (const r of rows) {
+      const p =
+        proyek.get(r.proyekId) ??
+        { proyekId: r.proyekId, kodeProyek: r.kodeProyek, nama: r.projectName, balai: r.balai, terpakai: 0, paket: [] };
+      p.terpakai += Number(r.total);
+      p.paket.push({ id: r.paketId, nama: r.paket, terpakai: Number(r.total) });
+      proyek.set(r.proyekId, p);
+    }
+    return [...proyek.values()].sort((a, b) => b.terpakai - a.terpakai);
   }
 
   /** Admin menetapkan saldo beberapa tahun sekaligus. total null = hapus saldo tahun itu. */

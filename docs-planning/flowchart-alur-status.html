@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Flowchart: alur status proyek & pemeriksaan</title>
+<style>
+body{font-family:'Segoe UI',system-ui,sans-serif;margin:28px 36px;color:#231f1c;background:#fff;font-size:13.5px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px}
+.mut{color:#6b655f;font-size:13px}
+.box{border:1px solid #e3ddd8;border-radius:10px;padding:12px 16px;margin:10px 0}
+.q{background:#fff4ec;border-color:#f0c9ad}
+table{border-collapse:collapse;width:100%;font-size:12.5px}td,th{border:1px solid #e3ddd8;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f6f3f0}
+.page{page-break-after:always}
+code{background:#f6f3f0;padding:0 4px;border-radius:4px}
+.pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:600}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+<div class="page">
+<h1>Alur status proyek &amp; pemeriksaan</h1>
+<div class="mut">Fitur no. 5 · 20 Okt 2026 · disetujui</div>
+
+<div class="box"><b>Sekarang.</b> Status hanya <b>Draft</b> dan <b>Disetujui</b>. Proyek baru (form maupun import) langsung tersimpan <b>Disetujui</b>, tidak ada pengajuan, pemeriksaan, atau pengembalian. Semua 4 proyek di data uji berstatus Disetujui.</div>
+<div class="box"><b>Yang sudah diputuskan (riset 19 Okt).</b>
+<ul style="margin:6px 0 0;padding-left:18px">
+<li>Proyek dibuat balai/satker (pengisi), lalu <b>dicek</b> Verifikator/Operator.</li>
+<li>Verifikator/Operator <b>hanya memberi hasil verifikasi</b>: <i>Sesuai</i> atau <i>Perlu revisi</i>. Perlu revisi = proyek dikembalikan.</li>
+<li><b>Persetujuan akhir</b> oleh Admin / Super Admin. Admin juga boleh mengembalikan.</li>
+<li>Pengembalian <b>wajib membawa catatan</b>.</li>
+<li>Hi-fi Pemeriksaan: tab <i>Perlu diperiksa</i> · <i>Menunggu keputusan</i> · <i>Selesai</i>; banner "Dikembalikan untuk revisi" + tombol "Perbaiki &amp; ajukan ulang" di detail proyek.</li>
+</ul></div>
+
+<h2>1 · Status dan perpindahannya</h2>
+<pre class="mermaid">
+stateDiagram-v2
+  direction TB
+  [*] --> Draft: buat proyek / import
+  Draft --> Diajukan: pengisi klik "Ajukan"
+  Diajukan --> Diperiksa: pemeriksa "Sesuai"
+  Diajukan --> Dikembalikan: pemeriksa "Perlu revisi" + catatan
+  Diperiksa --> Disetujui: admin "Setujui"
+  Diperiksa --> Dikembalikan: admin "Kembalikan" + catatan
+  Dikembalikan --> Diajukan: pengisi "Perbaiki & ajukan ulang"
+  Disetujui --> Dikembalikan: admin "Kembalikan" + catatan
+</pre>
+
+<table>
+<tr><th>Status</th><th>Arti</th><th>Siapa boleh mengubah isi proyek &amp; paket</th></tr>
+<tr><td><span class="pill" style="background:#efedeb;color:#5d5955">Draft</span></td><td>Masih diisi, belum diajukan</td><td>Pengisi (balai/satker/pembina) &amp; admin</td></tr>
+<tr><td><span class="pill" style="background:#ecedf6;color:#45478a">Diajukan</span></td><td>Menunggu dicek Verifikator/Operator</td><td>Dikunci (hanya baca)</td></tr>
+<tr><td><span class="pill" style="background:#ecedf6;color:#45478a">Diperiksa</span></td><td>Lolos pemeriksaan, menunggu keputusan admin</td><td>Dikunci</td></tr>
+<tr><td><span class="pill" style="background:#f6e9e9;color:#9a2a2b">Dikembalikan</span></td><td>Perlu revisi, catatan tampil di detail</td><td>Pengisi &amp; admin</td></tr>
+<tr><td><span class="pill" style="background:#eaf2ea;color:#276a2d">Disetujui</span></td><td>Final</td><td>Dikunci. Realisasi tetap bisa diisi (fitur realisasi menyusul)</td></tr>
+</table>
+<p class="mut">Saldo kegiatan tetap memotong sejak Draft di semua status (keputusan R5).</p>
+</div>
+
+<div class="page">
+<h2>2 · Siapa melakukan apa</h2>
+<table>
+<tr><th>Peran</th><th>Aksi</th><th>Di mana</th></tr>
+<tr><td>Pengisi (role dasar SATKER, termasuk pembina &amp; bawahannya)</td><td>Ajukan · Perbaiki &amp; ajukan ulang</td><td>Detail proyek; aksi massal "Ajukan" di daftar proyek (mis. semua hasil import terakhir)</td></tr>
+<tr><td>Verifikator / Operator (terikat 1 kegiatan)</td><td>Hasil pemeriksaan: Sesuai / Perlu revisi (+ catatan)</td><td>Menu <b>Pemeriksaan</b> › Perlu diperiksa</td></tr>
+<tr><td>Admin / Super Admin</td><td>Setujui / Kembalikan (+ catatan) · kembalikan proyek yang sudah disetujui</td><td>Menu <b>Pemeriksaan</b> › Menunggu keputusan; detail proyek</td></tr>
+</table>
+
+<h2>3 · Alur di layar</h2>
+<pre class="mermaid">
+flowchart TD
+  A(["Pengisi selesai mengisi"]) --> B["Detail proyek: tombol Ajukan<br>(cek kolom wajib dulu)"]
+  B --> C["Status Diajukan · isi dikunci"]
+  C --> D["Pemeriksaan › Perlu diperiksa<br>(urut paling lama menunggu)"]
+  D --> E{"Pemeriksa"}
+  E -- "Sesuai (catatan opsional)" --> F["Status Diperiksa"]
+  E -- "Perlu revisi (catatan wajib)" --> G["Status Dikembalikan"]
+  F --> H["Pemeriksaan › Menunggu keputusan<br>hasil pemeriksa + saldo kegiatan + skor"]
+  H --> I{"Admin"}
+  I -- Setujui --> J(["Disetujui"])
+  I -- "Kembalikan (catatan wajib)" --> G
+  G --> K["Detail proyek: banner merah<br>siapa · kapan · catatan"]
+  K --> L["Pengisi memperbaiki"]
+  L --> M["Perbaiki &amp; ajukan ulang"]
+  M --> C
+</pre>
+
+<h2>Yang berubah</h2>
+<table>
+<tr><th>Bagian</th><th>Perubahan</th></tr>
+<tr><td>Database</td><td>Status tambah <code>DIAJUKAN</code>, <code>DIPERIKSA</code>, <code>DIKEMBALIKAN</code> (APPROVED tetap = Disetujui). Tabel baru <code>pemeriksaan_proyek</code>: proyek, aksi, catatan, oleh siapa, kapan — dasar banner, "menunggu n hari", dan hasil pemeriksa</td></tr>
+<tr><td>Server</td><td>Endpoint ajukan / periksa / putuskan / kembalikan dengan cek peran &amp; status; simpan proyek, paket, alokasi ditolak saat status terkunci. Proyek &amp; import baru = Draft</td></tr>
+<tr><td>Menu baru</td><td><b>Pemeriksaan</b> (hi-fi HfPeriksa &amp; HfPeriksaAdmin), hanya untuk Verifikator/Operator/Admin</td></tr>
+<tr><td>Detail proyek</td><td>Tombol Ajukan / Perbaiki &amp; ajukan ulang; banner Dikembalikan; tombol Setujui/Kembalikan admin (ganti "Kembalikan ke draft")</td></tr>
+<tr><td>Daftar proyek</td><td>Chip status Diajukan · Diperiksa · Dikembalikan; aksi massal Ajukan</td></tr>
+<tr><td>Data lama</td><td>4 proyek yang sekarang Disetujui tetap Disetujui</td></tr>
+</table>
+
+<h2>Keputusan (20 Okt)</h2>
+<div class="box">1. <b>Admin boleh memeriksa sekaligus memutuskan</b> langsung dari Diajukan · 2. Tabel "yang berubah sejak dikembalikan" <b>ditunda</b>, dibuat bersama fitur riwayat proyek admin · 3. <b>Ajukan massal</b> (pengisi) dan <b>Setujui massal</b> (admin); pemeriksa satu per satu</div>
+</div>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral', flowchart: { curve: 'basis', htmlLabels: true } });</script>
+</body>
+</html>

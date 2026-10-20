@@ -11,6 +11,8 @@ import {
   FileSpreadsheet,
   Plus,
   Trash2,
+  Lock,
+  Send,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -54,7 +56,7 @@ import {
   exportProyekDetailToExcel,
   exportProyekDetailToPDF,
 } from "@/lib/export-utils";
-import { RiwayatPerubahan } from "@/components/activity-log/riwayat-panel";
+import { RiwayatProyek } from "./riwayat-proyek";
 import { PaketDialog } from "./paket-dialog";
 import { IsiUsulan } from "./isi-usulan";
 import {
@@ -71,6 +73,17 @@ import { statusConfig } from "@/components/shared/status-config";
 import { formatRupiah, formatRupiahShort } from "@/lib/format-rupiah";
 import { cn } from "@/lib/utils";
 import { LABEL_SD, WARNA_SD } from "@/components/anggaran/saldo-kegiatan";
+import { DialogCatatan } from "./dialog-catatan";
+import { RealisasiBaris } from "./realisasi-baris";
+import {
+  LABEL_AKSI,
+  adalahAdmin,
+  adalahPemeriksa,
+  bisaDiajukan,
+  terkunci,
+  waktuSingkat,
+  type JejakPemeriksaan,
+} from "@/lib/alur-status";
 
 // Kode identitas ringkas per proyek (mis. "BWS.07.7755") — logic sama
 // persis dengan `getProyekKode` di proyekList/page.tsx, supaya kode yang
@@ -140,7 +153,13 @@ export function ProyekDetailSheet({
 
   // Akun Satker: cuma kalau proyek mengizinkan, dan cuma paket satkernya.
   const akunSatker = user?.balaiId ? user?.satkerId : null;
-  const canManagePaket = canEdit && (!akunSatker || proyek.satkerBolehUbahPaket !== false);
+  const canManagePaket =
+    canEdit && !terkunci(proyek.status) && (!akunSatker || proyek.satkerBolehUbahPaket !== false);
+  const bisaIsiRealisasi = (pk: Paket) =>
+    punyaRole(user, "ADMINISTRATOR") ||
+    (canEdit &&
+      proyek.status === "APPROVED" &&
+      (!akunSatker || (proyek.satkerBolehUbahPaket !== false && pk.satkerId === akunSatker)));
   const bisaUbahPaket = (pk: Paket) =>
     canManagePaket && (!akunSatker || pk.satkerId === akunSatker);
 
@@ -180,35 +199,34 @@ export function ProyekDetailSheet({
     onRefresh();
   };
 
-  const handleApprove = async () => {
+  // Alur status (docs-planning/flowchart-alur-status.pdf).
+  const [jejak, setJejak] = useState<JejakPemeriksaan[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    api
+      .get<JejakPemeriksaan[]>(`/proyek/${proyek.id}/pemeriksaan`)
+      .then((r) => setJejak(r.data))
+      .catch(() => setJejak([]));
+  }, [open, proyek.id, proyek.status]);
+  const [dialog, setDialog] = useState<null | "kembalikan" | "revisi" | "sesuai">(null);
+  const jalankan = async (url: string, body: object | undefined, pesan: string) => {
     setApproving(true);
     try {
-      await api.patch(`/proyek/${proyek.id}/approve`);
-      toast.success("Proyek disetujui");
+      await api.patch(`/proyek/${proyek.id}/${url}`, body);
+      toast.success(pesan);
+      setDialog(null);
       onRefresh();
-      onClose();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Gagal menyetujui proyek");
+      toast.error(err.response?.data?.message || "Gagal memproses proyek");
+      throw err;
     } finally {
       setApproving(false);
     }
   };
-
-  const handleUnapprove = async () => {
-    setApproving(true);
-    try {
-      await api.patch(`/proyek/${proyek.id}/unapprove`);
-      toast.success("Proyek dikembalikan ke draft");
-      onRefresh();
-      onClose();
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.message || "Gagal mengembalikan proyek ke draft",
-      );
-    } finally {
-      setApproving(false);
-    }
-  };
+  const isiTerkunci = terkunci(proyek.status);
+  const admin = adalahAdmin(user);
+  const pemeriksaSaja = adalahPemeriksa(user) && !admin;
+  const pengembalian = jejak.find((j) => j.aksi === "REVISI" || j.aksi === "KEMBALIKAN");
 
   const handleDeletePaket = async () => {
     if (!deletePaketId) return;
@@ -227,8 +245,8 @@ export function ProyekDetailSheet({
 
 
   const cfg = statusConfig[proyek.status];
-  // Riwayat proyek hanya untuk admin (log aktivitas memang khusus Super Admin).
-  const panelRiwayat = user?.role === "SUPER_ADMIN";
+  // Riwayat proyek khusus admin (Admin & Super Admin), riset T4.
+  const panelRiwayat = adalahAdmin(user);
   // Backend selalu balikin array, tapi dijaga di sini juga — dipakai berulang di bawah.
   const paket = proyek.paket ?? [];
   const firstRo = paket[0]?.ro;
@@ -265,13 +283,32 @@ export function ProyekDetailSheet({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            {canEdit && (
+            {canEdit && !isiTerkunci && (
               <Button size="sm" variant="outline" onClick={() => onEdit(proyek)}>
                 <Edit size={13} className="mr-1.5" /> Edit proyek
               </Button>
             )}
-            {punyaRole(user, "ADMINISTRATOR") && proyek.status === "DRAFT" && (
-              <Button size="sm" onClick={handleApprove} disabled={approving}>
+            {pemeriksaSaja && proyek.status === "DIAJUKAN" && (
+              <>
+                <Button size="sm" variant="outline" onClick={() => setDialog("revisi")} disabled={approving}>
+                  <RotateCcw size={13} className="mr-1.5" /> Perlu revisi
+                </Button>
+                <Button size="sm" onClick={() => setDialog("sesuai")} disabled={approving}>
+                  <CheckCheck size={13} className="mr-1.5" /> Sesuai
+                </Button>
+              </>
+            )}
+            {admin && ["DIAJUKAN", "DIPERIKSA", "APPROVED"].includes(proyek.status) && (
+              <Button size="sm" variant="outline" onClick={() => setDialog("kembalikan")} disabled={approving}>
+                <RotateCcw size={13} className="mr-1.5" /> Kembalikan
+              </Button>
+            )}
+            {admin && ["DIAJUKAN", "DIPERIKSA"].includes(proyek.status) && (
+              <Button
+                size="sm"
+                disabled={approving}
+                onClick={() => jalankan("putuskan", { hasil: "SETUJU" }, "Proyek disetujui").catch(() => {})}
+              >
                 {approving ? (
                   <Loader2 size={13} className="mr-1.5 animate-spin" />
                 ) : (
@@ -280,14 +317,18 @@ export function ProyekDetailSheet({
                 Setujui
               </Button>
             )}
-            {punyaRole(user, "ADMINISTRATOR") && proyek.status === "APPROVED" && (
-              <Button size="sm" variant="outline" onClick={handleUnapprove} disabled={approving}>
-                {approving ? (
-                  <Loader2 size={13} className="mr-1.5 animate-spin" />
-                ) : (
-                  <RotateCcw size={13} className="mr-1.5" />
-                )}
-                Kembalikan ke draft
+            {canEdit && bisaDiajukan(proyek.status) && (
+              <Button
+                size="sm"
+                disabled={approving}
+                onClick={() =>
+                  jalankan("ajukan", undefined, proyek.status === "DIKEMBALIKAN" ? "Proyek diajukan ulang" : "Proyek diajukan").catch(
+                    () => {},
+                  )
+                }
+              >
+                {approving ? <Loader2 size={13} className="mr-1.5 animate-spin" /> : <Send size={13} className="mr-1.5" />}
+                {proyek.status === "DIKEMBALIKAN" ? "Ajukan ulang" : "Ajukan"}
               </Button>
             )}
           </div>
@@ -313,6 +354,47 @@ export function ProyekDetailSheet({
           )}
         >
           <div className="min-w-0 space-y-5 px-6 py-5">
+          {proyek.status === "DIKEMBALIKAN" && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-3 rounded-xl bg-destructive/10 px-4 py-3 text-[13.5px]"
+            >
+              <RotateCcw size={16} className="shrink-0 text-destructive" />
+              <div className="min-w-0 flex-1">
+                <p>
+                  <b className="text-destructive">Dikembalikan untuk revisi</b>
+                  {pengembalian && (
+                    <>
+                      {" "}
+                      oleh {pengembalian.user.name}
+                      {pengembalian.user.role?.name ? ` (${pengembalian.user.role.name})` : ""},{" "}
+                      {waktuSingkat(pengembalian.createdAt)}
+                    </>
+                  )}
+                </p>
+                {pengembalian?.catatan && <p className="whitespace-pre-wrap">&ldquo;{pengembalian.catatan}&rdquo;</p>}
+              </div>
+              {canEdit && (
+                <span className="text-xs text-muted-foreground">Perbaiki lewat Edit proyek, lalu Ajukan ulang.</span>
+              )}
+            </div>
+          )}
+          {isiTerkunci && (
+            <div className="flex items-start gap-2.5 rounded-xl bg-tier-1 px-4 py-3 text-[13.5px]">
+              <Lock size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
+              <p>
+                Isi proyek dikunci selama berstatus <b>{cfg.label}</b>.
+                {jejak[0] && (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    Terakhir: {LABEL_AKSI[jejak[0].aksi]} · {jejak[0].user.name}, {waktuSingkat(jejak[0].createdAt)}
+                    {jejak[0].catatan ? ` — "${jejak[0].catatan}"` : ""}
+                  </span>
+                )}
+              </p>
+            </div>
+          )}
+
           {/* Info proyek (hi-fi HfDetailIsiTutup) — sisanya ada di Isi usulan. */}
           <div className="rounded-xl border bg-card p-4">
             <h3 className="mb-2.5 text-sm font-semibold">Info proyek</h3>
@@ -511,10 +593,8 @@ export function ProyekDetailSheet({
                           ) : (
                             <div className="overflow-hidden rounded-lg border bg-card">
                               {rencanaPaket.map((a) => (
-                                <div
-                                  key={a.id}
-                                  className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-3.5 py-2.5 last:border-b-0"
-                                >
+                                <div key={a.id} className="border-b last:border-b-0">
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3.5 py-2.5">
                                   <span className="w-12 font-semibold">{a.tahun}</span>
                                   <span className="order-last w-full space-y-1 sm:order-none sm:w-auto sm:flex-1">
                                     <span className="block text-muted-foreground">
@@ -538,6 +618,16 @@ export function ProyekDetailSheet({
                                   <span className="ml-auto font-semibold" title={formatRupiah(Number(a.total))}>
                                     {formatRupiahShort(Number(a.total))}
                                   </span>
+                                </div>
+                                <RealisasiBaris
+                                  paketId={pk.id}
+                                  tahun={a.tahun}
+                                  rencana={a}
+                                  realisasi={pk.alokasi.find((x) => x.tahun === a.tahun && x.status === "REALISASI")}
+                                  bisaIsi={bisaIsiRealisasi(pk)}
+                                  alasanTidak={proyek.status !== "APPROVED" ? "diisi setelah proyek disetujui" : undefined}
+                                  onSaved={onRefresh}
+                                />
                                 </div>
                               ))}
                             </div>
@@ -570,11 +660,35 @@ export function ProyekDetailSheet({
 
           {panelRiwayat && (
             <aside className="border-t bg-tier-2 px-5 py-5 md:border-l md:border-t-0">
-              <RiwayatPerubahan entity="proyek" entityId={proyek.id} />
+              <RiwayatProyek proyekId={proyek.id} versi={`${proyek.status}:${proyek.updatedAt}`} />
             </aside>
           )}
         </SheetBody>
       </SheetContent>
+
+      <DialogCatatan
+        open={dialog === "kembalikan" || dialog === "revisi"}
+        judul={dialog === "revisi" ? "Perlu revisi" : "Kembalikan proyek"}
+        keterangan="Proyek dikembalikan ke pengisi dan bisa diubah lagi. Catatan tampil di detail proyek."
+        label="Catatan untuk pengisi"
+        tombol="Kembalikan"
+        wajib
+        bahaya
+        onClose={() => setDialog(null)}
+        onKirim={(catatan) =>
+          dialog === "revisi"
+            ? jalankan("periksa", { hasil: "REVISI", catatan }, "Proyek dikembalikan untuk revisi")
+            : jalankan("putuskan", { hasil: "KEMBALIKAN", catatan }, "Proyek dikembalikan untuk revisi")
+        }
+      />
+      <DialogCatatan
+        open={dialog === "sesuai"}
+        judul="Hasil pemeriksaan: Sesuai"
+        keterangan="Proyek diteruskan ke Admin untuk keputusan akhir."
+        tombol="Kirim hasil"
+        onClose={() => setDialog(null)}
+        onKirim={(catatan) => jalankan("periksa", { hasil: "SESUAI", catatan }, "Hasil pemeriksaan dikirim")}
+      />
 
       {/* Form Tambah/Edit Paket — Sheet lapis-2 */}
       <PaketDialog

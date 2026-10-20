@@ -4,6 +4,18 @@ export const statusConfig = {
     label: "Draft",
     dotColor: "slate" as DotColor,
   },
+  DIAJUKAN: {
+    label: "Diajukan",
+    dotColor: "blue" as DotColor,
+  },
+  DIPERIKSA: {
+    label: "Diperiksa",
+    dotColor: "amber" as DotColor,
+  },
+  DIKEMBALIKAN: {
+    label: "Dikembalikan",
+    dotColor: "rose" as DotColor,
+  },
   APPROVED: {
     label: "Disetujui",
     dotColor: "emerald" as DotColor,

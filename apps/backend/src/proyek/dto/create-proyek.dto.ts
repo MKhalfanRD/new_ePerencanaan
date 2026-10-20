@@ -171,9 +171,10 @@ export class CreateProyekDto {
   indikatorSasaranKegiatanId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() tematikRenjaId?: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() fkb?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() fkw?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() mpa?: boolean;
+  // Penanda per tahun: daftar tahun yang dicentang (flowchart-penanda-tahun.pdf).
+  @ApiPropertyOptional({ type: [Number] }) @IsOptional() @IsArray() @IsInt({ each: true }) fkb?: number[];
+  @ApiPropertyOptional({ type: [Number] }) @IsOptional() @IsArray() @IsInt({ each: true }) fkw?: number[];
+  @ApiPropertyOptional({ type: [Number] }) @IsOptional() @IsArray() @IsInt({ each: true }) mpa?: number[];
 
   @ApiPropertyOptional({
     type: [String],

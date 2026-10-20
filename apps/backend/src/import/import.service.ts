@@ -6,9 +6,9 @@ import {
 import * as XLSX from 'xlsx';
 import { Prisma } from '@prisma/client';
 import { BarisDana, SUMBER, Sumber, jumlahPerTahun, pemakaianKegiatan } from '../saldo-kegiatan/saldo';
+import { LABEL_STATUS, STATUS_TERKUNCI } from '../proyek/alur-status';
 import { PrismaService } from '../prisma/prisma.service';
 import { CommitImportDto } from './dto/import.dto';
-import { changesForCreate } from '../activity-log/activity-log.util';
 import { lintasUnit } from '../paket/paket-data';
 import {
   generateKodePaket,
@@ -1275,9 +1275,6 @@ export class ImportService {
           indikatorSasaranProgramId,
           indikatorSasaranKegiatanId,
           tematikRenjaId,
-          fkb: row.fkb,
-          fkw: row.fkw,
-          mpa: row.mpa,
         },
       };
     };
@@ -1332,29 +1329,6 @@ export class ImportService {
       };
     };
 
-    const catatLog = (entityId: string, aksi: string, kodeProyek: string, changes: unknown) =>
-      this.prisma.activityLog
-        .create({
-          data: {
-            userId,
-            username,
-            method: 'POST',
-            path: '/import/commit',
-            entity: 'proyek',
-            entityId,
-            statusCode: 200,
-            meta: {
-              resource: 'Proyek',
-              source: 'import',
-              kodeProyek,
-              aksi,
-              sessionId: dto.sessionId,
-              changes,
-            } as any,
-          },
-        })
-        .catch(() => undefined);
-
     // ===== Commit per proyek =====
     const { rencana, duplikat } = await this.rencanakan(rows, (nama) =>
       balaiMap.get(nama),
@@ -1373,6 +1347,9 @@ export class ImportService {
     let createdPaket = 0;
     let createdAlokasi = 0;
 
+    // Penanda per tahun: tahun baris Excel yang FKB/FKW/MPA-nya "Ya".
+    const penanda = (grup: ParsedPaketRow[], k: 'fkb' | 'fkw' | 'mpa') =>
+      [...new Set(grup.filter((r) => r[k]).map((r) => r.tahun))].sort();
     for (const { grup, existing, paket } of rencana) {
       const first = grup[0];
       const baru = paket.filter((p) => p.rows.length > 0);
@@ -1400,6 +1377,16 @@ export class ImportService {
           });
           continue;
         }
+        if (existing && STATUS_TERKUNCI.includes(existing.status)) {
+          commitErrors.push({
+            excelRowNumber: first.excelRowNumber,
+            sheet: first.sheet,
+            namaProyek: first.namaProyek,
+            balaiName: first.balaiName,
+            reason: `Proyek ${existing.kodeProyek ?? ''} berstatus ${LABEL_STATUS[existing.status]} sehingga isinya dikunci; minta dikembalikan dulu untuk revisi`,
+          });
+          continue;
+        }
         if (existing) {
           // Proyek sudah ada: data proyek tidak ditimpa, hanya ditambah paket
           // baru atau tahun baru di paket lama.
@@ -1411,6 +1398,17 @@ export class ImportService {
               data: { kodeProyek },
             });
           }
+          // Penanda tahun baru ikut ditambahkan (tahun lama tidak dihapus).
+          const gabung = (lama: number[], k: 'fkb' | 'fkw' | 'mpa') =>
+            [...new Set([...lama, ...penanda(grup, k)])].sort();
+          await this.prisma.proyek.update({
+            where: { id: existing.id },
+            data: {
+              fkb: gabung(existing.fkb, 'fkb'),
+              fkw: gabung(existing.fkw, 'fkw'),
+              mpa: gabung(existing.mpa, 'mpa'),
+            },
+          });
           let tambahPaket = 0;
           let tambahAlokasi = 0;
           for (const p of baru) {
@@ -1464,10 +1462,6 @@ export class ImportService {
             paketBaru: tambahPaket,
             alokasiBaru: tambahAlokasi,
           });
-          await catatLog(existing.id, 'tambah', kodeProyek, {
-            paketBaru: tambahPaket,
-            alokasiBaru: tambahAlokasi,
-          });
           continue;
         }
 
@@ -1512,6 +1506,9 @@ export class ImportService {
             status: 'DRAFT',
             createdById: userId,
             ...hasil[0].tagging,
+            fkb: penanda(grup, 'fkb'),
+            fkw: penanda(grup, 'fkw'),
+            mpa: penanda(grup, 'mpa'),
             paket: { create: paketData as any },
           },
         });
@@ -1527,7 +1524,6 @@ export class ImportService {
           paketBaru: paketData.length,
           alokasiBaru,
         });
-        await catatLog(created.id, 'create', kodeProyek, changesForCreate(created));
       } catch (err: any) {
         commitErrors.push({
           excelRowNumber: first.excelRowNumber,
@@ -1543,6 +1539,21 @@ export class ImportService {
     }
 
     importSessions.delete(dto.sessionId);
+
+    // Riwayat proyek: 1 entri ringkas per proyek (keputusan 20 Okt).
+    if (daftarHasil.length)
+      await this.prisma.riwayatProyek
+        .createMany({
+          data: daftarHasil.map((h) => ({
+            proyekId: h.proyekId,
+            userId,
+            aksi:
+              h.aksi === 'baru'
+                ? `Proyek dibuat lewat Import Excel (${h.paketBaru} paket, ${h.alokasiBaru} alokasi)`
+                : `Import Excel: +${h.paketBaru} paket baru, +${h.alokasiBaru} alokasi`,
+          })),
+        })
+        .catch((e) => console.error('Gagal mencatat riwayat import', e));
 
     return {
       message: 'Import berhasil diproses',

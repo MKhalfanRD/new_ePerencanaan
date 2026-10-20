@@ -4,7 +4,7 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { AksiPemeriksaan, Prisma, StatusProyek } from '@prisma/client';
 import { unlink } from 'fs/promises';
 import { join } from 'path';
 
@@ -34,6 +34,9 @@ import {
   hitungRasio,
 } from './form-skor';
 import { LINTAS_KEGIATAN, roleEfektif } from '../auth/role';
+import { LABEL_STATUS, STATUS_TERKUNCI, cekBolehUbah, pemeriksa, wajibCatatan } from './alur-status';
+import { Perubahan, catatRiwayat, potretProyek } from './riwayat';
+import { PeriksaDto, PutuskanDto, QueryPemeriksaanDto } from './dto/pemeriksaan.dto';
 import {
   cekIsianPaket,
   cekRoKegiatan,
@@ -463,13 +466,13 @@ export class ProyekService {
           indikatorSasaranProgramId: dto.indikatorSasaranProgramId,
           indikatorSasaranKegiatanId: dto.indikatorSasaranKegiatanId,
           tematikRenjaId: dto.tematikRenjaId,
-          fkb: dto.fkb ?? false,
-          fkw: dto.fkw ?? false,
-          mpa: dto.mpa ?? false,
+          fkb: dto.fkb ?? [],
+          fkw: dto.fkw ?? [],
+          mpa: dto.mpa ?? [],
           taggingDinamis: dto.taggingDinamis ?? [],
           catatanPembina: dto.catatanPembina,
           catatanSspsda: dto.catatanSspsda,
-          status: 'APPROVED',
+          status: 'DRAFT',
           createdById: userId,
           saldoVolumeRo: dto.saldoVolumeRo,
           saldoVolumeIro: dto.saldoVolumeIro,
@@ -493,28 +496,29 @@ export class ProyekService {
     });
 
     await this.redis.delByPrefix('proyek:list:');
+    await catatRiwayat(this.prisma, { proyekId: proyek.id, userId, aksi: 'Proyek dibuat', selaluCatat: true });
     return proyek;
   }
 
-  /** Proyek yang dibuat/ditambah oleh sesi import terakhir user ini (dari log aktivitas). */
+  /** Proyek yang dibuat/ditambah oleh sesi import terakhir user ini. Entri
+   * riwayat import ditulis sekaligus (1 createMany = 1 waktu), jadi waktu
+   * entri terbaru menandai satu sesi import. */
   private async proyekImportTerakhir(user: any): Promise<string[]> {
-    const dariImport = {
+    const dariImport: Prisma.RiwayatProyekWhereInput = {
       userId: user.userId,
-      path: '/import/commit',
-      meta: { path: ['source'], equals: 'import' },
+      OR: [{ aksi: { startsWith: 'Proyek dibuat lewat Import Excel' } }, { aksi: { startsWith: 'Import Excel:' } }],
     };
-    const terakhir = await this.prisma.activityLog.findFirst({
+    const terakhir = await this.prisma.riwayatProyek.findFirst({
       where: dariImport,
       orderBy: { createdAt: 'desc' },
-      select: { meta: true },
+      select: { createdAt: true },
     });
-    const sesi = (terakhir?.meta as any)?.sessionId;
-    if (!sesi) return [];
-    const log = await this.prisma.activityLog.findMany({
-      where: { ...dariImport, AND: [{ meta: { path: ['sessionId'], equals: sesi } }] },
-      select: { entityId: true },
+    if (!terakhir) return [];
+    const entri = await this.prisma.riwayatProyek.findMany({
+      where: { ...dariImport, createdAt: terakhir.createdAt },
+      select: { proyekId: true },
     });
-    return log.map((l) => l.entityId).filter((id): id is string => !!id);
+    return entri.map((e) => e.proyekId);
   }
 
   /** Proyek yang boleh dilihat user (dipakai daftar proyek & ringkasan dashboard). */
@@ -524,7 +528,7 @@ export class ProyekService {
     // semua proyek dalam cakupannya, bukan cuma buatannya sendiri.
     if (
       !LINTAS_KEGIATAN.includes(user.role) &&
-      roleEfektif(user) !== 'VERIFICATOR'
+      !pemeriksa(user)
     ) {
       where.createdById = user.userId;
     }
@@ -571,6 +575,21 @@ export class ProyekService {
         }),
         this.prisma.periode.findFirst({ where: { isActive: true }, select: { label: true } }),
       ]);
+    // "Realisasi belum diisi": paket per tahun (sampai tahun berjalan) di proyek
+    // Disetujui yang punya rencana tapi belum punya realisasi.
+    // ponytail: dihitung di aplikasi; pindah ke SQL bila paket puluhan ribu.
+    const rencanaLalu = await this.prisma.alokasi.findMany({
+      where: {
+        status: { in: ['RENCANA', 'REALISASI'] },
+        tahun: { lte: new Date().getFullYear() },
+        paket: { deletedAt: null, proyek: { ...where, status: 'APPROVED' } },
+      },
+      select: { paketId: true, tahun: true, status: true },
+    });
+    const adaReal = new Set(rencanaLalu.filter((a) => a.status === 'REALISASI').map((a) => `${a.paketId}:${a.tahun}`));
+    const realisasiBelum = rencanaLalu.filter(
+      (a) => a.status === 'RENCANA' && !adaReal.has(`${a.paketId}:${a.tahun}`),
+    ).length;
     return {
       jumlahProyek,
       perStatus: Object.fromEntries(perStatus.map((s) => [s.status, s._count])),
@@ -586,6 +605,7 @@ export class ProyekService {
       })),
       totalLokasi,
       terbaru,
+      realisasiBelum,
       periodeAktif: periodeAktif?.label ?? null,
     };
   }
@@ -644,7 +664,7 @@ export class ProyekService {
 
     if (
       !LINTAS_KEGIATAN.includes(user.role) &&
-      roleEfektif(user) !== 'VERIFICATOR' &&
+      !pemeriksa(user) &&
       proyek.createdById !== user.userId
     ) {
       throw new ForbiddenException('Anda tidak memiliki akses ke proyek ini');
@@ -676,44 +696,210 @@ export class ProyekService {
     return proyek;
   }
 
-  /** Status proyek cuma DRAFT & APPROVED — tidak ada alur submit/review lagi. */
-  async approve(id: string) {
-    const proyek = await this.prisma.proyek.findUnique({ where: { id } });
-    if (!proyek) throw new NotFoundException('Proyek tidak ditemukan');
-    if (proyek.status !== 'DRAFT') {
-      throw new BadRequestException(
-        'Hanya proyek berstatus DRAFT yang dapat disetujui',
-      );
-    }
+  // ===================== Alur status & pemeriksaan =====================
+  // Lihat alur-status.ts & docs-planning/flowchart-alur-status.pdf.
 
-    const updated = await this.prisma.proyek.update({
-      where: { id },
-      data: { status: 'APPROVED' },
-      include: proyekInclude,
-    });
-
+  /** Pindah status + catat jejak dalam satu transaksi. */
+  private async ubahStatus(
+    id: string,
+    user: any,
+    status: StatusProyek,
+    aksi: AksiPemeriksaan,
+    catatan?: string,
+  ) {
+    const sebelum = await potretProyek(this.prisma, id);
+    const statusLama = (await this.prisma.proyek.findUnique({ where: { id }, select: { status: true } }))?.status;
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.proyek.update({ where: { id }, data: { status }, include: proyekInclude }),
+      this.prisma.pemeriksaanProyek.create({
+        data: { proyekId: id, aksi, catatan: catatan?.trim() || null, userId: user.userId },
+      }),
+    ]);
     await this.invalidateCache(id);
+    const labelAksi: Record<AksiPemeriksaan, string> = {
+      AJUKAN: statusLama === 'DIKEMBALIKAN' ? 'Diajukan ulang' : 'Diajukan',
+      SESUAI: 'Pemeriksaan: Sesuai',
+      REVISI: 'Pemeriksaan: Perlu revisi',
+      SETUJU: 'Disetujui',
+      KEMBALIKAN: 'Dikembalikan untuk revisi',
+    };
+    await catatRiwayat(this.prisma, {
+      proyekId: id,
+      userId: user.userId,
+      aksi: labelAksi[aksi],
+      catatan,
+      sebelum,
+      selaluCatat: true,
+    });
     return updated;
   }
 
-  /** Kembalikan proyek yang APPROVED ke DRAFT (mis. salah setuju / perlu revisi lagi). */
-  async unapprove(id: string) {
-    const proyek = await this.prisma.proyek.findUnique({ where: { id } });
-    if (!proyek) throw new NotFoundException('Proyek tidak ditemukan');
-    if (proyek.status !== 'APPROVED') {
-      throw new BadRequestException(
-        'Hanya proyek berstatus APPROVED yang dapat dikembalikan ke draft',
-      );
-    }
-
-    const updated = await this.prisma.proyek.update({
-      where: { id },
-      data: { status: 'DRAFT' },
-      include: proyekInclude,
+  /** Riwayat proyek berlabel (khusus admin, panel kanan detail). */
+  async riwayat(id: string, user: any) {
+    await this.findOne(id, user);
+    return this.prisma.riwayatProyek.findMany({
+      where: { proyekId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: { user: { select: { name: true, role: { select: { name: true } } } } },
     });
+  }
 
-    await this.invalidateCache(id);
-    return updated;
+  /** Yang berubah sejak pengembalian terakhir (tabel di Pemeriksaan). */
+  async perubahanSejakDikembalikan(id: string, user: any) {
+    await this.findOne(id, user);
+    const kembali = await this.prisma.pemeriksaanProyek.findFirst({
+      where: { proyekId: id, aksi: { in: ['REVISI', 'KEMBALIKAN'] } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!kembali) return { sejak: null, perubahan: [] };
+    const entri = await this.prisma.riwayatProyek.findMany({
+      where: { proyekId: id, createdAt: { gt: kembali.createdAt } },
+      orderBy: { createdAt: 'asc' },
+    });
+    // Gabung per kolom: nilai sebelum pertama -> nilai sesudah terakhir.
+    const gabung = new Map<string, Perubahan>();
+    for (const e of entri)
+      for (const p of e.perubahan as unknown as Perubahan[]) {
+        if (p.bagian === 'Status') continue;
+        const ada = gabung.get(p.key);
+        gabung.set(p.key, ada ? { ...ada, kolom: p.kolom, sesudah: p.sesudah } : p);
+      }
+    return {
+      sejak: kembali.createdAt,
+      catatan: kembali.catatan,
+      perubahan: [...gabung.values()].filter((p) => p.sebelum !== p.sesudah),
+    };
+  }
+
+  /** Pengisi mengajukan (Draft) atau mengajukan ulang (Dikembalikan). */
+  async ajukan(id: string, user: any) {
+    const proyek = await this.findOne(id, user);
+    if (!['DRAFT', 'DIKEMBALIKAN'].includes(proyek.status))
+      throw new BadRequestException(
+        `Proyek berstatus ${LABEL_STATUS[proyek.status as StatusProyek]} tidak bisa diajukan`,
+      );
+    if (!(proyek.paket ?? []).length)
+      throw new BadRequestException('Tambahkan minimal satu paket sebelum mengajukan proyek');
+    return this.ubahStatus(id, user, 'DIAJUKAN', 'AJUKAN');
+  }
+
+  /** Hasil Verifikator/Operator: Sesuai -> Diperiksa; Perlu revisi -> Dikembalikan (catatan wajib). */
+  async periksa(id: string, user: any, dto: PeriksaDto) {
+    const proyek = await this.findOne(id, user);
+    if (proyek.status !== 'DIAJUKAN')
+      throw new BadRequestException('Hanya proyek berstatus Diajukan yang bisa diperiksa');
+    if (dto.hasil === 'REVISI')
+      return this.ubahStatus(id, user, 'DIKEMBALIKAN', 'REVISI', wajibCatatan(dto.catatan));
+    return this.ubahStatus(id, user, 'DIPERIKSA', 'SESUAI', dto.catatan);
+  }
+
+  /** Keputusan Admin/Super Admin. Admin boleh langsung dari Diajukan (keputusan 20 Okt). */
+  async putuskan(id: string, user: any, dto: PutuskanDto) {
+    const proyek = await this.findOne(id, user);
+    if (dto.hasil === 'SETUJU') {
+      if (!['DIAJUKAN', 'DIPERIKSA'].includes(proyek.status))
+        throw new BadRequestException('Hanya proyek Diajukan/Diperiksa yang bisa disetujui');
+      return this.ubahStatus(id, user, 'APPROVED', 'SETUJU', dto.catatan);
+    }
+    if (!['DIAJUKAN', 'DIPERIKSA', 'APPROVED'].includes(proyek.status))
+      throw new BadRequestException('Proyek ini tidak sedang menunggu keputusan');
+    return this.ubahStatus(id, user, 'DIKEMBALIKAN', 'KEMBALIKAN', wajibCatatan(dto.catatan));
+  }
+
+  /** Aksi massal: tiap proyek dicek sendiri; yang gagal dilaporkan, tidak membatalkan yang lain. */
+  async massal(ids: string[], user: any, jalan: (id: string) => Promise<unknown>) {
+    const gagal: { id: string; alasan: string }[] = [];
+    let berhasil = 0;
+    for (const id of [...new Set(ids)]) {
+      try {
+        await jalan(id);
+        berhasil++;
+      } catch (e: any) {
+        gagal.push({ id, alasan: e?.response?.message ?? e?.message ?? 'Gagal' });
+      }
+    }
+    return { berhasil, gagal };
+  }
+
+  /** Jejak pengajuan/pemeriksaan 1 proyek (terbaru dulu) — banner di detail. */
+  async riwayatPemeriksaan(id: string, user: any) {
+    await this.findOne(id, user);
+    return this.prisma.pemeriksaanProyek.findMany({
+      where: { proyekId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      include: { user: { select: { name: true, role: { select: { name: true } } } } },
+    });
+  }
+
+  /** Menu Pemeriksaan: daftar per tab + jumlah tiap tab, dalam cakupan akun. */
+  async daftarPemeriksaan(user: any, q: QueryPemeriksaanDto) {
+    const scope: Prisma.ProyekWhereInput = { ...(filterKegiatan(user) ?? {}) };
+    if (q.kegiatanId) scope.kegiatanId = q.kegiatanId;
+    if (q.balaiId) scope.balaiId = Number(q.balaiId);
+    const statusTab: Record<string, StatusProyek[]> = {
+      perlu: ['DIAJUKAN'],
+      keputusan: ['DIPERIKSA'],
+      selesai: ['APPROVED', 'DIKEMBALIKAN'],
+    };
+    const tab = q.tab ?? 'perlu';
+    const [jumlah, proyek] = await Promise.all([
+      this.prisma.proyek.groupBy({ by: ['status'], where: scope, _count: true }),
+      this.prisma.proyek.findMany({
+        where: { ...scope, status: { in: statusTab[tab] } },
+        take: 300,
+        orderBy: { updatedAt: tab === 'selesai' ? 'desc' : 'asc' },
+        select: {
+          id: true,
+          kodeProyek: true,
+          projectName: true,
+          status: true,
+          kegiatanId: true,
+          skorEvaluasi: true,
+          balai: { select: { id: true, name: true } },
+          paket: {
+            where: { deletedAt: null },
+            select: { alokasi: { where: { status: 'RENCANA' }, select: { total: true } } },
+          },
+          pemeriksaan: {
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+            select: {
+              aksi: true,
+              catatan: true,
+              createdAt: true,
+              user: { select: { name: true, role: { select: { name: true } } } },
+            },
+          },
+        },
+      }),
+    ]);
+    const n = (s: StatusProyek[]) => jumlah.filter((j) => s.includes(j.status)).reduce((a, j) => a + j._count, 0);
+    const data = proyek.map((p) => {
+      const ajukan = p.pemeriksaan.filter((x) => x.aksi === 'AJUKAN');
+      return {
+        id: p.id,
+        kodeProyek: p.kodeProyek,
+        projectName: p.projectName,
+        status: p.status,
+        kegiatanId: p.kegiatanId,
+        skorEvaluasi: p.skorEvaluasi == null ? null : Number(p.skorEvaluasi),
+        balai: p.balai,
+        totalRencana: p.paket.flatMap((k) => k.alokasi).reduce((s, a) => s + Number(a.total), 0),
+        diajukanPada: ajukan[0]?.createdAt ?? null,
+        // Diajukan ulang = pernah dikembalikan (tabel "yang berubah" di Pemeriksaan).
+        diajukanUlang: p.pemeriksaan.some((x) => x.aksi === 'REVISI' || x.aksi === 'KEMBALIKAN'),
+        jejak: p.pemeriksaan,
+      };
+    });
+    // Perlu diperiksa & menunggu keputusan: paling lama menunggu di atas.
+    if (tab !== 'selesai')
+      data.sort((a, b) => +(a.diajukanPada ?? 0) - +(b.diajukanPada ?? 0));
+    return {
+      jumlah: { perlu: n(statusTab.perlu), keputusan: n(statusTab.keputusan), selesai: n(statusTab.selesai) },
+      data,
+    };
   }
 
   async update(id: string, dto: UpdateProyekDto, user: any) {
@@ -733,6 +919,8 @@ export class ProyekService {
       proyek.createdById !== user.userId
     )
       throw new ForbiddenException('Bukan proyek milik anda');
+    cekBolehUbah(proyek.status);
+    const sebelum = await potretProyek(this.prisma, id);
 
     // Kegiatan terkunci setelah proyek dibuat; data lama tanpa kegiatan boleh diisi sekali.
     const kegiatanId = proyek.kegiatanId ?? kegiatanAkun(user, dto.kegiatanId) ?? null;
@@ -804,6 +992,7 @@ export class ProyekService {
     });
 
     await this.invalidateCache(id);
+    await catatRiwayat(this.prisma, { proyekId: id, userId: user.userId, aksi: 'Edit proyek', sebelum });
     return updated;
   }
 
@@ -816,6 +1005,8 @@ export class ProyekService {
     ) {
       throw new ForbiddenException('Bukan proyek milik anda');
     }
+    // Admin boleh menghapus kapan saja; pengisi hanya sebelum diajukan.
+    if (!LINTAS_KEGIATAN.includes(user.role)) cekBolehUbah(proyek.status);
 
     await this.prisma.proyek.delete({ where: { id } });
     await this.invalidateCache(id);
@@ -832,6 +1023,8 @@ export class ProyekService {
       where: { id: proyekId },
     });
     if (!proyek) throw new NotFoundException('Proyek tidak ditemukan');
+    cekBolehUbah(proyek.status);
+    const sebelum = await potretProyek(this.prisma, proyekId);
     if (!files?.length) {
       throw new BadRequestException('Tidak ada file yang diupload');
     }
@@ -863,6 +1056,7 @@ export class ProyekService {
     }
 
     await this.invalidateCache(proyekId);
+    await catatRiwayat(this.prisma, { proyekId, userId, aksi: 'Tambah dokumen', sebelum });
     return created;
   }
 
@@ -919,17 +1113,21 @@ export class ProyekService {
     );
   }
 
-  async hapusDokumen(docId: string) {
+  async hapusDokumen(docId: string, userId?: string) {
     const dokumen = await this.prisma.dokumenPendukung.findUnique({
       where: { id: docId },
     });
     if (!dokumen) throw new NotFoundException('Dokumen tidak ditemukan');
+    const pemilik = await this.prisma.proyek.findUnique({ where: { id: dokumen.proyekId }, select: { status: true } });
+    if (pemilik) cekBolehUbah(pemilik.status);
+    const sebelum = await potretProyek(this.prisma, dokumen.proyekId);
 
     await this.prisma.dokumenPendukung.delete({ where: { id: docId } });
     await unlink(join(process.cwd(), 'uploads', dokumen.filePath)).catch(
       () => undefined, // file fisik sudah hilang duluan — bukan error fatal
     );
     await this.invalidateCache(dokumen.proyekId);
+    await catatRiwayat(this.prisma, { proyekId: dokumen.proyekId, userId, aksi: 'Hapus dokumen', sebelum });
     return { message: 'Dokumen berhasil dihapus' };
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Edit,
   CheckCheck,
@@ -52,13 +52,10 @@ import api from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
 import { punyaRole } from "@/lib/role";
 import { Proyek, Paket } from "@/types";
-import {
-  exportProyekDetailToExcel,
-  exportProyekDetailToPDF,
-} from "@/lib/export-utils";
+import { unduhDetailExcel, unduhDetailPdf } from "@/lib/export-detail";
 import { RiwayatProyek } from "./riwayat-proyek";
 import { PaketDialog } from "./paket-dialog";
-import { IsiUsulan } from "./isi-usulan";
+import { IsiUsulan, type IsiBaris } from "./isi-usulan";
 import {
   paketDariServer,
   paketKePayload,
@@ -179,6 +176,8 @@ export function ProyekDetailSheet({
       .catch(() => setTemplateTabs(undefined));
   }, [open, kegiatanPaket]);
   const [namaProvinsi, setNamaProvinsi] = useState<Record<string, string>>({});
+  // Baris Isi usulan (teks) dari komponen IsiUsulan — dipakai export.
+  const isiRef = useRef<IsiBaris[]>([]);
   useEffect(() => {
     if (!open) return;
     api
@@ -275,10 +274,10 @@ export function ProyekDetailSheet({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => exportProyekDetailToExcel(proyek)}>
+                <DropdownMenuItem onClick={() => unduhDetailExcel(proyek, isiRef.current, namaProvinsi, user?.name ?? "-")}>
                   <FileSpreadsheet size={14} className="mr-2" /> Export ke Excel
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportProyekDetailToPDF(proyek)}>
+                <DropdownMenuItem onClick={() => unduhDetailPdf(proyek, isiRef.current, namaProvinsi, user?.name ?? "-")}>
                   <FileDown size={14} className="mr-2" /> Export ke PDF
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -646,6 +645,7 @@ export function ProyekDetailSheet({
           <IsiUsulan
             proyek={proyek}
             kegiatanId={kegiatanPaket}
+            onIsi={(b) => (isiRef.current = b)}
             judul={
               <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2.5">
                 <h2 className="text-base font-semibold">Isi usulan</h2>

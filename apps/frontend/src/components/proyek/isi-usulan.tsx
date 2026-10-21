@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { isValidElement, useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   ChevronDown,
@@ -27,6 +27,9 @@ import { fromFormValueRows, ringkasPaketServer } from "./paket-template";
  * aktif kegiatan proyek, jadi kolom yang ditambah/diubah admin di Master Data
  * › Form Proyek otomatis ikut tampil. Kolom kosong ditampilkan "–".
  */
+
+/** Satu baris Isi usulan sebagai teks — dipakai export detail (sama persis dengan layar). */
+export type IsiBaris = { tab: string; kolom: string; isi: string; jenis: "bawaan" | "tambahan" | "otomatis" };
 
 type Rincian = { key?: string; label?: string; dapat: number; bobot: number };
 type Nilai = React.ReactNode | null | undefined;
@@ -63,6 +66,21 @@ const angka = (n: number) => n.toLocaleString("id-ID", { maximumFractionDigits: 
 const labelOpsi = (item: FormItemNode, value: string, fallback: string) =>
   item.options.find((o) => o.value === value)?.label || fallback;
 
+const rupiahPenuh = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
+
+/** Nilai tampilan (teks/JSX) → teks polos untuk file; berkas = nama filenya. */
+function teks(n: React.ReactNode): string {
+  if (n == null || typeof n === "boolean") return "";
+  if (typeof n === "string" || typeof n === "number") return String(n);
+  if (Array.isArray(n)) {
+    const berkas = n.every((x) => isValidElement(x) && x.type === Berkas);
+    return n.map(teks).join(berkas ? ", " : "");
+  }
+  if (isValidElement<{ d?: { fileName: string }; children?: React.ReactNode }>(n))
+    return n.type === Berkas ? (n.props.d?.fileName ?? "") : teks(n.props.children);
+  return "";
+}
+
 function Berkas({ d }: { d: { fileName: string; filePath: string } }) {
   return (
     <a
@@ -81,11 +99,14 @@ export function IsiUsulan({
   proyek,
   kegiatanId,
   judul,
+  onIsi,
 }: {
   proyek: Proyek;
   kegiatanId: string | null;
   /** Judul bagian, sebaris dengan tombol Buka/Tutup semua. */
   judul?: React.ReactNode;
+  /** Menerima semua baris (teks) tiap kali isinya berubah — untuk export. */
+  onIsi?: (baris: IsiBaris[]) => void;
 }) {
   const [tabs, setTabs] = useState<FormTabNode[] | null>(null);
   const [skor, setSkor] = useState<{ skorEvaluasi: number | null; rincian: Rincian[] } | null>(null);
@@ -244,16 +265,25 @@ export function IsiUsulan({
   const tampil = (x: { conditionItemId?: string | null; conditionValue?: string | null }) =>
     !x.conditionItemId || kondisiTerpenuhi(x.conditionValue, mentah(x.conditionItemId));
 
-  type Baris = { id: string; label: React.ReactNode; nilai: Nilai; anak?: boolean };
+  type Baris = {
+    id: string;
+    label: React.ReactNode;
+    nilai: Nilai;
+    anak?: boolean;
+    kolom: string;
+    jenis: IsiBaris["jenis"];
+    /** Teks untuk file bila layar memakai angka ringkas (file = angka penuh). */
+    isiPenuh?: string;
+  };
   const barisTab = (tab: FormTabNode): Baris[] => {
     const out: Baris[] = [];
     if (tab.key === "identitas" && proyek.kegiatan)
-      out.push({ id: "kegiatan", label: "Kegiatan", nilai: `${proyek.kegiatan.code} · ${proyek.kegiatan.name}` });
+      out.push({ id: "kegiatan", label: "Kegiatan", kolom: "Kegiatan", jenis: "bawaan", nilai: `${proyek.kegiatan.code} · ${proyek.kegiatan.name}` });
     if (tab.key === "valuasi") {
       out.push(
-        { id: "A", label: "A · Total anggaran", nilai: ringkas.A ? fmtRupiahRingkas(ringkas.A) : null },
-        { id: "B", label: "B · Total volume RO (utama)", nilai: ringkas.B ? `${angka(ringkas.B)} ${ringkas.satuanB.join("/")}` : null },
-        { id: "C", label: "C · Total volume IRO (utama)", nilai: ringkas.C ? `${angka(ringkas.C)} ${ringkas.satuanC.join("/")}` : null },
+        { id: "A", label: "A · Total anggaran", kolom: "A · Total anggaran", jenis: "otomatis", nilai: ringkas.A ? fmtRupiahRingkas(ringkas.A) : null, isiPenuh: ringkas.A ? rupiahPenuh(ringkas.A) : undefined },
+        { id: "B", label: "B · Total volume RO (utama)", kolom: "B · Total volume RO (utama)", jenis: "otomatis", nilai: ringkas.B ? `${angka(ringkas.B)} ${ringkas.satuanB.join("/")}` : null },
+        { id: "C", label: "C · Total volume IRO (utama)", kolom: "C · Total volume IRO (utama)", jenis: "otomatis", nilai: ringkas.C ? `${angka(ringkas.C)} ${ringkas.satuanC.join("/")}` : null },
       );
     }
     for (const s of tab.sections) {
@@ -278,6 +308,9 @@ export function IsiUsulan({
               </>
             ),
             nilai: tambahan ? nilaiTambahan(item) : (bawaan as Nilai),
+            kolom: item.label,
+            jenis: tambahan ? "tambahan" : "bawaan",
+            isiPenuh: item.key === "daftarPaket" ? `${paket.length} paket · ${rupiahPenuh(ringkas.A)}` : undefined,
           });
         }
         s.items.filter((c) => c.conditionItemId === item.key).forEach((c) => pohon(c, true));
@@ -288,13 +321,30 @@ export function IsiUsulan({
       out.push({
         id: "total",
         label: "Skor total",
+        kolom: "Skor total",
+        jenis: "otomatis",
         nilai: skor.skorEvaluasi != null ? <><b>{fmtSkor(Number(skor.skorEvaluasi) * 100)}</b> / 100</> : null,
       });
       for (const r of skor.rincian.filter((r) => r.bobot > 0))
-        out.push({ id: `r-${r.key}`, label: r.label ?? r.key, nilai: `${fmtSkor(r.dapat)} / ${fmtSkor(r.bobot)}` });
+        out.push({ id: `r-${r.key}`, label: r.label ?? r.key, kolom: `Skor ${r.label ?? r.key}`, jenis: "otomatis", nilai: `${fmtSkor(r.dapat)} / ${fmtSkor(r.bobot)}` });
     }
     return out;
   };
+
+  // Serahkan baris yang sama dengan layar ke export (kolom kosong = "–").
+  useEffect(() => {
+    if (!onIsi || !tabs) return;
+    onIsi(
+      tabs.flatMap((t) =>
+        barisTab(t).map((b) => ({
+          tab: t.label,
+          kolom: (b.anak ? "  " : "") + b.kolom,
+          isi: b.isiPenuh ?? (teks(b.nilai).trim() || "–"),
+          jenis: b.jenis,
+        })),
+      ),
+    );
+  });
 
   if (!kegiatanId)
     return <p className="text-sm text-muted-foreground">Kegiatan proyek belum ditentukan, isi usulan belum bisa ditampilkan.</p>;

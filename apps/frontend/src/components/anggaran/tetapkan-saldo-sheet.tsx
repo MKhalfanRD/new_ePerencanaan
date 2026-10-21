@@ -271,8 +271,8 @@ export function TetapkanSaldoSheet({
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                Terpakai = rencana paket semua proyek di kegiatan ini, termasuk Draft. Perubahan saldo tercatat di log
-                aktivitas.
+                Terpakai = rencana paket semua proyek di kegiatan ini, termasuk Draft. Alasan perubahan disimpan
+                bersama saldo.
               </p>
             </>
           )}
